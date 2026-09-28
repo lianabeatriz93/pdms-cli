@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - name: Check that the tag matches the package version
+        run: |
+          VERSION="$(uv version --short)"
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the version in pyproject.toml ($VERSION). Use 'cz bump'."
+            exit 1
+          fi
+      - name: Tests
+        run: |
+          uv sync --locked
+          uv run pytest -q
+      - name: Build
+        run: uv build
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v tag="$GITHUB_REF_NAME" '
+            $0 ~ "^## " tag "( |$)" { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          cat >> notes.md <<'NOTES'
+
+          ## Install
+
+          macOS / Linux:
+          ```sh
+          curl -LsSf https://github.com/lianabeatriz93/pdms-cli/releases/latest/download/install.sh | sh
+          ```
+
+          Windows (PowerShell):
+          ```powershell
+          powershell -ExecutionPolicy ByPass -c "irm https://github.com/lianabeatriz93/pdms-cli/releases/latest/download/install.ps1 | iex"
+          ```
+
+          Already installed: `pdms self-update`.
+          NOTES
+          cat notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp installer/install.sh installer/install.ps1 dist/
+          gh release create "$GITHUB_REF_NAME" dist/* --title "pdms $GITHUB_REF_NAME" --notes-file notes.md

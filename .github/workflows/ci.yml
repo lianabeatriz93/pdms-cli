@@ -49,3 +49,32 @@ jobs:
           PDMS_LANG=es uv run pdms --help
       - name: Build
         run: uv build
+
+  installers:
+    name: installer (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Build the package
+        run: uv build
+      - name: Install with install.sh
+        if: runner.os != 'Windows'
+        run: |
+          export PDMS_WHEEL="$(ls "$PWD"/dist/*.whl)"
+          sh installer/install.sh
+          "$(uv tool dir --bin)/pdms" --version
+          "$(uv tool dir --bin)/pdms" --help > /dev/null
+      - name: Install with install.ps1 (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:PDMS_WHEEL = (Get-ChildItem dist\*.whl).FullName
+          powershell -ExecutionPolicy ByPass -File installer\install.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & (Join-Path (uv tool dir --bin).Trim() "pdms.exe") --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

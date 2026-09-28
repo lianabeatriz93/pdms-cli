@@ -532,6 +532,20 @@ ES: dict[str, str] = {
         "No hay servicios locales corriendo. Levanta uno con pdms run -b.",
     "live specs of the services running locally": "specs en vivo de los servicios que corren en local",
     "remote docs": "docs remotas",
+    # ------------------------------------------------------------------ versions / updates
+    "Update pdms to the latest release (or to --version).": "Actualiza pdms a la última versión (o a --version).",
+    "Install this version instead of the latest.": "Instalar esta versión en lugar de la última.",
+    "Only tell whether there is a newer version.": "Solo decir si hay una versión más nueva.",
+    "pdms {version} runs from a local checkout (editable install): update it with git pull.":
+        "pdms {version} se ejecuta desde una copia local (instalación editable): actualízalo con git pull.",
+    "Looking for the latest release...": "Buscando la última versión...",
+    "Could not reach GitHub: {error}": "No pude conectar con GitHub: {error}",
+    "pdms {version} is the latest version.": "pdms {version} es la última versión.",
+    "Current version: {current} · available: {target}": "Versión actual: {current} · disponible: {target}",
+    "Run this to update:": "Ejecuta esto para actualizar:",
+    "The update failed (exit code {code}).": "La actualización falló (código de salida {code}).",
+    "pdms updated to {version}.": "pdms actualizado a {version}.",
+    "Show the version and exit.": "Muestra la versión y sale.",
     # ------------------------------------------------------------------ menus
     "← Back": "← Volver",
     "Databases:": "Bases de datos:",

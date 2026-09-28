@@ -21,8 +21,8 @@ from rich.table import Table
 from rich.text import Text
 
 from . import (
-    completion, i18n, installer, instances, logview, prompts, proxy, repos, routes, runner, transfer, userimport,
-    vscode,
+    __version__, completion, i18n, installer, instances, logview, prompts, proxy, repos, routes, runner, transfer,
+    update, userimport, vscode,
 )
 from .config import Config, Database, DevUser, Stack, config_path, write_private
 from .i18n import _
@@ -1831,11 +1831,56 @@ def main_menu() -> None:
 
 
 # Commands that do not depend on a repo, so they never trigger the "switch repo?" question.
-REPO_AGNOSTIC = {"repo", "config", "env", "db", "user"}
+REPO_AGNOSTIC = {"repo", "config", "env", "db", "user", "self-update"}
+
+
+@app.command("self-update", help=_("Update pdms to the latest release (or to --version)."))
+def self_update(
+    version: Optional[str] = typer.Option(None, "--version", help=_("Install this version instead of the latest.")),
+    check: bool = typer.Option(False, "--check", help=_("Only tell whether there is a newer version.")),
+) -> None:
+    kind = update.install_kind()
+    if kind == "editable":
+        console.print(_("pdms {version} runs from a local checkout (editable install): update it with git pull.",
+                        version=__version__))
+        return
+    try:
+        with console.status(_("Looking for the latest release...")):
+            target = version or update.latest_version()
+    except Exception as exc:  # noqa: BLE001 - network errors of any kind
+        fail(_("Could not reach GitHub: {error}", error=exc))
+    if not version and not update.is_newer(target):
+        console.print("[green]✓[/] " + _("pdms {version} is the latest version.", version=__version__))
+        return
+    console.print(_("Current version: {current} · available: {target}", current=__version__, target=target))
+    if check:
+        return
+    cmd = update.upgrade_command(target)
+    if kind != "uv-tool" or sys.platform == "win32" or not shutil.which("uv"):
+        # On Windows the running pdms.exe cannot replace itself, and non-uv installs need their own command.
+        console.print(_("Run this to update:"))
+        console.print(f"  {subprocess.list2cmdline(cmd) if sys.platform == 'win32' else shlex.join(cmd)}",
+                      highlight=False, markup=False)
+        return
+    result = subprocess.run(cmd)
+    if result.returncode:
+        fail(_("The update failed (exit code {code}).", code=result.returncode))
+    console.print("[green]✓[/] " + _("pdms updated to {version}.", version=target))
+
+
+def show_version(value: bool) -> None:
+    if value:
+        print(f"pdms {__version__}")
+        raise typer.Exit()
 
 
 @app.callback(invoke_without_command=True)
-def root(ctx: typer.Context) -> None:
+def root(
+    ctx: typer.Context,
+    version: bool = typer.Option(
+        False, "--version", "-V", callback=show_version, is_eager=True, help=_("Show the version and exit.")
+    ),
+) -> None:
     if ctx.resilient_parsing:
         return
     if ctx.invoked_subcommand not in REPO_AGNOSTIC:

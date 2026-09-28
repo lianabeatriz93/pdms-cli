@@ -7,13 +7,34 @@ reloads, start groups of services together and generate VS Code debug configurat
 
 ## Installation
 
-```bash
-git clone git@github.com:lianabeatriz93/pdms-cli.git ~/Code/Alivi/pdms-cli
-uv tool install -e ~/Code/Alivi/pdms-cli
+macOS / Linux:
+
+```sh
+curl -LsSf https://github.com/lianabeatriz93/pdms-cli/releases/latest/download/install.sh | sh
 ```
 
-It is an editable install (`-e`), so code changes in the repo apply without reinstalling. When an update adds a
-dependency (`pyproject.toml` changes), refresh the tool's environment with `uv tool install -e . --force`.
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/lianabeatriz93/pdms-cli/releases/latest/download/install.ps1 | iex"
+```
+
+The installer sets up [uv](https://docs.astral.sh/uv/) if it is missing (uv also provides a suitable Python), installs
+the latest release of `pdms`, adds it to the `PATH` and checks that it starts. Open a new terminal afterwards if it
+says so. Both installers are also attached to every [release](https://github.com/lianabeatriz93/pdms-cli/releases),
+and accept `PDMS_VERSION=0.2.0` to install a specific version.
+
+Without the installer, with uv already installed:
+
+```sh
+uv tool install https://github.com/lianabeatriz93/pdms-cli/releases/download/v0.2.0/pdms_cli-0.2.0-py3-none-any.whl
+```
+
+| | |
+| --- | --- |
+| Check the version | `pdms --version` |
+| Update | `pdms self-update` (`--check` only tells whether there is a new one; `--version X` for a specific one) |
+| Uninstall | `uv tool uninstall pdms-cli` (the configuration in `~/.config/pdms` is kept) |
 
 ### Platforms
 
@@ -328,9 +349,35 @@ The same options are available in the interactive menu under **Settings**.
 ## Development
 
 ```bash
-uv sync            # creates .venv with the dev dependencies
+git clone git@github.com:lianabeatriz93/pdms-cli.git ~/Code/Alivi/pdms-cli
+cd ~/Code/Alivi/pdms-cli
+uv sync                          # .venv with the dev dependencies
 uv run pytest
+uv tool install -e . --force     # use your checkout as the `pdms` command (re-run when dependencies change)
 ```
+
+With the editable install, code changes apply immediately and `pdms self-update` tells you to use `git pull`.
+If an update adds a dependency and the command fails, it says which one is missing and how to reinstall.
+
+CI (`.github/workflows/ci.yml`) runs the tests on Linux, macOS and Windows (Python 3.10 and 3.12) and installs the
+built package with `install.sh` / `install.ps1` on the three systems, on every push.
+
+### Releasing
+
+Versions follow [Conventional Commits](https://www.conventionalcommits.org/) with
+[commitizen](https://commitizen-tools.github.io/commitizen/) (`feat` → minor, `fix` → patch while below 1.0):
+
+```bash
+git checkout main && git pull
+uvx --from commitizen cz bump --dry-run   # preview the next version and changelog
+uvx --from commitizen cz bump             # updates pyproject.toml, uv.lock and CHANGELOG.md, commits and tags vX.Y.Z
+git push --follow-tags
+```
+
+Pushing the tag runs `.github/workflows/release.yml`: it checks that the tag matches the package version, runs the
+tests, builds the wheel and sdist, and publishes a GitHub release with them, both installers and the changelog
+section as release notes.
+
 
 User-facing texts are written in English inside `_()` (from `pdms_cli.i18n`) and translated in the `ES` catalog of
 [`src/pdms_cli/i18n.py`](src/pdms_cli/i18n.py). `tests/test_i18n.py` fails if a string has no Spanish translation,
