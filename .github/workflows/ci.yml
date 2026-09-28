@@ -33,7 +33,6 @@ jobs:
           import xml.etree.ElementTree as ET
           for case in ET.parse("junit.xml").iter("testcase"):
               for problem in [*case.iter("failure"), *case.iter("error")]:
-                  text = (problem.get("message") or "") + " | " + (problem.text or "").strip().splitlines()[-1:][0:1].__str__()
                   detail = (problem.text or "").strip().replace("%", "%25").replace("\r", "").replace("\n", "%0A")
                   print(f"::error title={case.get('classname')}.{case.get('name')}::{detail[-3000:]}")
           PY
