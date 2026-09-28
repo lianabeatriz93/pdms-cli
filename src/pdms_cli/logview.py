@@ -48,7 +48,7 @@ class LogFollower:
         self.position += len(data)
         lines = (self.pending + data.decode(errors="replace")).split("\n")
         self.pending = lines.pop()
-        return lines
+        return [line.rstrip("\r") for line in lines]  # Windows logs end lines with \r\n
 
 
 class MultiLog:

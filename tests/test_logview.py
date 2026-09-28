@@ -64,3 +64,16 @@ def test_endpoints_are_read_from_the_openapi_spec():
         ("DELETE", "/api/v1/leads/tp/{entity_id}", ""),
     ]
     assert endpoints({}) == []
+
+
+def test_windows_line_endings_are_removed(tmp_path):
+    log = tmp_path / "svc.log"
+    log.write_bytes(b"")
+    follower = LogFollower(str(log))
+    follower.skip_to_tail(1)
+    with log.open("ab") as fh:
+        fh.write(b"INFO: started\r\nhalf\r")
+    assert follower.read_new() == ["INFO: started"]
+    with log.open("ab") as fh:
+        fh.write(b"\n")
+    assert follower.read_new() == ["half"]
