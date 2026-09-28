@@ -394,6 +394,7 @@ def wait_until_ready(inst: instances.Instance, timeout: float = 90) -> None:
                     "{key} is responding at http://localhost:{port} (pid {pid})",
                     key=inst.key, port=inst.port, pid=inst.pid,
                 ))
+                print_endpoints(inst, limit=6)
                 break
             if health.state == "error":
                 console.print(instances.tail(inst.log, 30), markup=False, highlight=False)
@@ -625,6 +626,53 @@ def pick_instance(key: Optional[str], only_alive: bool = False, message: Optiona
     prompts.require_tty()
     choices = [questionary.Choice(f"{i.key}  ({_('running') if i.alive() else _('stopped')})", i) for i in items]
     return questionary.select(message or _("Choose an instance:"), choices=choices).unsafe_ask()
+
+
+METHOD_STYLE = {"GET": "green", "POST": "yellow", "PUT": "blue", "PATCH": "cyan", "DELETE": "red"}
+
+
+def print_endpoints(inst: instances.Instance, limit: Optional[int] = None, contains: str = "") -> None:
+    spec = instances.fetch_openapi(inst)
+    if spec is None:
+        console.print("  [yellow]" + _("Could not read {url}/openapi.json.", url=f"http://localhost:{inst.port}") + "[/]")
+        return
+    found = [e for e in instances.endpoints(spec) if contains in e.path]
+    shown = found[:limit] if limit else found
+    grid = Table.grid(padding=(0, 2))
+    for e in shown:
+        grid.add_row(
+            f"  [{METHOD_STYLE.get(e.method, 'white')}]{e.method}[/]",
+            f"http://localhost:{inst.port}{e.path}", f"[dim]{e.summary}[/]",
+        )
+    if shown:
+        console.print(grid, highlight=False)
+    elif contains:
+        console.print("  [dim]" + _("No endpoint contains '{text}'.", text=contains) + "[/]")
+    if limit and len(found) > limit:
+        console.print("  [dim]" + _("+{count} more: pdms urls {key}", count=len(found) - limit, key=inst.key) + "[/]")
+    console.print("  " + _("Docs: {url}", url=f"http://localhost:{inst.port}/docs"), highlight=False)
+
+
+@app.command(help=_("Show the endpoints (method and full URL) of background services."))
+def urls(
+    keys: Optional[list[str]] = typer.Argument(
+        None, help=_("Instances (or parts of the service name)."), autocompletion=completion.instance_keys
+    ),
+    contains: str = typer.Option("", "--filter", "-f", help=_("Only endpoints whose path contains this text.")),
+) -> None:
+    if keys:
+        targets = []
+        for key in keys:
+            inst = pick_instance(key, only_alive=True)
+            if inst not in targets:
+                targets.append(inst)
+    else:
+        targets = [i for i in instances.load().values() if i.alive()]
+        if not targets:
+            fail(_("No background services. Start one with [bold]pdms run -b[/]."))
+    for inst in targets:
+        console.rule(inst.key)
+        print_endpoints(inst, contains=contains)
 
 
 @app.command(help=_("List background services."))
@@ -1550,6 +1598,7 @@ def instances_menu() -> None:
         _("View all logs together"): lambda: logs(None, True, None, True, None, False),
         _("View the previous run's log"): lambda: logs(None, False, None, False, None, True),
         _("Open in the browser (/docs)"): lambda: open_cmd(None, "/docs"),
+        _("Show endpoints (URLs)"): lambda: urls(None, ""),
         _("Stop"): lambda: stop(None, False),
         _("Restart"): lambda: restart(None, None, None, False, None),
         _("Restart with another user/DB"): lambda: restart(None, None, None, True, None),

@@ -47,3 +47,20 @@ def test_restart_keeps_the_previous_log(tmp_path):
     log.write_text("")  # an empty log does not overwrite the kept one
     instances.rotate_log(log)
     assert instances.previous_log_path(log).read_text().startswith("Traceback")
+
+
+def test_endpoints_are_read_from_the_openapi_spec():
+    from pdms_cli.instances import endpoints
+
+    spec = {"paths": {
+        "/api/v1/leads/tp/{entity_id}": {"get": {"summary": "Detail"}, "delete": {}, "parameters": []},
+        "/api/v1/leads/tp": {"post": {"summary": "Create"}, "get": {"summary": "List"}},
+    }}
+    found = [(e.method, e.path, e.summary) for e in endpoints(spec)]
+    assert found == [
+        ("GET", "/api/v1/leads/tp", "List"),
+        ("POST", "/api/v1/leads/tp", "Create"),
+        ("GET", "/api/v1/leads/tp/{entity_id}", "Detail"),
+        ("DELETE", "/api/v1/leads/tp/{entity_id}", ""),
+    ]
+    assert endpoints({}) == []

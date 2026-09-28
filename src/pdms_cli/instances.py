@@ -212,3 +212,41 @@ def health_all(items: list[Instance]) -> dict[str, Health]:
         return {}
     with ThreadPoolExecutor(max_workers=min(16, len(items))) as pool:
         return dict(zip((i.key for i in items), pool.map(health, items)))
+
+
+# --------------------------------------------------------------------------- endpoints
+
+HTTP_METHODS = ("get", "post", "put", "patch", "delete")
+
+
+@dataclass
+class Endpoint:
+    method: str
+    path: str
+    summary: str = ""
+
+
+def fetch_openapi(instance: Instance, timeout: float = 3) -> dict | None:
+    """The live OpenAPI spec of a running instance (FastAPI serves it at /openapi.json)."""
+    target = {"0.0.0.0": "127.0.0.1", "": "127.0.0.1", "::": "::1"}.get(instance.host, instance.host)
+    conn = http.client.HTTPConnection(target, instance.port, timeout=timeout)
+    try:
+        conn.request("GET", "/openapi.json")
+        response = conn.getresponse()
+        if response.status != 200:
+            return None
+        return json.loads(response.read())
+    except (OSError, http.client.HTTPException, ValueError):
+        return None
+    finally:
+        conn.close()
+
+
+def endpoints(spec: dict) -> list[Endpoint]:
+    found = []
+    for path, operations in (spec.get("paths") or {}).items():
+        for method, operation in operations.items():
+            if method in HTTP_METHODS:
+                found.append(Endpoint(method.upper(), path, (operation or {}).get("summary", "")))
+    order = {m.upper(): i for i, m in enumerate(HTTP_METHODS)}
+    return sorted(found, key=lambda e: (e.path, order[e.method]))

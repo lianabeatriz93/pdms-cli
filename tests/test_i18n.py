@@ -71,3 +71,8 @@ def test_default_is_english_and_spanish_is_selectable(monkeypatch):
     assert i18n._("{key} stopped.", key="svc@8080") == "svc@8080 parado."
     i18n.set_language("fr")  # unknown languages fall back to English
     assert i18n.current_language() == "en"
+
+
+def test_any_placeholder_name_is_allowed():
+    i18n.set_language("en")
+    assert i18n._("No endpoint contains '{text}'.", text="x") == "No endpoint contains 'x'."

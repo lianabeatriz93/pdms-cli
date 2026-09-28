@@ -37,7 +37,7 @@ def set_language(lang: str) -> None:
     _language = lang if lang in LANGUAGES else DEFAULT_LANGUAGE
 
 
-def _(text: str, **kwargs: object) -> str:
+def _(text: str, /, **kwargs: object) -> str:
     """Translate ``text`` to the current language and fill its ``{placeholders}``."""
     translated = ES.get(text, text) if current_language() == "es" else text
     return translated.format(**kwargs) if kwargs else translated
@@ -267,6 +267,14 @@ ES: dict[str, str] = {
     "[yellow]Could not open a browser; open the URL manually.[/]":
         "[yellow]No pude abrir un navegador; abre la URL a mano.[/]",
     "Open in the browser (/docs)": "Abrir en el navegador (/docs)",
+    "Could not read {url}/openapi.json.": "No pude leer {url}/openapi.json.",
+    "No endpoint contains '{text}'.": "Ningún endpoint contiene '{text}'.",
+    "+{count} more: pdms urls {key}": "+{count} más: pdms urls {key}",
+    "Docs: {url}": "Docs: {url}",
+    "Show the endpoints (method and full URL) of background services.":
+        "Muestra los endpoints (método y URL completa) de los servicios en segundo plano.",
+    "Only endpoints whose path contains this text.": "Solo los endpoints cuya ruta contenga este texto.",
+    "Show endpoints (URLs)": "Ver endpoints (URLs)",
     "Which instance do you want to see the logs of?": "¿De qué instancia quieres ver los logs?",
     "Stop all.": "Parar todas.",
     "Stop background services.": "Para servicios en segundo plano.",
