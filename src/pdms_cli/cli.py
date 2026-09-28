@@ -19,7 +19,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import completion, i18n, instances, logview, logview, prompts, runner, transfer, vscode
+from . import completion, i18n, installer, instances, logview, prompts, runner, transfer, vscode
 from .config import Config, Database, DevUser, Stack, config_path, write_private
 from .i18n import _
 
@@ -311,6 +311,32 @@ def poetry_install(service: Path) -> None:
         runner.install(service)
     except (RuntimeError, subprocess.CalledProcessError) as exc:
         fail(str(exc))
+    installer.remember(service)
+
+
+def install_label(cfg: Config, install: Optional[bool], each: bool = False) -> str:
+    if install is False or (install is None and not cfg.defaults.install):
+        return _("no")
+    if install is None and cfg.defaults.smart_install:
+        return _("only if something changed (-i to force)")
+    return _("poetry lock && poetry install (each)") if each else "poetry lock && poetry install"
+
+
+def ensure_installed(cfg: Config, service: Path, install: Optional[bool]) -> None:
+    """Install according to the flag: True forces it, False skips it, None follows the settings (smart by default)."""
+    if install is False or (install is None and not cfg.defaults.install):
+        try:
+            runner.ensure_poetry()
+        except RuntimeError as exc:
+            fail(str(exc))
+        return
+    if install is None and cfg.defaults.smart_install and runner.poetry_python(service) \
+            and installer.is_up_to_date(service):
+        console.print("[green]✓[/] " + _(
+            "{name}: dependencies up to date (nothing changed since the last install), skipping.", name=service.name
+        ))
+        return
+    poetry_install(service)
 
 
 def do_run(
@@ -329,22 +355,15 @@ def do_run(
     prof = choose_profile(cfg, service_name, path, user, db, port, host, yes)
     if background is None:
         background = sys.stdin.isatty() and prompts.ask_background()
-    install = cfg.defaults.install if install is None else install
     reload = cfg.defaults.reload if reload is None else reload
 
     print_summary(cfg, prof, {
         _("Server"): f"http://{prof.host}:{prof.port}  reload={yes_no(reload)}  log={cfg.defaults.logging_level}",
         _("Mode"): _("background") if background else _("foreground"),
-        _("Install"): "poetry lock && poetry install" if install else _("no"),
+        _("Install"): install_label(cfg, install),
     })
     confirm_protected(cfg, prof, yes)
-    if install:
-        poetry_install(prof.service)
-    else:
-        try:
-            runner.ensure_poetry()
-        except RuntimeError as exc:
-            fail(str(exc))
+    ensure_installed(cfg, prof.service, install)
 
     cmd = runner.uvicorn_command(prof.host, prof.port, reload)
     env = runner.build_env(cfg.defaults, prof.user, prof.db)
@@ -399,7 +418,9 @@ def run(
     db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias."), autocompletion=completion.dbs),
     port: Optional[int] = typer.Option(None, "--port", "-p"),
     host: Optional[str] = typer.Option(None, "--host"),
-    install: Optional[bool] = typer.Option(None, "--install/--no-install", "-i/-n", help="poetry lock && poetry install."),
+    install: Optional[bool] = typer.Option(
+        None, "--install/--no-install", "-i/-n", help=_("Force (-i) or skip (-n) the install; by default only if something changed.")
+    ),
     reload: Optional[bool] = typer.Option(None, "--reload/--no-reload"),
     background: Optional[bool] = typer.Option(None, "--background/--foreground", "-b/-f", help=_("Background or foreground.")),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
@@ -420,20 +441,20 @@ def debug(
     db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias."), autocompletion=completion.dbs),
     port: Optional[int] = typer.Option(None, "--port", "-p"),
     host: Optional[str] = typer.Option(None, "--host"),
-    install: Optional[bool] = typer.Option(None, "--install/--no-install", "-i/-n", help="poetry lock && poetry install."),
+    install: Optional[bool] = typer.Option(
+        None, "--install/--no-install", "-i/-n", help=_("Force (-i) or skip (-n) the install; by default only if something changed.")
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
     path: Optional[Path] = typer.Option(None, "--path", "-C", help=_("Service folder (defaults to the current one).")),
 ) -> None:
     cfg = Config.load()
     prof = choose_profile(cfg, service, path, user, db, port, host, yes)
-    install = cfg.defaults.install if install is None else install
     print_summary(cfg, prof, {
         _("Debug"): _("http://{host}:{port} (no --reload, so breakpoints work)", host=prof.host, port=prof.port),
-        _("Install"): "poetry lock && poetry install" if install else _("no"),
+        _("Install"): install_label(cfg, install),
     })
     confirm_protected(cfg, prof, yes)
-    if install:
-        poetry_install(prof.service)
+    ensure_installed(cfg, prof.service, install)
     python = runner.poetry_python(prof.service)
     if not python:
         console.print(_("[yellow]The service has no virtualenv yet; installing dependencies.[/]"))
@@ -653,7 +674,9 @@ def restart(
     user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Switch to this user."), autocompletion=completion.users),
     db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Switch to this database."), autocompletion=completion.dbs),
     change: bool = typer.Option(False, "--change", "-c", help=_("Ask which user and DB to use.")),
-    install: Optional[bool] = typer.Option(None, "--install/--no-install", "-i/-n", help="poetry lock && poetry install."),
+    install: Optional[bool] = typer.Option(
+        None, "--install/--no-install", "-i/-n", help=_("Force (-i) or skip (-n) the install; by default only if something changed.")
+    ),
 ) -> None:
     inst = pick_instance(key, message=_("Which instance do you want to restart?"))
     cfg = Config.load()
@@ -777,7 +800,9 @@ def up(
     name: Optional[str] = typer.Argument(None, help=_("Stack to start."), autocompletion=completion.stacks),
     user: Optional[str] = typer.Option(None, "--user", "-u", help=_("User (defaults to the stack's)."), autocompletion=completion.users),
     db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database (defaults to the stack's)."), autocompletion=completion.dbs),
-    install: Optional[bool] = typer.Option(None, "--install/--no-install", "-i/-n", help="poetry lock && poetry install."),
+    install: Optional[bool] = typer.Option(
+        None, "--install/--no-install", "-i/-n", help=_("Force (-i) or skip (-n) the install; by default only if something changed.")
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
 ) -> None:
     cfg = Config.load()
@@ -786,7 +811,6 @@ def up(
     paths = stack_paths(cfg, stack)
     user_name = pick(cfg.users, _("user"), user or stack.user or None, cfg.last_user)
     db_name = pick(cfg.dbs, _("database"), db or stack.db or None, cfg.last_db)
-    install = cfg.defaults.install if install is None else install
     host = cfg.defaults.host
 
     running = running_by_service()
@@ -810,14 +834,13 @@ def up(
     first = Profile(plan[0][0], user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], host, plan[0][1])
     print_summary(cfg, first, {
         _("Services"): "\n".join(f"{p.name} → :{port}" for p, port in plan),
-        _("Install"): _("poetry lock && poetry install (each)") if install else _("no"),
+        _("Install"): install_label(cfg, install, each=True),
     }, show_service=False)
     confirm_protected(cfg, first, yes)
 
     started = []
     for path, port in plan:
-        if install:
-            poetry_install(path)
+        ensure_installed(cfg, path, install)
         env = runner.build_env(cfg.defaults, cfg.users[user_name], cfg.dbs[db_name])
         cmd = runner.uvicorn_command(host, port, cfg.defaults.reload)
         started.append(instances.start(
