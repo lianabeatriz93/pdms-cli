@@ -66,10 +66,16 @@ def _hash_tree(digest: "hashlib._Hash", root: Path) -> None:
                 _hash_file_meta(digest, Path(dirpath) / name, root)
 
 
-def fingerprint(service: Path) -> str:
+SERVICE_PART = "(service)"  # the service's own pyproject.toml + poetry.lock
+
+
+def dependency_fingerprints(service: Path) -> dict[str, str]:
+    """One digest per part that affects the install: the service itself and each local path dependency."""
+    parts: dict[str, str] = {}
     digest = hashlib.sha256()
     for name in ("pyproject.toml", "poetry.lock"):
         _hash_file_meta(digest, service / name, service)
+    parts[SERVICE_PART] = digest.hexdigest()
     seen: set[Path] = set()
     pending = path_dependencies(service)
     while pending:
@@ -77,13 +83,30 @@ def fingerprint(service: Path) -> str:
         if directory in seen or not directory.is_dir():
             continue
         seen.add(directory)
-        digest.update(f"## {directory} develop={develop}\n".encode())
+        digest = hashlib.sha256(f"develop={develop}\n".encode())
         if develop:
             _hash_file_meta(digest, directory / "pyproject.toml", directory)
         else:
             _hash_tree(digest, directory)
+        parts[directory.name if directory.name not in parts else str(directory)] = digest.hexdigest()
         pending.extend(path_dependencies(directory))
+    return parts
+
+
+def fingerprint(service: Path) -> str:
+    digest = hashlib.sha256()
+    for name, value in sorted(dependency_fingerprints(service).items()):
+        digest.update(f"{name}={value}\n".encode())
     return digest.hexdigest()
+
+
+def changed_parts(recorded: dict[str, str] | None, service: Path) -> list[str] | None:
+    """Parts that changed since ``recorded`` was taken, or None if nothing was recorded."""
+    if not recorded:
+        return None
+    current = dependency_fingerprints(service)
+    names = sorted(set(recorded) | set(current))
+    return [n for n in names if recorded.get(n) != current.get(n)]
 
 
 def _load() -> dict[str, str]:

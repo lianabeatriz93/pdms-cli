@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -327,6 +328,11 @@ def poetry_install(service: Path) -> None:
     installer.remember(service)
 
 
+def installed_parts(service: Path) -> Optional[dict[str, str]]:
+    """What is installed in the service's virtualenv, when pdms knows it matches the code (else unknown)."""
+    return installer.dependency_fingerprints(service) if installer.is_up_to_date(service) else None
+
+
 def install_label(cfg: Config, install: Optional[bool], each: bool = False) -> str:
     if install is False or (install is None and not cfg.defaults.install):
         return _("no")
@@ -385,7 +391,8 @@ def do_run(
         runner.exec_server(prof.service, cmd, env)
 
     inst = instances.start(
-        prof.service, cmd, env, host=prof.host, port=prof.port, user=prof.user_name, db=prof.db_name, reload=reload
+        prof.service, cmd, env, host=prof.host, port=prof.port, user=prof.user_name, db=prof.db_name, reload=reload,
+        deps=installed_parts(prof.service),
     )
     wait_until_ready(inst)
 
@@ -616,6 +623,16 @@ def status_text(state: str) -> str:
     }[state]
 
 
+def stale_dependencies(items: list[instances.Instance]) -> dict[str, list[str]]:
+    """Instances whose installed parts (common/ libraries, pyproject, lock) changed since they started."""
+    with_deps = [i for i in items if i.deps]
+    if not with_deps:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(8, len(with_deps))) as pool:
+        results = pool.map(lambda i: installer.changed_parts(i.deps, Path(i.service)), with_deps)
+    return {inst.key: changed for inst, changed in zip(with_deps, results) if changed}
+
+
 def uptime(started_at: str) -> str:
     seconds = int((datetime.now() - datetime.fromisoformat(started_at)).total_seconds())
     hours, rest = divmod(seconds, 3600)
@@ -714,6 +731,13 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
     for key, health in healths.items():
         if health.state == "error":
             console.print(f"[yellow]⚠ {key}:[/] {health.detail}  [dim](pdms logs {key})[/]", highlight=False)
+    for key, changed in stale_dependencies([i for i in items.values() if healths[i.key].state != "stopped"]).items():
+        names = ", ".join(_("the service itself") if n == installer.SERVICE_PART else n for n in changed)
+        console.print(
+            f"[yellow]⚠ {key}:[/] " + _("installed code changed since it started ({names}); --reload does not pick "
+                                        "it up → pdms restart {key}", names=names, key=key),
+            highlight=False,
+        )
     if any(h.state == "stopped" for h in healths.values()):
         console.print(_("[dim]Stopped ones keep their log (pdms logs <instance>). Remove them with pdms ps --clean.[/]"))
 
@@ -1002,7 +1026,8 @@ def up(
         env = runner.build_env(cfg.defaults, cfg.users[user_name], cfg.dbs[db_name])
         cmd = runner.uvicorn_command(host, port, cfg.defaults.reload)
         started.append(instances.start(
-            path, cmd, env, host=host, port=port, user=user_name, db=db_name, reload=cfg.defaults.reload
+            path, cmd, env, host=host, port=port, user=user_name, db=db_name, reload=cfg.defaults.reload,
+            deps=installed_parts(path),
         ))
     failed = 0
     for inst in started:

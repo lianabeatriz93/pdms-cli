@@ -16,7 +16,7 @@ import signal
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -64,6 +64,8 @@ class Instance:
     started_at: str
     # Process creation time, to tell our process apart from a later one that reused the PID (0 = unknown).
     created: float = 0.0
+    # Fingerprint of each installed part (service + local libraries) when it started; empty = unknown.
+    deps: dict[str, str] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -152,7 +154,8 @@ def running_ports() -> set[int]:
 
 
 def start(
-    service: Path, cmd: list[str], env: dict[str, str], *, host: str, port: int, user: str, db: str, reload: bool
+    service: Path, cmd: list[str], env: dict[str, str], *, host: str, port: int, user: str, db: str, reload: bool,
+    deps: dict[str, str] | None = None,
 ) -> Instance:
     key = make_key(service, port)
     log = log_path(key)
@@ -173,7 +176,7 @@ def start(
     instance = Instance(
         key=key, pid=proc.pid, service=str(service), host=host, port=port, user=user, db=db,
         reload=reload, log=str(log), started_at=datetime.now().isoformat(timespec="seconds"),
-        created=creation_time(proc.pid),
+        created=creation_time(proc.pid), deps=deps or {},
     )
     instances = load()
     instances[key] = instance

@@ -194,6 +194,11 @@ fails to load:
 | `⚠ error` | The last load failed; the exception is shown (e.g. `ModuleNotFoundError: ...`). Saving the fix reloads it |
 | `✗ stopped` | The process exited; its log is kept |
 
+`pdms ps` also warns when the **installed code of a running instance is outdated**: `--reload` picks up changes of the
+service and of editable (`develop = true`) libraries, but not of the `common/` libraries installed as a copy
+(`develop = false`), nor a new `poetry.lock`. When any of them changed since the instance started, it says which ones
+and suggests `pdms restart <instance>`, which reinstalls them automatically (smart install).
+
 ## Proxy: one port for every service
 
 ```bash

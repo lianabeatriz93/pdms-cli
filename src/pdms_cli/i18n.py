@@ -236,6 +236,9 @@ ES: dict[str, str] = {
         "No hay servicios en segundo plano. Levanta uno con [bold]pdms run -b[/].",
     "No instance matches '{key}'. See [bold]pdms ps[/].": "Ninguna instancia coincide con '{key}'. Mira [bold]pdms ps[/].",
     "Forget stopped instances.": "Olvida las instancias paradas.",
+    "the service itself": "el propio servicio",
+    "installed code changed since it started ({names}); --reload does not pick it up → pdms restart {key}":
+        "el código instalado cambió desde que arrancó ({names}); --reload no lo recoge → pdms restart {key}",
     "List background services.": "Lista los servicios en segundo plano.",
     "No background services.": "No hay servicios en segundo plano.",
     "[dim]Stopped ones keep their log (pdms logs <instance>). Remove them with pdms ps --clean.[/]":
