@@ -358,6 +358,9 @@ ES: dict[str, str] = {
     "⚠ Unknown roles kept as they are (the services will ignore them): {roles}":
         "⚠ Roles desconocidos, se dejan tal cual (los servicios los ignorarán): {roles}",
     "Import from a database": "Importar desde una base de datos",
+    "[dim]Roles mapped with MAP_INTERNAL_ROLES from {source}.[/]": "[dim]Roles traducidos con MAP_INTERNAL_ROLES de {source}.[/]",
+    "[yellow]⚠ Could not read the roles of the current repo; using the built-in copy.[/]":
+        "[yellow]⚠ No pude leer los roles del repo actual; uso la copia incluida.[/]",
     # ------------------------------------------------------------------ config commands
     "Edit the defaults (language, port, log, reload, extra env...).":
         "Edita los valores por defecto (idioma, puerto, log, reload, env extra...).",

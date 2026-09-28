@@ -1137,13 +1137,17 @@ def user_import(
     cfg = Config.load()
     interactive = sys.stdin.isatty()
     db_name = pick(cfg.dbs, _("database"), db, cfg.last_db)
+    mapping, source = userimport.role_mapping(repos.active_root(cfg))
+    console.print(_("[dim]Roles mapped with MAP_INTERNAL_ROLES from {source}.[/]", source=source)
+                  if source != "built-in" else
+                  _("[yellow]⚠ Could not read the roles of the current repo; using the built-in copy.[/]"))
     if search is None and interactive and not yes:
         search = questionary.text(_("Search by email or name (empty = all):")).unsafe_ask().strip()
     with console.status(_("Reading users from {name}...", name=db_name)):
         try:
             found = userimport.fetch_users(
                 cfg.dbs[db_name], search=search or "", role=role or "", include_inactive=inactive, limit=limit,
-                timeout=cfg.defaults.db_timeout,
+                timeout=cfg.defaults.db_timeout, mapping=mapping,
             )
         except Exception as exc:  # noqa: BLE001 - show any driver error to the user
             fail(_("Could not read the users from {name}: {error}", name=db_name, error=str(exc).strip()))
@@ -1163,7 +1167,7 @@ def user_import(
             if u.is_active is False:
                 tags.append(_("inactive"))
             suffix = f"  ({', '.join(tags)})" if tags else ""
-            return f"{u.first_name} {u.last_name} <{u.username}>  {u.dev_roles or '-'}{suffix}"
+            return f"{u.first_name} {u.last_name} <{u.username}>  {u.dev_roles(mapping) or '-'}{suffix}"
 
         picked = questionary.checkbox(
             _("Which users do you want to import? (space to select)"),
@@ -1173,7 +1177,7 @@ def user_import(
         console.print(_("Nothing selected."))
         return
 
-    cfg.users, added, updated = userimport.merge_users(cfg.users, picked)
+    cfg.users, added, updated = userimport.merge_users(cfg.users, picked, mapping)
     cfg.save()
     table = Table(_("Name"), "DEV_USERNAME", "DEV_ROLES", "")
     for alias in added + updated:
@@ -1186,7 +1190,7 @@ def user_import(
         "{added} added, {updated} updated, {unchanged} unchanged.", added=len(added), updated=len(updated),
         unchanged=unchanged,
     ))
-    unknown = sorted({r for u in picked for r in u.unknown_roles})
+    unknown = sorted({r for u in picked for r in u.unknown_roles(mapping)})
     if unknown:
         console.print("[yellow]" + _(
             "⚠ Unknown roles kept as they are (the services will ignore them): {roles}", roles=", ".join(unknown)

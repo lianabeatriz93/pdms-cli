@@ -79,8 +79,10 @@ pdms user import -d local --inactive -y   # every match, inactive ones included,
 
 Reads `public.pdms_user` (read-only) and creates a profile per user: `DEV_USER_ID` = `entity_id`, `DEV_USERNAME` =
 `username`, names, and `DEV_ROLES` converted from the internal names stored in the table
-(`TRANSPORTATION_PR_SUPERVISOR`) to the external ones the services expect (`TPR.Supervisor`), as in
-`MAP_INTERNAL_ROLES`. Aliases come from the email (`ana.agent@alivi.com` → `ana-agent`); users already imported
+(`TRANSPORTATION_PR_SUPERVISOR`) to the external ones the services expect (`TPR.Supervisor`). The mapping is read
+from the current repo (`MAP_INTERNAL_ROLES` in `backend/common/core/core/settings.py` and the `UserRoleEnum` /
+`UserRolePPEnum` enums, parsed without importing them), so new or renamed roles are picked up automatically; a
+built-in copy is used only if the repo cannot be read. Aliases come from the email (`ana.agent@alivi.com` → `ana-agent`); users already imported
 (same `DEV_USER_ID`) are updated in place instead of duplicated.
 
 ## Running a service
