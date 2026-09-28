@@ -18,7 +18,7 @@ dependencies = [
 dev = ["pytest>=8"]
 
 [project.scripts]
-pdms = "pdms_cli.cli:_entrypoint"
+pdms = "pdms_cli.launcher:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -29,3 +29,11 @@ packages = ["src/pdms_cli"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "uv"
+tag_format = "v$version"
+update_changelog_on_bump = true
+major_version_zero = true
+bump_message = "bump: version $current_version → $new_version"
