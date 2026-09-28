@@ -95,6 +95,8 @@ class Repo:
     path: str
     # Folder with the services, relative to the root.
     backend: str = "backend"
+    # Remote API the proxy falls back to, e.g. https://<id>.execute-api.us-east-1.amazonaws.com/dev
+    remote: str = ""
 
     @property
     def root(self) -> Path:

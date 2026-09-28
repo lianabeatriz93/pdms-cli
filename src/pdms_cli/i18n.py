@@ -480,6 +480,55 @@ ES: dict[str, str] = {
     "'{alias}' is already the current repo.": "'{alias}' ya es el repo actual.",
     "Forget a registered repo (nothing is deleted from disk).": "Olvida un repo registrado (no se borra nada del disco).",
     "Choose the current one": "Elegir el actual",
+    # ------------------------------------------------------------------ proxy
+    "Local API gateway: one port for every service, local instances first, the remote API otherwise.":
+        "Gateway local: un solo puerto para todos los servicios; primero las instancias locales, si no la API remota.",
+    "Port to listen on.": "Puerto en el que escuchar.",
+    "Act as this user on local services (X-Dev-* headers).":
+        "Actuar como este usuario en los servicios locales (cabeceras X-Dev-*).",
+    "Remote API for what is not running locally (saved for the repo).":
+        "API remota para lo que no corre en local (se guarda para el repo).",
+    "Never forward to the remote API.": "No reenviar nunca a la API remota.",
+    "Terraform environment to read the routes from.": "Entorno de Terraform del que leer las rutas.",
+    "Point frontend/.env.local to the proxy (asked if omitted).":
+        "Apuntar frontend/.env.local al proxy (se pregunta si se omite).",
+    "Point the frontend to the proxy? (writes VITE_APP_API_URL in frontend/.env.local, git-ignored)":
+        "¿Apunto el frontend al proxy? (escribe VITE_APP_API_URL en frontend/.env.local, ignorado por git)",
+    "{path} updated; restart yarn dev to apply it.": "{path} actualizado; reinicia yarn dev para aplicarlo.",
+    "The proxy is already running on port {port} (pid {pid}).": "El proxy ya está corriendo en el puerto {port} (pid {pid}).",
+    "No Terraform for '{env}' in {path}.": "No hay Terraform para '{env}' en {path}.",
+    "Reading the API routes from Terraform...": "Leyendo las rutas de la API desde Terraform...",
+    "[dim]Remote API taken from frontend/.env and saved for '{alias}': {url}[/]":
+        "[dim]API remota tomada de frontend/.env y guardada para '{alias}': {url}[/]",
+    "Proxy": "Proxy",
+    "Remote": "Remota",
+    "routes": "rutas",
+    "none (only local services)": "ninguna (solo servicios locales)",
+    "Acting as": "Actuando como",
+    "each service's own profile": "el perfil de cada servicio",
+    "Requests · Ctrl+C to stop": "Peticiones · Ctrl+C para parar",
+    "Proxy stopped.": "Proxy parado.",
+    "Show which service handles each route and where the proxy would send it.":
+        "Muestra qué servicio atiende cada ruta y adónde la enviaría el proxy.",
+    "Only routes whose path or service contains this text.": "Solo las rutas cuya ruta o servicio contenga este texto.",
+    "Only routes served by a local instance.": "Solo las rutas que atiende una instancia local.",
+    "Method": "Método",
+    "Target": "Destino",
+    "remote": "remota",
+    "in another repo": "en otro repo",
+    "not available": "no disponible",
+    "{shown} of {total} routes.": "{shown} de {total} rutas.",
+    "Through the proxy: {url} + the same paths": "Por el proxy: {url} + las mismas rutas",
+    "{service} is running from another repo ({key}); not mixing versions.":
+        "{service} está corriendo desde otro repo ({key}); no mezclo versiones.",
+    "No route for {method} {path} in the repo's Terraform.": "No hay ruta para {method} {path} en el Terraform del repo.",
+    "{service} is not running locally. Start it with: pdms run {service} -b":
+        "{service} no está corriendo en local. Levántalo con: pdms run {service} -b",
+    "All local services": "Todos los servicios locales",
+    "No local services running. Start one with pdms run -b.":
+        "No hay servicios locales corriendo. Levanta uno con pdms run -b.",
+    "live specs of the services running locally": "specs en vivo de los servicios que corren en local",
+    "remote docs": "docs remotas",
     # ------------------------------------------------------------------ menus
     "← Back": "← Volver",
     "Databases:": "Bases de datos:",
@@ -504,6 +553,7 @@ ES: dict[str, str] = {
     "▶  Run a service": "▶  Levantar servicio",
     "📋 Background services ({count} running)": "📋 Servicios en segundo plano ({count} corriendo)",
     "🧩 Stacks (groups of services)": "🧩 Stacks (grupos de servicios)",
+    "🌐 Proxy (one port for every service)": "🌐 Proxy (un solo puerto para todos los servicios)",
     "🗄  Databases": "🗄  Bases de datos",
     "👤 Users": "👤 Usuarios",
     "⚙  Settings": "⚙  Configuración",
