@@ -19,6 +19,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
+from .i18n import _
+
 
 def state_dir() -> Path:
     base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
@@ -182,7 +184,7 @@ def startup_error(log: str, lines: int = 300) -> str:
     if failed <= last(STARTED_MARKERS):
         return ""
     exceptions = [l.strip() for l in text[failed:] if EXCEPTION_LINE.match(l.strip())]
-    return exceptions[-1] if exceptions else "error al cargar la app"
+    return exceptions[-1] if exceptions else _("app failed to load")
 
 
 def health(instance: Instance) -> Health:

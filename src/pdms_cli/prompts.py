@@ -13,21 +13,22 @@ import questionary
 import typer
 
 from .config import Database, Defaults, DevUser
+from .i18n import LANGUAGES, _
 
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
 
 
 def require_tty() -> None:
     if not sys.stdin.isatty():
-        raise typer.BadParameter("Se necesita una terminal interactiva (o pasa las opciones por flags).")
+        raise typer.BadParameter(_("An interactive terminal is required (or pass the options as flags)."))
 
 
 def _is_int(value: str) -> bool | str:
-    return value.isdigit() or "Debe ser un número"
+    return value.isdigit() or _("Must be a number")
 
 
 def _not_empty(value: str) -> bool | str:
-    return bool(value.strip()) or "Campo obligatorio"
+    return bool(value.strip()) or _("Required field")
 
 
 def ask_name(kind: str, taken: Iterable[str]) -> str:
@@ -36,51 +37,59 @@ def ask_name(kind: str, taken: Iterable[str]) -> str:
     def validate(value: str) -> bool | str:
         value = value.strip()
         if not value:
-            return "Campo obligatorio"
+            return _("Required field")
         if value in taken:
-            return "Ya existe ese nombre"
+            return _("That name already exists")
         if not all(c.isalnum() or c in "-_" for c in value):
-            return "Usa solo letras, números, '-' o '_'"
+            return _("Use only letters, numbers, '-' or '_'")
         return True
 
-    return questionary.text(f"Alias ({kind}):", validate=validate).unsafe_ask().strip()
+    return questionary.text(_("Alias ({kind}):", kind=kind), validate=validate).unsafe_ask().strip()
 
 
 def select_name(message: str, names: list[str], default: str = "") -> str:
     return questionary.select(message, choices=names, default=default if default in names else None).unsafe_ask()
 
 
+def ask_language(current: str) -> str:
+    return questionary.select(
+        _("Language:"),
+        choices=[questionary.Choice(name, code) for code, name in LANGUAGES.items()],
+        default=current if current in LANGUAGES else None,
+    ).unsafe_ask()
+
+
 def ask_port(default: int, is_free: Callable[[int], bool]) -> int:
     def validate(value: str) -> bool | str:
         if not value.isdigit() or not 1 <= int(value) <= 65535:
-            return "Debe ser un número entre 1 y 65535"
-        return is_free(int(value)) or f"El puerto {value} está ocupado"
+            return _("Must be a number between 1 and 65535")
+        return is_free(int(value)) or _("Port {port} is in use", port=value)
 
-    return int(questionary.text("Puerto del servicio:", default=str(default), validate=validate).unsafe_ask())
+    return int(questionary.text(_("Service port:"), default=str(default), validate=validate).unsafe_ask())
 
 
 def ask_background() -> bool:
     return questionary.select(
-        "¿Cómo lo levanto?",
+        _("How should it run?"),
         choices=[
-            questionary.Choice("Segundo plano (puedes levantar varios; logs con pdms logs)", True),
-            questionary.Choice("Primer plano (en esta terminal)", False),
+            questionary.Choice(_("Background (you can run several; logs with pdms logs)"), True),
+            questionary.Choice(_("Foreground (in this terminal)"), False),
         ],
     ).unsafe_ask()
 
 
 def ask_database(current: Database | None = None) -> Database:
     c = current or Database(host="localhost")
-    host = questionary.text("Host:", default=c.host, validate=_not_empty).unsafe_ask()
-    port = questionary.text("Puerto:", default=str(c.port), validate=_is_int).unsafe_ask()
-    database = questionary.text("Base de datos:", default=c.database, validate=_not_empty).unsafe_ask()
-    user = questionary.text("Usuario:", default=c.user, validate=_not_empty).unsafe_ask()
-    hint = " (vacío = mantener la actual)" if current and current.password else ""
-    password = questionary.password(f"Contraseña{hint}:").unsafe_ask()
+    host = questionary.text(_("Host:"), default=c.host, validate=_not_empty).unsafe_ask()
+    port = questionary.text(_("Port:"), default=str(c.port), validate=_is_int).unsafe_ask()
+    database = questionary.text(_("Database name:"), default=c.database, validate=_not_empty).unsafe_ask()
+    user = questionary.text(_("User:"), default=c.user, validate=_not_empty).unsafe_ask()
+    hint = _(" (empty = keep the current one)") if current and current.password else ""
+    password = questionary.password(_("Password{hint}:", hint=hint)).unsafe_ask()
     if not password and current:
         password = current.password
     protected = questionary.confirm(
-        "¿Es una DB compartida/remota? (pedirá confirmación antes de levantar)",
+        _("Is it a shared/remote DB? (asks for confirmation before starting)"),
         default=c.protected if current else host not in ("localhost", "127.0.0.1"),
     ).unsafe_ask()
     return Database(
@@ -101,36 +110,40 @@ def ask_user(current: DevUser | None = None) -> DevUser:
         username=questionary.text("DEV_USERNAME (email):", default=c.username, validate=_not_empty).unsafe_ask().strip(),
         first_name=questionary.text("DEV_FIRST_NAME:", default=c.first_name).unsafe_ask().strip(),
         last_name=questionary.text("DEV_LAST_NAME:", default=c.last_name).unsafe_ask().strip(),
-        roles=questionary.text("DEV_ROLES (separados por coma):", default=c.roles).unsafe_ask().strip(),
+        roles=questionary.text(_("DEV_ROLES (comma separated):"), default=c.roles).unsafe_ask().strip(),
     )
 
 
 def ask_defaults(current: Defaults) -> Defaults:
-    host = questionary.text("Host de uvicorn:", default=current.host).unsafe_ask()
-    port = questionary.text("Puerto por defecto:", default=str(current.port), validate=_is_int).unsafe_ask()
+    language = ask_language(current.language)
+    host = questionary.text(_("uvicorn host:"), default=current.host).unsafe_ask()
+    port = questionary.text(_("Default port:"), default=str(current.port), validate=_is_int).unsafe_ask()
     level = questionary.select("LOGGING_LEVEL:", choices=LOG_LEVELS, default=current.logging_level).unsafe_ask()
-    reload = questionary.confirm("¿Usar --reload?", default=current.reload).unsafe_ask()
-    install = questionary.confirm("¿Hacer poetry lock && poetry install antes de levantar?", default=current.install).unsafe_ask()
+    reload = questionary.confirm(_("Use --reload?"), default=current.reload).unsafe_ask()
+    install = questionary.confirm(
+        _("Run poetry lock && poetry install before starting?"), default=current.install
+    ).unsafe_ask()
     db_timeout = questionary.text(
-        "Timeout del test de conexión (segundos):", default=str(current.db_timeout), validate=_is_int
+        _("Connection test timeout (seconds):"), default=str(current.db_timeout), validate=_is_int
     ).unsafe_ask()
     backend_path = questionary.path(
-        "Carpeta backend de PDMS (para listar servicios):",
+        _("PDMS backend folder (to list services):"),
         default=current.backend_path,
         only_directories=True,
-        validate=lambda v: not v or Path(v).expanduser().is_dir() or "No existe esa carpeta",
+        validate=lambda v: not v or Path(v).expanduser().is_dir() or _("That folder does not exist"),
     ).unsafe_ask()
     env = dict(current.env)
     while questionary.confirm(
-        f"¿Añadir/editar variables de entorno extra? (actuales: {', '.join(env) or 'ninguna'})", default=False
+        _("Add/edit extra environment variables? (current: {current})", current=", ".join(env) or _("none")),
+        default=False,
     ).unsafe_ask():
-        key = questionary.text("Nombre de la variable:", validate=_not_empty).unsafe_ask().strip()
-        value = questionary.text(f"Valor de {key} (vacío = borrar):", default=env.get(key, "")).unsafe_ask()
+        key = questionary.text(_("Variable name:"), validate=_not_empty).unsafe_ask().strip()
+        value = questionary.text(_("Value of {key} (empty = delete):", key=key), default=env.get(key, "")).unsafe_ask()
         if value:
             env[key] = value
         else:
             env.pop(key, None)
     return Defaults(
-        host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
+        language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
         db_timeout=int(db_timeout), backend_path=backend_path.strip(), env=env,
     )
