@@ -70,6 +70,7 @@ pdms ps                            # status, URL, user, DB and uptime of each in
 pdms logs lead-tp-create           # live console (Ctrl+C to exit); --no-follow to print and exit
 pdms logs --all                    # every running instance merged, prefixed and colored per instance
 pdms logs --stack tp               # the instances of a stack; or several: pdms logs lead-tp-list lead-tp-details
+pdms open lead-tp-create           # Swagger (/docs) in the browser; --path /redoc for another page
 pdms restart lead-tp-create        # same user, DB and port
 pdms restart lead-tp-create -u agent   # switch user (-d for DB, -c to pick interactively)
 pdms stop                          # pick which ones to stop; pdms stop --all
@@ -126,7 +127,7 @@ in the copy under `.venv/lib/python3.*/site-packages/...` or step in with F11 fr
 | `pdms` | Interactive menu |
 | `pdms run` / `pdms debug` / `pdms env` | Run a service / create a VS Code debug configuration / print a profile's variables |
 | `pdms services` | List the services of the backend folder |
-| `pdms ps` / `logs` / `stop` / `restart` | Manage background instances |
+| `pdms ps` / `logs` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
