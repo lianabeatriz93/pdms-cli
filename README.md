@@ -387,33 +387,30 @@ Versions follow [Conventional Commits](https://www.conventionalcommits.org/) wit
 [commitizen](https://commitizen-tools.github.io/commitizen/) (`feat` → minor, `fix` → patch while below 1.0) and
 [PEP 440](https://peps.python.org/pep-0440/).
 
-Version numbers advance slowly: regular releases are **alpha pre-releases of the next patch**, and a new final
-version is only published when something significant ships:
+Version numbers advance slowly: every release is a **stable patch release** (`0.2.1`, `0.2.2`, `0.2.3`, ...), and
+the minor version only goes up when something significant ships:
 
 ```
-0.2.0  →  0.2.1a0, 0.2.1a1, 0.2.1a2, ...  →  (something significant)  →  0.3.0
+0.2.1  →  0.2.2  →  0.2.3  →  ...  →  (something significant)  →  0.3.0
 ```
 
 ```bash
 git checkout main && git pull
-uvx --from commitizen cz bump --prerelease alpha --increment PATCH --dry-run   # preview: 0.2.0 → 0.2.1a0
-uvx --from commitizen cz bump --prerelease alpha --increment PATCH             # next ones: 0.2.1a1, 0.2.1a2, ...
+uvx --from commitizen cz bump --increment PATCH --dry-run   # preview: e.g. 0.2.1 → 0.2.2
+uvx --from commitizen cz bump --increment PATCH
 git push --follow-tags
 ```
 
-`--increment PATCH` keeps commitizen from bumping the minor version for `feat:` commits. Pre-releases have to be of
-the *next* version: `0.2.0a1` would sort before the published `0.2.0`, so nobody would be offered it.
-
-When the accumulated changes are significant, publish the final version:
+`--increment PATCH` keeps commitizen from bumping the minor version for `feat:` commits. For a significant release:
 
 ```bash
-uvx --from commitizen cz bump --increment MINOR   # 0.2.1a2 → 0.3.0
+uvx --from commitizen cz bump --increment MINOR   # e.g. 0.2.7 → 0.3.0
 git push --follow-tags
 ```
 
-`cz bump` updates `pyproject.toml`, `uv.lock` and `CHANGELOG.md`, commits and creates the `vX.Y.Z[aN]` tag.
-Alpha, beta and rc versions are published as GitHub **pre-releases**: they are not "latest", so the installers and
-`pdms self-update` only pick them with `PDMS_PRERELEASE=1` / `--pre`.
+`cz bump` updates `pyproject.toml`, `uv.lock` and `CHANGELOG.md`, commits and creates the `vX.Y.Z` tag.
+(Pre-release versions such as `0.3.0a1` are still supported, published as GitHub pre-releases and installed with
+`PDMS_PRERELEASE=1` / `pdms self-update --pre`, but they are not part of the regular process.)
 
 Pushing the tag runs `.github/workflows/release.yml`: it checks that the tag matches the package version, runs the
 tests, builds the wheel and sdist, and publishes a GitHub release with them, both installers and the changelog
