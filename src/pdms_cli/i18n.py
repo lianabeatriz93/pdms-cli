@@ -309,6 +309,30 @@ ES: dict[str, str] = {
     "Add a user (wizard).": "Añade un usuario (asistente).",
     "Edit a user.": "Edita un usuario.",
     "Delete a user.": "Elimina un usuario.",
+    "Create user profiles from the pdms_user table of a database.":
+        "Crea perfiles de usuario a partir de la tabla pdms_user de una base de datos.",
+    "Database to read the users from.": "Base de datos de la que leer los usuarios.",
+    "Filter by email or name.": "Filtrar por email o nombre.",
+    "Filter by role (e.g. TPR.Supervisor).": "Filtrar por rol (p. ej. TPR.Supervisor).",
+    "Include inactive users.": "Incluir usuarios inactivos.",
+    "Maximum number of users to read.": "Número máximo de usuarios a leer.",
+    "Import every match without asking.": "Importar todas las coincidencias sin preguntar.",
+    "Search by email or name (empty = all):": "Buscar por email o nombre (vacío = todos):",
+    "Reading users from {name}...": "Leyendo usuarios de {name}...",
+    "Could not read the users from {name}: {error}": "No pude leer los usuarios de {name}: {error}",
+    "No users match.": "Ningún usuario coincide.",
+    "[dim]Showing the first {limit}; narrow it down with --search or --role.[/]":
+        "[dim]Mostrando los primeros {limit}; afina con --search o --role.[/]",
+    "already imported": "ya importado",
+    "inactive": "inactivo",
+    "Which users do you want to import? (space to select)": "¿Qué usuarios quieres importar? (espacio para marcar)",
+    "new": "nuevo",
+    "updated": "actualizado",
+    "{added} added, {updated} updated, {unchanged} unchanged.":
+        "{added} añadidos, {updated} actualizados, {unchanged} sin cambios.",
+    "⚠ Unknown roles kept as they are (the services will ignore them): {roles}":
+        "⚠ Roles desconocidos, se dejan tal cual (los servicios los ignorarán): {roles}",
+    "Import from a database": "Importar desde una base de datos",
     # ------------------------------------------------------------------ config commands
     "Edit the defaults (language, port, log, reload, extra env...).":
         "Edita los valores por defecto (idioma, puerto, log, reload, env extra...).",

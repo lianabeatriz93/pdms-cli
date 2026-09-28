@@ -44,6 +44,20 @@ PDMS_LANG=es pdms ps       # one-off override
 
 It is stored as `language` in the `[defaults]` section of the config.
 
+### Importing users from a database
+
+```bash
+pdms user import -d local                 # search, then pick users with the space bar
+pdms user import -d web -s ana -r TPR.Agent
+pdms user import -d local --inactive -y   # every match, inactive ones included, without asking
+```
+
+Reads `public.pdms_user` (read-only) and creates a profile per user: `DEV_USER_ID` = `entity_id`, `DEV_USERNAME` =
+`username`, names, and `DEV_ROLES` converted from the internal names stored in the table
+(`TRANSPORTATION_PR_SUPERVISOR`) to the external ones the services expect (`TPR.Supervisor`), as in
+`MAP_INTERNAL_ROLES`. Aliases come from the email (`ana.agent@alivi.com` → `ana-agent`); users already imported
+(same `DEV_USER_ID`) are updated in place instead of duplicated.
+
 ## Running a service
 
 ```bash
@@ -148,7 +162,7 @@ in the copy under `.venv/lib/python3.*/site-packages/...` or step in with F11 fr
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
-| `pdms user` | Users menu (`list`, `add`, `edit`, `remove`) |
+| `pdms user` | Users menu (`list`, `add`, `edit`, `remove`, `import`) |
 | `pdms config` | Settings (`defaults`, `language`, `export`, `import`, `path`, `edit`) |
 
 `pdms <command> --help` shows every option.
