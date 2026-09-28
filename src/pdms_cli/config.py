@@ -110,11 +110,7 @@ class Config:
     last_db: str = ""
 
     @classmethod
-    def load(cls) -> Config:
-        path = config_path()
-        if not path.exists():
-            return cls(users=dict(SEED_USERS))
-        data = tomlkit.parse(path.read_text()).unwrap()
+    def from_dict(cls, data: dict[str, Any]) -> Config:
         state = data.get("state", {})
         return cls(
             defaults=_from_dict(Defaults, data.get("defaults", {})),
@@ -125,17 +121,30 @@ class Config:
             last_db=state.get("last_db", ""),
         )
 
-    def save(self) -> None:
-        path = config_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        doc = {
+    def to_dict(self) -> dict[str, Any]:
+        return {
             "defaults": asdict(self.defaults),
             "state": {"last_user": self.last_user, "last_db": self.last_db},
             "users": {k: asdict(v) for k, v in self.users.items()},
             "dbs": {k: asdict(v) for k, v in self.dbs.items()},
             "stacks": {k: asdict(v) for k, v in self.stacks.items()},
         }
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as fh:
-            fh.write(tomlkit.dumps(doc))
-        os.chmod(path, 0o600)
+
+    @classmethod
+    def load(cls) -> Config:
+        path = config_path()
+        if not path.exists():
+            return cls(users=dict(SEED_USERS))
+        return cls.from_dict(tomlkit.parse(path.read_text()).unwrap())
+
+    def save(self) -> None:
+        write_private(config_path(), tomlkit.dumps(self.to_dict()))
+
+
+def write_private(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` readable only by the current user (it may contain passwords)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(text)
+    os.chmod(path, 0o600)
