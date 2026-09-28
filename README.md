@@ -68,6 +68,8 @@ pdms run lead-tp-create -b
 pdms run lead-tp-details -b -p 8081
 pdms ps                            # status, URL, user, DB and uptime of each instance
 pdms logs lead-tp-create           # live console (Ctrl+C to exit); --no-follow to print and exit
+pdms logs --all                    # every running instance merged, prefixed and colored per instance
+pdms logs --stack tp               # the instances of a stack; or several: pdms logs lead-tp-list lead-tp-details
 pdms restart lead-tp-create        # same user, DB and port
 pdms restart lead-tp-create -u agent   # switch user (-d for DB, -c to pick interactively)
 pdms stop                          # pick which ones to stop; pdms stop --all

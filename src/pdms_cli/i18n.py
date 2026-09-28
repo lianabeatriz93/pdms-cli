@@ -216,11 +216,19 @@ ES: dict[str, str] = {
         "[dim]Las paradas conservan su log (pdms logs <instancia>). Bórralas con pdms ps --clean.[/]",
     "Instance (or part of the service name).": "Instancia (o parte del nombre del servicio).",
     "Follow the output live.": "Seguir la salida en vivo.",
-    "Previous lines to show.": "Líneas previas a mostrar.",
-    "Show the console of a background service (Ctrl+C to exit).":
-        "Muestra la consola de un servicio en segundo plano (Ctrl+C para salir).",
+    "Show the console of background services (Ctrl+C to exit).":
+        "Muestra la consola de servicios en segundo plano (Ctrl+C para salir).",
+    "Instances (or parts of the service name).": "Instancias (o partes del nombre del servicio).",
+    "All running instances, including ones started later.":
+        "Todas las instancias corriendo, incluidas las que se levanten después.",
+    "All instances of a stack.": "Todas las instancias de un stack.",
+    "Previous lines to show per instance (100, or 20 with several).":
+        "Líneas previas a mostrar por instancia (100, o 20 si son varias).",
+    "All running instances": "Todas las instancias corriendo",
+    "(waiting for instances)": "(esperando instancias)",
+    "{names} · Ctrl+C to exit": "{names} · Ctrl+C para salir",
+    "View all logs together": "Ver todos los logs juntos",
     "Which instance do you want to see the logs of?": "¿De qué instancia quieres ver los logs?",
-    "{key} · {log} · Ctrl+C to exit": "{key} · {log} · Ctrl+C para salir",
     "Stop all.": "Parar todas.",
     "Stop background services.": "Para servicios en segundo plano.",
     "Which instances do you want to stop? (space to select)": "¿Qué instancias quieres parar? (espacio para marcar)",

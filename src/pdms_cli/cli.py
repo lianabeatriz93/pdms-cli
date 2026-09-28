@@ -18,7 +18,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import i18n, instances, prompts, runner, transfer, vscode
+from . import i18n, instances, logview, prompts, runner, transfer, vscode
 from .config import Config, Database, DevUser, Stack, config_path, write_private
 from .i18n import _
 
@@ -534,21 +534,63 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
         console.print(_("[dim]Stopped ones keep their log (pdms logs <instance>). Remove them with pdms ps --clean.[/]"))
 
 
-@app.command(help=_("Show the console of a background service (Ctrl+C to exit)."))
+@app.command(help=_("Show the console of background services (Ctrl+C to exit)."))
 def logs(
-    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name).")),
+    keys: Optional[list[str]] = typer.Argument(None, help=_("Instances (or parts of the service name).")),
+    all_: bool = typer.Option(False, "--all", "-a", help=_("All running instances, including ones started later.")),
+    stack: Optional[str] = typer.Option(None, "--stack", "-s", help=_("All instances of a stack.")),
     follow: bool = typer.Option(True, "--follow/--no-follow", "-F/-N", help=_("Follow the output live.")),
-    lines: int = typer.Option(100, "--lines", "-l", help=_("Previous lines to show.")),
+    lines: Optional[int] = typer.Option(
+        None, "--lines", "-l", help=_("Previous lines to show per instance (100, or 20 with several).")
+    ),
 ) -> None:
-    inst = pick_instance(key, message=_("Which instance do you want to see the logs of?"))
+    discover = None
+    if all_:
+        targets = [i for i in instances.load().values() if i.alive()]
+        if not targets and not follow:
+            fail(_("No background services. Start one with [bold]pdms run -b[/]."))
+        discover = lambda: [i for i in instances.load().values() if i.alive()]  # noqa: E731
+    elif stack:
+        cfg = Config.load()
+        name = pick(cfg.stacks, _("stack"), stack)
+        paths = {str(p) for p in stack_paths(cfg, cfg.stacks[name])}
+        targets = [i for i in instances.load().values() if i.service in paths]
+        if not targets:
+            fail(_("Nothing from stack '{name}' is running.", name=name))
+    elif keys:
+        targets = []
+        for key in keys:
+            inst = pick_instance(key)
+            if inst not in targets:
+                targets.append(inst)
+    else:
+        items = list(instances.load().values())
+        if len(items) > 1:
+            prompts.require_tty()
+            everything = "__all__"
+            choice = questionary.select(
+                _("Which instance do you want to see the logs of?"),
+                choices=[
+                    questionary.Choice(_("All running instances"), everything),
+                    *[questionary.Choice(f"{i.key}  ({_('running') if i.alive() else _('stopped')})", i) for i in items],
+                ],
+            ).unsafe_ask()
+            if choice == everything:
+                return logs(None, True, None, follow, lines)
+            targets = [choice]
+        else:
+            targets = [pick_instance(None)]
+
+    lines = lines if lines is not None else (100 if len(targets) == 1 and not all_ else 20)
     if not follow:
-        console.print(instances.tail(inst.log, lines), markup=False, highlight=False, end="")
+        for inst in targets:
+            if len(targets) > 1:
+                console.rule(inst.key)
+            console.print(instances.tail(inst.log, lines), markup=False, highlight=False, end="")
         return
-    console.rule(_("{key} · {log} · Ctrl+C to exit", key=inst.key, log=inst.log))
-    try:
-        subprocess.run(["tail", "-n", str(lines), "-F", inst.log])
-    except KeyboardInterrupt:
-        console.print()
+    names = ", ".join(i.key for i in targets) or _("(waiting for instances)")
+    console.rule(_("{names} · Ctrl+C to exit", names=names))
+    logview.follow(console, targets, lines, discover)
 
 
 @app.command(help=_("Stop background services."))
@@ -1124,7 +1166,8 @@ def instances_menu() -> None:
     prompts.require_tty()
     _menu(_("Background services:"), {
         _("List"): lambda: ps(False),
-        _("View logs (console)"): lambda: logs(None, True, 100),
+        _("View logs (console)"): lambda: logs(None, False, None, True, None),
+        _("View all logs together"): lambda: logs(None, True, None, True, None),
         _("Stop"): lambda: stop(None, False),
         _("Restart"): lambda: restart(None, None, None, False, None),
         _("Restart with another user/DB"): lambda: restart(None, None, None, True, None),
