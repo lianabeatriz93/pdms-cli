@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from .config import Database, Defaults, DevUser
+from .i18n import _
 
 SKIP_DIRS = {"node_modules", "__pycache__", "tests", "frontend", "infra", "templates"}
 
@@ -78,7 +79,7 @@ def poetry_python(service: Path) -> Path | None:
 
 def ensure_poetry() -> None:
     if not shutil.which("poetry"):
-        raise RuntimeError("No se encontró 'poetry' en el PATH.")
+        raise RuntimeError(_("'poetry' was not found in PATH."))
 
 
 def install(service: Path) -> None:

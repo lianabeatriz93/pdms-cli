@@ -65,6 +65,8 @@ class Database:
 
 @dataclass
 class Defaults:
+    # CLI language: "en" (default) or "es".
+    language: str = "en"
     host: str = "0.0.0.0"
     port: int = 8080
     logging_level: str = "DEBUG"
