@@ -49,8 +49,7 @@ jobs:
           powershell -ExecutionPolicy ByPass -c "irm https://github.com/lianabeatriz93/pdms-cli/releases/latest/download/install.ps1 | iex"
           ```
 
-          Pre-releases (alpha/beta): add `PDMS_PRERELEASE=1` before `sh` (macOS / Linux) or set
-          `$env:PDMS_PRERELEASE = "1"` first (Windows). Already installed: `pdms self-update` (`--pre` for pre-releases).
+          Already installed: `pdms self-update`.
           NOTES
           cat notes.md
       - name: Publish the release
