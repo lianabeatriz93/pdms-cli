@@ -381,20 +381,27 @@ Versions follow [Conventional Commits](https://www.conventionalcommits.org/) wit
 [commitizen](https://commitizen-tools.github.io/commitizen/) (`feat` → minor, `fix` → patch while below 1.0) and
 [PEP 440](https://peps.python.org/pep-0440/).
 
-Regular releases are **alpha pre-releases** of the next version, so the version number only goes up when something
-significant ships:
+Version numbers advance slowly: regular releases are **alpha pre-releases of the next patch**, and a new final
+version is only published when something significant ships:
+
+```
+0.2.0  →  0.2.1a0, 0.2.1a1, 0.2.1a2, ...  →  (something significant)  →  0.3.0
+```
 
 ```bash
 git checkout main && git pull
-uvx --from commitizen cz bump --prerelease alpha --dry-run   # preview: e.g. 0.2.0 → 0.3.0a0
-uvx --from commitizen cz bump --prerelease alpha             # then 0.3.0a1, 0.3.0a2, ... on the next ones
+uvx --from commitizen cz bump --prerelease alpha --increment PATCH --dry-run   # preview: 0.2.0 → 0.2.1a0
+uvx --from commitizen cz bump --prerelease alpha --increment PATCH             # next ones: 0.2.1a1, 0.2.1a2, ...
 git push --follow-tags
 ```
 
-When the accumulated changes are significant, publish the final version (`0.3.0a2` → `0.3.0`):
+`--increment PATCH` keeps commitizen from bumping the minor version for `feat:` commits. Pre-releases have to be of
+the *next* version: `0.2.0a1` would sort before the published `0.2.0`, so nobody would be offered it.
+
+When the accumulated changes are significant, publish the final version:
 
 ```bash
-uvx --from commitizen cz bump
+uvx --from commitizen cz bump --increment MINOR   # 0.2.1a2 → 0.3.0
 git push --follow-tags
 ```
 
