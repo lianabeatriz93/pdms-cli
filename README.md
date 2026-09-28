@@ -56,6 +56,11 @@ Running services also needs [Poetry](https://python-poetry.org/docs/#installatio
 `PDMS_CONFIG` and `XDG_STATE_HOME` override those locations. Background services are detached from the terminal and
 stopped together with their child processes (the uvicorn reloader and its workers) on every system.
 
+`pdms doctor` checks all of this at once: pdms and its Python, Poetry and a Python 3.10/3.11 for the services, the
+configuration file and its permissions, every database connection (`--no-db` to skip them), the current repo and
+what the proxy needs, the ports, background instances and tab completion. Each problem comes with a hint on how to
+fix it; the exit code is 1 when something is broken.
+
 First steps:
 
 ```bash
@@ -289,6 +294,7 @@ running Alembic against a shared DB can break the pipeline for the whole team. I
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
 | `pdms user` | Users menu (`list`, `add`, `edit`, `remove`, `import`) |
 | `pdms config` | Settings (`defaults`, `language`, `export`, `import`, `path`, `edit`) |
+| `pdms doctor` | Check the environment and the configuration |
 
 `pdms <command> --help` shows every option.
 

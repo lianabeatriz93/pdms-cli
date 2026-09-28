@@ -26,6 +26,7 @@ from . import (
     __version__, completion, i18n, installer, instances, logview, prompts, proxy, repos, routes, runner, transfer,
     update, userimport, vscode,
 )
+from . import doctor as diagnostics
 from .config import Config, Database, DevUser, Stack, config_path, write_private
 from .i18n import _
 
@@ -1812,6 +1813,7 @@ def settings_menu() -> None:
     _menu(_("Settings:"), {
         _("Defaults"): config_defaults,
         _("Repos"): repo_menu,
+        _("Check the environment (doctor)"): lambda: doctor_cmd(False, 5),
         _("Language"): lambda: config_language(None),
         _("Export configuration"): lambda: config_export(None, None, None, False),
         _("Import configuration"): lambda: config_import(None, None, False, False, False),
@@ -1858,6 +1860,34 @@ def main_menu() -> None:
 
 # Commands that do not depend on a repo, so they never trigger the "switch repo?" question.
 REPO_AGNOSTIC = {"repo", "config", "env", "db", "user", "self-update"}
+
+
+DOCTOR_ICONS = {diagnostics.OK: "[green]✓[/]", diagnostics.WARN: "[yellow]⚠[/]", diagnostics.FAIL: "[red]✗[/]"}
+
+
+@app.command("doctor", help=_("Check that everything pdms needs is in place (tools, configuration, databases, repo, ports)."))
+def doctor_cmd(
+    no_db: bool = typer.Option(False, "--no-db", help=_("Do not test the database connections.")),
+    timeout: int = typer.Option(5, "--timeout", "-t", help=_("Seconds to wait for each database.")),
+) -> None:
+    cfg = Config.load()
+    with console.status(_("Checking the environment...")):
+        checks = diagnostics.run_all(cfg, databases=not no_db, timeout=timeout)
+    section = None
+    for check in checks:
+        if check.section != section:
+            section = check.section
+            console.print(f"\n[bold]{section}[/]")
+        line = f"  {DOCTOR_ICONS[check.status]} {check.name}: {check.detail}"
+        if check.hint and check.status != diagnostics.OK:
+            line += f"  [dim]→ {check.hint}[/]"
+        console.print(line, highlight=False)
+    counts = {status: sum(c.status == status for c in checks) for status in DOCTOR_ICONS}
+    console.print()
+    console.print(_("{ok} ok · {warn} warnings · {fail} problems", ok=counts[diagnostics.OK],
+                    warn=counts[diagnostics.WARN], fail=counts[diagnostics.FAIL]))
+    if counts[diagnostics.FAIL]:
+        raise typer.Exit(1)
 
 
 @app.command("self-update", help=_("Update pdms to the latest release (or to --version)."))
