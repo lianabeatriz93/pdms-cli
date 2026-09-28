@@ -35,6 +35,16 @@ def log_path(key: str) -> Path:
     return state_dir() / "logs" / f"{key}.log"
 
 
+def previous_log_path(log: str | Path) -> Path:
+    return Path(f"{log}.1")
+
+
+def rotate_log(log: Path) -> None:
+    """Keep the previous run's log as ``<log>.1`` (one generation) so a crash is not lost on restart."""
+    if log.exists() and log.stat().st_size > 0:
+        os.replace(log, previous_log_path(log))
+
+
 @dataclass
 class Instance:
     key: str
@@ -94,6 +104,7 @@ def start(
     key = make_key(service, port)
     log = log_path(key)
     log.parent.mkdir(parents=True, exist_ok=True)
+    rotate_log(log)
     with open(log, "w") as fh:
         fh.write(f"# pdms {datetime.now():%Y-%m-%d %H:%M:%S} · {' '.join(cmd)}\n")
         fh.flush()

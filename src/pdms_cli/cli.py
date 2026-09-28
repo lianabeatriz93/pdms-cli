@@ -548,7 +548,18 @@ def logs(
     lines: Optional[int] = typer.Option(
         None, "--lines", "-l", help=_("Previous lines to show per instance (100, or 20 with several).")
     ),
+    previous: bool = typer.Option(
+        False, "--previous", "-p", help=_("Show the log of the previous run (kept when restarting).")
+    ),
 ) -> None:
+    if previous:
+        inst = pick_instance(keys[0] if keys else None, message=_("Which instance do you want to see the logs of?"))
+        old = instances.previous_log_path(inst.log)
+        if not old.exists():
+            fail(_("{key} has no previous log.", key=inst.key))
+        console.rule(_("{key} · previous run", key=inst.key))
+        console.print(instances.tail(str(old), lines or 100), markup=False, highlight=False, end="")
+        return
     discover = None
     if all_:
         targets = [i for i in instances.load().values() if i.alive()]
@@ -581,7 +592,7 @@ def logs(
                 ],
             ).unsafe_ask()
             if choice == everything:
-                return logs(None, True, None, follow, lines)
+                return logs(None, True, None, follow, lines, False)
             targets = [choice]
         else:
             targets = [pick_instance(None)]
@@ -1183,8 +1194,9 @@ def instances_menu() -> None:
     prompts.require_tty()
     _menu(_("Background services:"), {
         _("List"): lambda: ps(False),
-        _("View logs (console)"): lambda: logs(None, False, None, True, None),
-        _("View all logs together"): lambda: logs(None, True, None, True, None),
+        _("View logs (console)"): lambda: logs(None, False, None, True, None, False),
+        _("View all logs together"): lambda: logs(None, True, None, True, None, False),
+        _("View the previous run's log"): lambda: logs(None, False, None, False, None, True),
         _("Open in the browser (/docs)"): lambda: open_cmd(None, "/docs"),
         _("Stop"): lambda: stop(None, False),
         _("Restart"): lambda: restart(None, None, None, False, None),

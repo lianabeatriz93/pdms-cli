@@ -33,3 +33,17 @@ def test_missing_file_is_not_an_error(tmp_path):
     follower = LogFollower(str(tmp_path / "nope.log"))
     assert follower.skip_to_tail(5) == []
     assert follower.read_new() == []
+
+
+def test_restart_keeps_the_previous_log(tmp_path):
+    from pdms_cli import instances
+
+    log = tmp_path / "svc@8080.log"
+    log.write_text("Traceback: the crash we want to keep\n")
+    instances.rotate_log(log)
+    assert not log.exists()
+    assert instances.previous_log_path(log).read_text().startswith("Traceback")
+
+    log.write_text("")  # an empty log does not overwrite the kept one
+    instances.rotate_log(log)
+    assert instances.previous_log_path(log).read_text().startswith("Traceback")

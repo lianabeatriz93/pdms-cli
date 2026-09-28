@@ -228,6 +228,11 @@ ES: dict[str, str] = {
     "(waiting for instances)": "(esperando instancias)",
     "{names} · Ctrl+C to exit": "{names} · Ctrl+C para salir",
     "View all logs together": "Ver todos los logs juntos",
+    "Show the log of the previous run (kept when restarting).":
+        "Muestra el log de la ejecución anterior (se conserva al reiniciar).",
+    "{key} has no previous log.": "{key} no tiene log anterior.",
+    "{key} · previous run": "{key} · ejecución anterior",
+    "View the previous run's log": "Ver el log de la ejecución anterior",
     "Open a background service in the browser (Swagger /docs by default).":
         "Abre un servicio en segundo plano en el navegador (Swagger /docs por defecto).",
     "Path to open, e.g. /redoc or /.": "Ruta a abrir, p. ej. /redoc o /.",

@@ -79,6 +79,7 @@ pdms ps                            # status, URL, user, DB and uptime of each in
 pdms logs lead-tp-create           # live console (Ctrl+C to exit); --no-follow to print and exit
 pdms logs --all                    # every running instance merged, prefixed and colored per instance
 pdms logs --stack tp               # the instances of a stack; or several: pdms logs lead-tp-list lead-tp-details
+pdms logs lead-tp-create -p        # log of the previous run (kept as <log>.1 on every restart)
 pdms open lead-tp-create           # Swagger (/docs) in the browser; --path /redoc for another page
 pdms restart lead-tp-create        # same user, DB and port
 pdms restart lead-tp-create -u agent   # switch user (-d for DB, -c to pick interactively)
