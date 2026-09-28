@@ -228,6 +228,14 @@ ES: dict[str, str] = {
     "(waiting for instances)": "(esperando instancias)",
     "{names} · Ctrl+C to exit": "{names} · Ctrl+C para salir",
     "View all logs together": "Ver todos los logs juntos",
+    "Open a background service in the browser (Swagger /docs by default).":
+        "Abre un servicio en segundo plano en el navegador (Swagger /docs por defecto).",
+    "Path to open, e.g. /redoc or /.": "Ruta a abrir, p. ej. /redoc o /.",
+    "Which instance do you want to open?": "¿Qué instancia quieres abrir?",
+    "Opening {url}": "Abriendo {url}",
+    "[yellow]Could not open a browser; open the URL manually.[/]":
+        "[yellow]No pude abrir un navegador; abre la URL a mano.[/]",
+    "Open in the browser (/docs)": "Abrir en el navegador (/docs)",
     "Which instance do you want to see the logs of?": "¿De qué instancia quieres ver los logs?",
     "Stop all.": "Parar todas.",
     "Stop background services.": "Para servicios en segundo plano.",

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
+import webbrowser
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -593,6 +594,18 @@ def logs(
     logview.follow(console, targets, lines, discover)
 
 
+@app.command("open", help=_("Open a background service in the browser (Swagger /docs by default)."))
+def open_cmd(
+    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name).")),
+    path: str = typer.Option("/docs", "--path", "-P", help=_("Path to open, e.g. /redoc or /.")),
+) -> None:
+    inst = pick_instance(key, only_alive=True, message=_("Which instance do you want to open?"))
+    url = f"http://localhost:{inst.port}/{path.lstrip('/')}"
+    console.print(_("Opening {url}", url=url))
+    if not webbrowser.open(url):
+        console.print(_("[yellow]Could not open a browser; open the URL manually.[/]"))
+
+
 @app.command(help=_("Stop background services."))
 def stop(
     key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name).")),
@@ -1168,6 +1181,7 @@ def instances_menu() -> None:
         _("List"): lambda: ps(False),
         _("View logs (console)"): lambda: logs(None, False, None, True, None),
         _("View all logs together"): lambda: logs(None, True, None, True, None),
+        _("Open in the browser (/docs)"): lambda: open_cmd(None, "/docs"),
         _("Stop"): lambda: stop(None, False),
         _("Restart"): lambda: restart(None, None, None, False, None),
         _("Restart with another user/DB"): lambda: restart(None, None, None, True, None),
