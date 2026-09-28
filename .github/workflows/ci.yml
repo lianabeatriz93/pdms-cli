@@ -74,7 +74,14 @@ jobs:
         shell: powershell
         run: |
           $env:PDMS_WHEEL = (Get-ChildItem dist\*.whl).FullName
-          powershell -ExecutionPolicy ByPass -File installer\install.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ErrorActionPreference = "Continue"
+          powershell -ExecutionPolicy ByPass -File installer\install.ps1 *> installer.log
+          $code = $LASTEXITCODE
+          Get-Content installer.log
+          if ($code -ne 0) {
+            $tail = (Get-Content installer.log -Tail 40) -join "%0A"
+            Write-Output "::error title=install.ps1 failed (exit code $code)::$tail"
+            exit $code
+          }
           & (Join-Path (uv tool dir --bin).Trim() "pdms.exe") --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

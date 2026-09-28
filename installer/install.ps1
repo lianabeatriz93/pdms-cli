@@ -9,6 +9,14 @@
 $ErrorActionPreference = "Stop"
 $Repo = "lianabeatriz93/pdms-cli"
 
+# Windows PowerShell 5.1 turns anything a native program writes to stderr (uv prints its progress there) into an
+# error record, which "Stop" makes fatal. Run native commands with "Continue" and judge them by their exit code.
+function Invoke-Native([scriptblock]$Command) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Command } finally { $ErrorActionPreference = $previous }
+}
+
 function Find-Uv {
     $command = Get-Command uv -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
@@ -21,7 +29,7 @@ function Find-Uv {
 $uv = Find-Uv
 if (-not $uv) {
     Write-Host "Installing uv (https://docs.astral.sh/uv/)..."
-    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    Invoke-Native { powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex" }
     $uv = Find-Uv
     if (-not $uv) { throw "uv was installed but cannot be found; open a new terminal and run the installer again" }
 }
@@ -39,12 +47,12 @@ if ($env:PDMS_WHEEL) {
 }
 
 Write-Host "Installing pdms from $source"
-& $uv tool install --force $source
+Invoke-Native { & $uv tool install --force $source }
 if ($LASTEXITCODE -ne 0) { throw "uv tool install failed (exit code $LASTEXITCODE)" }
-& $uv tool update-shell 2>$null | Out-Null
+Invoke-Native { & $uv tool update-shell | Out-Null }
 
-$binDir = (& $uv tool dir --bin).Trim()
-& (Join-Path $binDir "pdms.exe") --version
+$binDir = (Invoke-Native { & $uv tool dir --bin } | Select-Object -Last 1).ToString().Trim()
+Invoke-Native { & (Join-Path $binDir "pdms.exe") --version }
 if ($LASTEXITCODE -ne 0) { throw "pdms was installed but does not start" }
 
 if (-not (Get-Command pdms -ErrorAction SilentlyContinue)) {
