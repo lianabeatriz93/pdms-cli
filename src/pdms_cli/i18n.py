@@ -291,6 +291,77 @@ ES: dict[str, str] = {
     "Change the CLI language.": "Cambia el idioma del CLI.",
     "Unknown language '{lang}'. Available: {codes}": "Idioma desconocido '{lang}'. Disponibles: {codes}",
     "Language set to {name}.": "Idioma cambiado a {name}.",
+    # ------------------------------------------------------------------ export / import
+    "defaults": "valores por defecto",
+    "users": "usuarios",
+    "databases": "bases de datos",
+    "stacks": "stacks",
+    "Unknown sections: {unknown}. Available: {codes}": "Secciones desconocidas: {unknown}. Disponibles: {codes}",
+    "Comma-separated sections: defaults, users, dbs, stacks. Default: all.":
+        "Secciones separadas por coma: defaults, users, dbs, stacks. Por defecto: todas.",
+    "Export the configuration (users, databases, stacks, defaults) to a TOML file.":
+        "Exporta la configuración (usuarios, bases de datos, stacks, valores por defecto) a un fichero TOML.",
+    "Output file ('-' = stdout). Default: pdms-config-<date>.toml.":
+        "Fichero de salida ('-' = stdout). Por defecto: pdms-config-<fecha>.toml.",
+    "Include database passwords (asked if omitted; no by default).":
+        "Incluir las contraseñas de las DBs (se pregunta si se omite; no por defecto).",
+    "Overwrite the file if it exists.": "Sobrescribir el fichero si existe.",
+    "What do you want to export?": "¿Qué quieres exportar?",
+    "Nothing selected.": "No has elegido nada.",
+    "Include database passwords? (only if the file stays private)":
+        "¿Incluir las contraseñas de las DBs? (solo si el fichero va a quedar privado)",
+    "{file} already exists. Overwrite it?": "{file} ya existe. ¿Sobrescribirlo?",
+    "{file} already exists (use --force).": "{file} ya existe (usa --force).",
+    "Exported {parts} to {file}.": "Exportado: {parts} en {file}.",
+    "  [yellow]The file includes database passwords: do not share it or commit it.[/]":
+        "  [yellow]El fichero incluye las contraseñas de las DBs: no lo compartas ni lo subas a un repo.[/]",
+    "  [dim]Database passwords were left out.[/]": "  [dim]Las contraseñas de las DBs no se han incluido.[/]",
+    "Import a configuration exported with pdms config export.":
+        "Importa una configuración exportada con pdms config export.",
+    "File to import.": "Fichero a importar.",
+    "Replace the selected sections entirely instead of merging.":
+        "Reemplazar por completo las secciones elegidas en lugar de combinarlas.",
+    "Overwrite existing entries without asking.": "Sobrescribir las entradas existentes sin preguntar.",
+    "Apply without asking for confirmation.": "Aplicar sin pedir confirmación.",
+    "File to import:": "Fichero a importar:",
+    "File not found": "No existe el fichero",
+    "File not found: {file}": "No existe el fichero: {file}",
+    "What do you want to import?": "¿Qué quieres importar?",
+    "Nothing to import.": "No hay nada que importar.",
+    "File exported on {date} (pdms {version}).": "Fichero exportado el {date} (pdms {version}).",
+    "Section": "Sección",
+    "New": "Nuevas",
+    "Changed": "Distintas",
+    "Unchanged": "Iguales",
+    "Only local": "Solo en local",
+    "Removed": "Se borran",
+    "[dim]The file has no passwords: databases you already have keep their password.[/]":
+        "[dim]El fichero no trae contraseñas: las DBs que ya tienes conservan la suya.[/]",
+    "⚠ --replace will delete {count} local entries not in the file.":
+        "⚠ --replace borrará {count} entradas locales que no están en el fichero.",
+    "These entries differ from yours. Which ones do you want to overwrite? (unchecked = keep yours)":
+        "Estas entradas son distintas a las tuyas. ¿Cuáles quieres sobrescribir? (sin marcar = conservar la tuya)",
+    "[dim]Existing entries are kept (use --overwrite to replace them).[/]":
+        "[dim]Se conservan las entradas existentes (usa --overwrite para reemplazarlas).[/]",
+    "Nothing changes.": "No cambia nada.",
+    "Use --yes to import without an interactive terminal.": "Usa --yes para importar sin terminal interactiva.",
+    "Apply the import?": "¿Aplicar la importación?",
+    "Configuration imported.": "Configuración importada.",
+    "  [dim]Previous configuration saved to {backup}[/]": "  [dim]Configuración anterior guardada en {backup}[/]",
+    "⚠ Databases without password: {names}. Set it with pdms db edit <name>.":
+        "⚠ Bases de datos sin contraseña: {names}. Configúrala con pdms db edit <nombre>.",
+    "The file is not valid TOML: {error}": "El fichero no es un TOML válido: {error}",
+    "This is not a pdms export (the \\[pdms] header is missing).":
+        "No es una exportación de pdms (falta la cabecera \\[pdms]).",
+    "The file was exported by a newer pdms version; update pdms first.":
+        "El fichero se exportó con una versión más nueva de pdms; actualiza pdms primero.",
+    "The file has an invalid structure: {error}": "El fichero tiene una estructura no válida: {error}",
+    "Settings:": "Configuración:",
+    "Defaults": "Valores por defecto",
+    "Language": "Idioma",
+    "Export configuration": "Exportar configuración",
+    "Import configuration": "Importar configuración",
+    "Show configuration file path": "Ver la ruta del fichero de configuración",
     # ------------------------------------------------------------------ menus
     "← Back": "← Volver",
     "Databases:": "Bases de datos:",

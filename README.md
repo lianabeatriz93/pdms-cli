@@ -129,7 +129,7 @@ in the copy under `.venv/lib/python3.*/site-packages/...` or step in with F11 fr
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
 | `pdms user` | Users menu (`list`, `add`, `edit`, `remove`) |
-| `pdms config` | Settings (`defaults`, `language`, `path`, `edit`) |
+| `pdms config` | Settings (`defaults`, `language`, `export`, `import`, `path`, `edit`) |
 
 `pdms <command> --help` shows every option.
 
@@ -173,6 +173,31 @@ services = ["lead/lead-tp-list", "lead/lead-tp-details"]
 user = ""                                 # empty = ask when starting
 db = ""
 ```
+
+### Export and import
+
+Share the setup with the team or back it up:
+
+```bash
+pdms config export                         # asks which sections and whether to include passwords
+pdms config export team.toml --no-secrets  # users, databases, stacks and defaults, without passwords
+pdms config export backup.toml --secrets   # full backup, passwords included
+pdms config export - --only users,stacks   # to stdout, only some sections
+pdms config import team.toml               # shows new / changed / unchanged entries and asks what to overwrite
+pdms config import team.toml --only dbs --overwrite -y
+pdms config import backup.toml --replace   # the selected sections become exactly the file's content
+```
+
+- Sections: `defaults`, `users`, `dbs`, `stacks`. The runtime state (last user/DB) is never exported.
+- Passwords are left out unless you choose to include them. Importing a database without password keeps the password
+  you already have for that alias; new ones without password are listed so you can set them with `pdms db edit`.
+- By default the import merges: new entries are added and, for entries that differ, you pick which ones to overwrite
+  (without a terminal they are kept unless `--overwrite`). On a first setup, with no configuration yet, everything
+  is imported.
+- Before writing, the current configuration is copied to `config.toml.bak-<timestamp>`.
+- Export files are written with permissions `0600`. Do not commit a file exported with `--secrets`.
+
+The same options are available in the interactive menu under **Settings**.
 
 ## Development
 
