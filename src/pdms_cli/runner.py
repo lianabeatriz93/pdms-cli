@@ -1,0 +1,108 @@
+"""Locating services, installing dependencies and launching uvicorn."""
+
+from __future__ import annotations
+
+import os
+import shutil
+import socket
+import subprocess
+from pathlib import Path
+
+from .config import Database, Defaults, DevUser
+
+SKIP_DIRS = {"node_modules", "__pycache__", "tests", "frontend", "infra", "templates"}
+
+
+def is_service(path: Path) -> bool:
+    return (path / "pyproject.toml").is_file() and (path / "main.py").is_file()
+
+
+def find_service_upwards(start: Path) -> Path | None:
+    for path in (start, *start.parents):
+        if is_service(path):
+            return path
+    return None
+
+
+def find_services_below(root: Path, max_depth: int = 4) -> list[Path]:
+    found: list[Path] = []
+    for dirpath, dirnames, _ in os.walk(root):
+        path = Path(dirpath)
+        depth = len(path.relative_to(root).parts)
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS]
+        if depth >= max_depth:
+            dirnames.clear()
+        if is_service(path):
+            found.append(path)
+            dirnames.clear()
+    return sorted(found)
+
+
+def port_is_free(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def next_free_port(host: str, port: int, exclude: set[int] = frozenset()) -> int:
+    while port in exclude or not port_is_free(host, port):
+        port += 1
+    return port
+
+
+def service_env(defaults: Defaults, user: DevUser, db: Database) -> dict[str, str]:
+    """Only the variables pdms sets for a service (no inherited environment)."""
+    return {
+        "DEVELOPMENT_MODE": "True",
+        "LOGGING_LEVEL": defaults.logging_level,
+        **user.env(),
+        "DB_PG_CONNECTION_STR": db.url(),
+        **defaults.env,
+    }
+
+
+def build_env(defaults: Defaults, user: DevUser, db: Database) -> dict[str, str]:
+    return {**os.environ, **service_env(defaults, user, db)}
+
+
+def poetry_python(service: Path) -> Path | None:
+    """Interpreter of the service's poetry virtualenv, or None if it has not been created yet."""
+    result = subprocess.run(["poetry", "env", "info", "-e"], cwd=service, capture_output=True, text=True)
+    python = Path(result.stdout.strip()) if result.returncode == 0 else None
+    return python if python and python.exists() else None
+
+
+def ensure_poetry() -> None:
+    if not shutil.which("poetry"):
+        raise RuntimeError("No se encontró 'poetry' en el PATH.")
+
+
+def install(service: Path) -> None:
+    for cmd in (["poetry", "lock"], ["poetry", "install"]):
+        subprocess.run(cmd, cwd=service, check=True)
+
+
+def uvicorn_command(host: str, port: int, reload: bool) -> list[str]:
+    cmd = ["poetry", "run", "uvicorn", "main:app"]
+    if reload:
+        cmd.append("--reload")
+    return [*cmd, "--host", host, "--port", str(port)]
+
+
+def exec_server(service: Path, cmd: list[str], env: dict[str, str]) -> None:
+    """Replace the current process so Ctrl+C and --reload behave exactly like running uvicorn by hand."""
+    os.chdir(service)
+    os.execvpe(cmd[0], cmd, env)
+
+
+def test_connection(db: Database, timeout: int) -> str:
+    import psycopg
+
+    with psycopg.connect(
+        host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password, connect_timeout=timeout
+    ) as conn:
+        return conn.execute("select version()").fetchone()[0]
