@@ -1,7 +1,5 @@
 ## v0.2.1 (2026-09-28)
 
-## v0.2.1a0 (2026-09-28)
-
 ### Feat
 
 - **doctor**: check the environment and the configuration
