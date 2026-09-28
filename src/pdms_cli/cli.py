@@ -19,7 +19,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import i18n, instances, logview, prompts, runner, transfer, vscode
+from . import completion, i18n, instances, logview, prompts, runner, transfer, vscode
 from .config import Config, Database, DevUser, Stack, config_path, write_private
 from .i18n import _
 
@@ -392,9 +392,11 @@ def wait_until_ready(inst: instances.Instance, timeout: float = 90) -> None:
 
 @app.command(help=_("Install dependencies and run the service with uvicorn."))
 def run(
-    service: Optional[str] = typer.Argument(None, help=_("Service (name or path relative to the backend folder).")),
-    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Development user alias.")),
-    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias.")),
+    service: Optional[str] = typer.Argument(
+        None, help=_("Service (name or path relative to the backend folder)."), autocompletion=completion.services
+    ),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Development user alias."), autocompletion=completion.users),
+    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias."), autocompletion=completion.dbs),
     port: Optional[int] = typer.Option(None, "--port", "-p"),
     host: Optional[str] = typer.Option(None, "--host"),
     install: Optional[bool] = typer.Option(None, "--install/--no-install", "-i/-n", help="poetry lock && poetry install."),
@@ -411,9 +413,11 @@ def run(
 
 @app.command(help=_("Create/update the VS Code configuration (launch.json) to debug the service with breakpoints."))
 def debug(
-    service: Optional[str] = typer.Argument(None, help=_("Service (name or path relative to the backend folder).")),
-    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Development user alias.")),
-    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias.")),
+    service: Optional[str] = typer.Argument(
+        None, help=_("Service (name or path relative to the backend folder)."), autocompletion=completion.services
+    ),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Development user alias."), autocompletion=completion.users),
+    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias."), autocompletion=completion.dbs),
     port: Optional[int] = typer.Option(None, "--port", "-p"),
     host: Optional[str] = typer.Option(None, "--host"),
     install: Optional[bool] = typer.Option(None, "--install/--no-install", "-i/-n", help="poetry lock && poetry install."),
@@ -459,8 +463,8 @@ def debug(
 
 @app.command(help=_("Print the variables of a profile. Usage: eval \"$(pdms env -u supervisor -d local)\"."))
 def env(
-    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Development user alias.")),
-    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias.")),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Development user alias."), autocompletion=completion.users),
+    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias."), autocompletion=completion.dbs),
     dotenv: bool = typer.Option(False, "--dotenv", help=_(".env format (KEY=\"value\") instead of export.")),
 ) -> None:
     cfg = Config.load()
@@ -537,9 +541,9 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
 
 @app.command(help=_("Show the console of background services (Ctrl+C to exit)."))
 def logs(
-    keys: Optional[list[str]] = typer.Argument(None, help=_("Instances (or parts of the service name).")),
+    keys: Optional[list[str]] = typer.Argument(None, help=_("Instances (or parts of the service name)."), autocompletion=completion.instance_keys),
     all_: bool = typer.Option(False, "--all", "-a", help=_("All running instances, including ones started later.")),
-    stack: Optional[str] = typer.Option(None, "--stack", "-s", help=_("All instances of a stack.")),
+    stack: Optional[str] = typer.Option(None, "--stack", "-s", help=_("All instances of a stack."), autocompletion=completion.stacks),
     follow: bool = typer.Option(True, "--follow/--no-follow", "-F/-N", help=_("Follow the output live.")),
     lines: Optional[int] = typer.Option(
         None, "--lines", "-l", help=_("Previous lines to show per instance (100, or 20 with several).")
@@ -596,7 +600,7 @@ def logs(
 
 @app.command("open", help=_("Open a background service in the browser (Swagger /docs by default)."))
 def open_cmd(
-    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name).")),
+    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name)."), autocompletion=completion.instance_keys),
     path: str = typer.Option("/docs", "--path", "-P", help=_("Path to open, e.g. /redoc or /.")),
 ) -> None:
     inst = pick_instance(key, only_alive=True, message=_("Which instance do you want to open?"))
@@ -608,7 +612,7 @@ def open_cmd(
 
 @app.command(help=_("Stop background services."))
 def stop(
-    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name).")),
+    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name)."), autocompletion=completion.instance_keys),
     all_: bool = typer.Option(False, "--all", "-a", help=_("Stop all.")),
 ) -> None:
     running = [i for i in instances.load().values() if i.alive()]
@@ -634,9 +638,9 @@ def stop(
 
 @app.command(help=_("Restart a background service (same port; same user and DB by default)."))
 def restart(
-    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name).")),
-    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Switch to this user.")),
-    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Switch to this database.")),
+    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name)."), autocompletion=completion.instance_keys),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Switch to this user."), autocompletion=completion.users),
+    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Switch to this database."), autocompletion=completion.dbs),
     change: bool = typer.Option(False, "--change", "-c", help=_("Ask which user and DB to use.")),
     install: Optional[bool] = typer.Option(None, "--install/--no-install", "-i/-n", help="poetry lock && poetry install."),
 ) -> None:
@@ -727,7 +731,7 @@ def stack_add() -> None:
 
 
 @stack_app.command("edit", help=_("Edit a stack."))
-def stack_edit(name: Optional[str] = typer.Argument(None)) -> None:
+def stack_edit(name: Optional[str] = typer.Argument(None, autocompletion=completion.stacks)) -> None:
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
     cfg.stacks[name] = ask_stack(cfg, cfg.stacks[name])
@@ -736,7 +740,7 @@ def stack_edit(name: Optional[str] = typer.Argument(None)) -> None:
 
 
 @stack_app.command("remove", help=_("Delete a stack."))
-def stack_remove(name: Optional[str] = typer.Argument(None)) -> None:
+def stack_remove(name: Optional[str] = typer.Argument(None, autocompletion=completion.stacks)) -> None:
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
     if questionary.confirm(_("Delete stack '{name}'?", name=name), default=False).unsafe_ask():
@@ -759,9 +763,9 @@ def stack_paths(cfg: Config, stack: Stack) -> list[Path]:
 
 @app.command(help=_("Start all services of a stack in the background, each on a free port."))
 def up(
-    name: Optional[str] = typer.Argument(None, help=_("Stack to start.")),
-    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("User (defaults to the stack's).")),
-    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database (defaults to the stack's).")),
+    name: Optional[str] = typer.Argument(None, help=_("Stack to start."), autocompletion=completion.stacks),
+    user: Optional[str] = typer.Option(None, "--user", "-u", help=_("User (defaults to the stack's)."), autocompletion=completion.users),
+    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database (defaults to the stack's)."), autocompletion=completion.dbs),
     install: Optional[bool] = typer.Option(None, "--install/--no-install", "-i/-n", help="poetry lock && poetry install."),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
 ) -> None:
@@ -820,7 +824,7 @@ def up(
 
 
 @app.command(help=_("Stop all services of a stack."))
-def down(name: Optional[str] = typer.Argument(None, help=_("Stack to stop."))) -> None:
+def down(name: Optional[str] = typer.Argument(None, help=_("Stack to stop."), autocompletion=completion.stacks)) -> None:
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
     paths = {str(p) for p in stack_paths(cfg, cfg.stacks[name])}
@@ -853,7 +857,7 @@ def db_add() -> None:
 
 
 @db_app.command("edit", help=_("Edit a database."))
-def db_edit(name: Optional[str] = typer.Argument(None)) -> None:
+def db_edit(name: Optional[str] = typer.Argument(None, autocompletion=completion.dbs)) -> None:
     cfg = Config.load()
     prompts.require_tty()
     name = pick(cfg.dbs, _("database"), name)
@@ -863,7 +867,7 @@ def db_edit(name: Optional[str] = typer.Argument(None)) -> None:
 
 
 @db_app.command("remove", help=_("Delete a database."))
-def db_remove(name: Optional[str] = typer.Argument(None)) -> None:
+def db_remove(name: Optional[str] = typer.Argument(None, autocompletion=completion.dbs)) -> None:
     cfg = Config.load()
     name = pick(cfg.dbs, _("database"), name)
     if questionary.confirm(_("Delete '{name}'?", name=name), default=False).unsafe_ask():
@@ -874,7 +878,7 @@ def db_remove(name: Optional[str] = typer.Argument(None)) -> None:
 
 @db_app.command("test", help=_("Test the connection to one or all databases."))
 def db_test(
-    name: Optional[str] = typer.Argument(None, help=_("Empty = test all.")),
+    name: Optional[str] = typer.Argument(None, help=_("Empty = test all."), autocompletion=completion.dbs),
     timeout: Optional[int] = typer.Option(
         None, "--timeout", "-t", help=_("Seconds to wait (defaults to the one in pdms config).")
     ),
@@ -907,7 +911,7 @@ def user_add() -> None:
 
 
 @user_app.command("edit", help=_("Edit a user."))
-def user_edit(name: Optional[str] = typer.Argument(None)) -> None:
+def user_edit(name: Optional[str] = typer.Argument(None, autocompletion=completion.users)) -> None:
     cfg = Config.load()
     prompts.require_tty()
     name = pick(cfg.users, _("user"), name)
@@ -917,7 +921,7 @@ def user_edit(name: Optional[str] = typer.Argument(None)) -> None:
 
 
 @user_app.command("remove", help=_("Delete a user."))
-def user_remove(name: Optional[str] = typer.Argument(None)) -> None:
+def user_remove(name: Optional[str] = typer.Argument(None, autocompletion=completion.users)) -> None:
     cfg = Config.load()
     name = pick(cfg.users, _("user"), name)
     if questionary.confirm(_("Delete '{name}'?", name=name), default=False).unsafe_ask():
@@ -948,7 +952,7 @@ def config_defaults() -> None:
 @config_app.command("language", help=_("Change the CLI language."))
 def config_language(
     lang: Optional[str] = typer.Argument(
-        None, help=_("Language code: {codes}. Empty = ask.", codes=", ".join(i18n.LANGUAGES))
+        None, help=_("Language code: {codes}. Empty = ask.", codes=", ".join(i18n.LANGUAGES)), autocompletion=completion.languages
     ),
 ) -> None:
     cfg = Config.load()
