@@ -125,6 +125,9 @@ def ask_defaults(current: Defaults) -> Defaults:
     smart_install = install and questionary.confirm(
         _("Skip the install when nothing changed since the last one (smart install)?"), default=current.smart_install
     ).unsafe_ask()
+    update_check = questionary.confirm(
+        _("Tell me when a new pdms version is available?"), default=current.update_check
+    ).unsafe_ask()
     db_timeout = questionary.text(
         _("Connection test timeout (seconds):"), default=str(current.db_timeout), validate=_is_int
     ).unsafe_ask()
@@ -141,6 +144,6 @@ def ask_defaults(current: Defaults) -> Defaults:
             env.pop(key, None)
     return Defaults(
         language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
-        smart_install=smart_install if install else current.smart_install,
+        smart_install=smart_install if install else current.smart_install, update_check=update_check,
         db_timeout=int(db_timeout), env=env,
     )

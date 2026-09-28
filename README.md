@@ -37,6 +37,12 @@ uv tool install https://github.com/lianabeatriz93/pdms-cli/releases/download/v0.
 | Pre-releases | Installers: `PDMS_PRERELEASE=1` (e.g. `curl ... \| PDMS_PRERELEASE=1 sh`, or `$env:PDMS_PRERELEASE = "1"` on Windows). `pdms self-update --pre`; once you run an alpha, `self-update` keeps following alphas |
 | Uninstall | `uv tool uninstall pdms-cli` (the configuration in `~/.config/pdms` is kept) |
 
+`pdms` tells you when a new version is published: it checks GitHub at most once a day, in the background while a
+command runs, and shows `⬆ New pdms version available: … · update with: pdms self-update` when the command ends (or
+when the menu opens), at most once a day. Stable installs are told about stable releases, alpha installs about alphas
+too. It never checks without an interactive terminal, in CI, from an editable checkout, with
+`PDMS_NO_UPDATE_CHECK=1`, or when disabled in `pdms config` (`update_check = false`).
+
 ### Platforms
 
 Linux, macOS and Windows, with Python 3.10+ (tested in CI on the three systems with Python 3.10 and 3.12).
@@ -295,6 +301,7 @@ logging_level = "DEBUG"
 reload = true
 install = true
 smart_install = true                      # skip the install when nothing changed
+update_check = true                       # tell when a new pdms version is out
 db_timeout = 15                           # seconds for `pdms db test` (or `pdms db test -t 30`)
 
 [defaults.env]

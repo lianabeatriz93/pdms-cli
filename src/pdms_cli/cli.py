@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 from dataclasses import dataclass
@@ -1869,6 +1870,44 @@ def self_update(
     console.print("[green]✓[/] " + _("pdms updated to {version}.", version=target))
 
 
+def update_check_enabled(cfg: Config, subcommand: Optional[str]) -> bool:
+    return (
+        interactive_terminal() and cfg.defaults.update_check and subcommand != "self-update"
+        and not os.environ.get("CI") and not os.environ.get("PDMS_NO_UPDATE_CHECK")
+        and update.install_kind() != "editable"
+    )
+
+
+def show_update_notice(pre: bool) -> None:
+    latest = update.notice_due(pre)
+    if latest:
+        console.print(
+            "[yellow]⬆ " + _("New pdms version available: {current} → {latest} · update with: pdms self-update",
+                             current=__version__, latest=latest) + "[/]",
+            highlight=False,
+        )
+
+
+def start_update_check(ctx: typer.Context, cfg: Config) -> None:
+    """Refresh the cached latest version in the background (once a day) and announce it when the command ends."""
+    if not update_check_enabled(cfg, ctx.invoked_subcommand):
+        return
+    pre = update.is_prerelease(__version__)
+    worker = None
+    if update.check_due(pre):
+        worker = threading.Thread(target=update.refresh, args=(pre,), daemon=True)
+        worker.start()
+
+    def finish() -> None:
+        if worker is not None:
+            worker.join(timeout=2.5)
+        show_update_notice(pre)
+
+    if ctx.invoked_subcommand is None:
+        show_update_notice(pre)  # the menu can stay open a long time: announce what is already known up front
+    ctx.call_on_close(finish)
+
+
 def show_version(value: bool) -> None:
     if value:
         print(f"pdms {__version__}")
@@ -1884,6 +1923,7 @@ def root(
 ) -> None:
     if ctx.resilient_parsing:
         return
+    start_update_check(ctx, Config.load())
     if ctx.invoked_subcommand not in REPO_AGNOSTIC:
         check_repo(Config.load())
     if ctx.invoked_subcommand is None:
