@@ -125,11 +125,15 @@ pdms logs lead-tp-create           # live console (Ctrl+C to exit); --no-follow 
 pdms logs --all                    # every running instance merged, prefixed and colored per instance
 pdms logs --stack tp               # the instances of a stack; or several: pdms logs lead-tp-list lead-tp-details
 pdms logs lead-tp-create -p        # log of the previous run (kept as <log>.1 on every restart)
+pdms urls                          # endpoints of every running instance: method, full URL and summary
+pdms urls lead-tp-list -f health   # one instance, only paths containing 'health'
 pdms open lead-tp-create           # Swagger (/docs) in the browser; --path /redoc for another page
 pdms restart lead-tp-create        # same user, DB and port
 pdms restart lead-tp-create -u agent   # switch user (-d for DB, -c to pick interactively)
 pdms stop                          # pick which ones to stop; pdms stop --all
 ```
+
+When a background service starts, `pdms` also prints its endpoints (read live from its `/openapi.json`).
 
 Each instance is identified as `service@port`, runs in its own process group (stopping it also stops the uvicorn
 reloader) and writes its output to `~/.local/state/pdms/logs/<service@port>.log`. The registry lives in
@@ -201,7 +205,7 @@ running Alembic against a shared DB can break the pipeline for the whole team. I
 | `pdms services` | List the services of the current repo |
 | `pdms repo` | Repos menu (`list`, `add`, `use`, `remove`) |
 | `pdms test` / `pdms migrate` | Run a service's tests / run Alembic against a database |
-| `pdms ps` / `logs` / `open` / `stop` / `restart` | Manage background instances |
+| `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
