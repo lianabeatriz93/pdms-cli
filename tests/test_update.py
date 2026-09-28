@@ -39,3 +39,36 @@ def test_pre_release_detection():
     assert update.is_prerelease("0.3.0a1") and update.is_prerelease("v1.0.0rc2")
     assert not update.is_prerelease("0.2.0")
     assert update.wheel_url("0.3.0a1").endswith("/v0.3.0a1/pdms_cli-0.3.0a1-py3-none-any.whl")
+
+
+def test_checks_at_most_once_a_day(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    assert update.check_due(pre=False)
+    monkeypatch.setattr(update, "latest_version", lambda pre, timeout: "9.0.0")
+    update.refresh(pre=False)
+    assert not update.check_due(pre=False)
+    assert update.check_due(pre=True)  # switching channel checks again
+    assert update.check_due(pre=False, now=update.load_cache()["checked_at"] + update.CHECK_INTERVAL + 1)
+
+
+def test_notice_is_shown_once_a_day_and_only_for_newer_versions(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setattr(update, "latest_version", lambda pre, timeout: "0.3.0")
+    update.refresh(pre=False)
+    assert update.notice_due(pre=False, current="0.2.0", now=1000) == "0.3.0"
+    assert update.notice_due(pre=False, current="0.2.0", now=2000) is None  # already told today
+    assert update.notice_due(pre=False, current="0.2.0", now=1000 + update.CHECK_INTERVAL) == "0.3.0"
+    assert update.notice_due(pre=False, current="0.3.0", now=10**9) is None  # already up to date
+    assert update.notice_due(pre=True, current="0.2.0", now=10**9) is None  # cache is for the stable channel
+
+
+def test_being_offline_is_silent(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+
+    def offline(pre, timeout):
+        raise OSError("no network")
+
+    monkeypatch.setattr(update, "latest_version", offline)
+    update.refresh(pre=False)
+    assert update.load_cache() == {}
+    assert update.notice_due(pre=False, current="0.2.0") is None

@@ -546,6 +546,9 @@ ES: dict[str, str] = {
     "The update failed (exit code {code}).": "La actualización falló (código de salida {code}).",
     "pdms updated to {version}.": "pdms actualizado a {version}.",
     "Show the version and exit.": "Muestra la versión y sale.",
+    "New pdms version available: {current} → {latest} · update with: pdms self-update":
+        "Hay una versión nueva de pdms: {current} → {latest} · actualiza con: pdms self-update",
+    "Tell me when a new pdms version is available?": "¿Avisarme cuando haya una versión nueva de pdms?",
     "Include alpha/beta pre-releases (automatic if you run one).":
         "Incluir versiones previas alpha/beta (automático si ya usas una).",
     # ------------------------------------------------------------------ menus
