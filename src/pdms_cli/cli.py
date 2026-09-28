@@ -499,6 +499,97 @@ def env(
         print(f'{key}="{value}"' if dotenv else f"export {key}={shlex.quote(value)}")
 
 
+# --------------------------------------------------------------------------- tests and migrations
+
+PASSTHROUGH = {"allow_extra_args": True, "ignore_unknown_options": True}
+# Alembic commands that only read the database (revision/merge write files, not the DB).
+ALEMBIC_READ_ONLY = {"current", "history", "heads", "branches", "show", "check", "revision", "merge"}
+
+
+def run_in_service(service: Path, cmd: list[str], env: dict[str, str]) -> None:
+    console.rule(" ".join(cmd))
+    try:
+        result = subprocess.run(cmd, cwd=service, env=env)
+    except KeyboardInterrupt:
+        raise typer.Exit(130)
+    raise typer.Exit(result.returncode)
+
+
+@app.command(context_settings=PASSTHROUGH, help=_(
+    "Run the service's tests (poetry run pytest). Extra arguments go to pytest, e.g. pdms test -- -k name -x."
+))
+def test(
+    ctx: typer.Context,
+    service: Optional[str] = typer.Argument(
+        None, help=_("Service (name or path relative to the backend folder)."), autocompletion=completion.services
+    ),
+    user: Optional[str] = typer.Option(
+        None, "--user", "-u", help=_("Inject this user's DEV_* variables."), autocompletion=completion.users
+    ),
+    db: Optional[str] = typer.Option(
+        None, "--db", "-d", help=_("Inject this database's DB_PG_CONNECTION_STR."), autocompletion=completion.dbs
+    ),
+    install: Optional[bool] = typer.Option(
+        None, "--install/--no-install", "-i/-n",
+        help=_("Force (-i) or skip (-n) the install; by default only if something changed."),
+    ),
+    path: Optional[Path] = typer.Option(None, "--path", "-C", help=_("Service folder (defaults to the current one).")),
+) -> None:
+    cfg = Config.load()
+    target = resolve_service(cfg, service, path)
+    env = dict(os.environ)
+    if user or db:
+        user_name = pick(cfg.users, _("user"), user, cfg.last_user)
+        db_name = pick(cfg.dbs, _("database"), db, cfg.last_db)
+        prof = Profile(target, user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], cfg.defaults.host, 0)
+        confirm_protected(cfg, prof, False)
+        env.update(runner.service_env(cfg.defaults, prof.user, prof.db))
+        console.print(_("Profile: {user} @ {db}", user=user_name, db=db_name))
+    ensure_installed(cfg, target, install)
+    run_in_service(target, ["poetry", "run", "pytest", *ctx.args], env)
+
+
+@app.command(context_settings=PASSTHROUGH, help=_(
+    "Run Alembic (backend/common/sync-database) against a database, e.g. pdms migrate -d local upgrade head. "
+    "Without arguments: current."
+))
+def migrate(
+    ctx: typer.Context,
+    db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias."), autocompletion=completion.dbs),
+    allow_protected: bool = typer.Option(
+        False, "--allow-protected", help=_("Allow commands that change a protected (shared) database.")
+    ),
+    install: Optional[bool] = typer.Option(
+        None, "--install/--no-install", "-i/-n",
+        help=_("Force (-i) or skip (-n) the install; by default only if something changed."),
+    ),
+) -> None:
+    cfg = Config.load()
+    root = services_root(cfg) or fail(_("Set the backend folder with [bold]pdms config[/] first."))
+    project = root / "common" / "sync-database"
+    if not (project / "alembic.ini").is_file():
+        fail(_("Alembic project not found at {path}.", path=project))
+    args = ctx.args or ["current"]
+    db_name = pick(cfg.dbs, _("database"), db, cfg.last_db)
+    database = cfg.dbs[db_name]
+    writes = args[0] not in ALEMBIC_READ_ONLY
+    if writes and database.protected:
+        console.print("[red]" + _(
+            "⚠ '{name}' is a protected (shared) database. Running 'alembic {command}' on it can break the pipeline "
+            "and the data of the whole team.", name=db_name, command=args[0],
+        ) + "[/]")
+        if not allow_protected:
+            fail(_("Refused. Use a local database, or --allow-protected if you really have to."))
+        prompts.require_tty()
+        typed = questionary.text(_("Type the database alias ({name}) to confirm:", name=db_name)).unsafe_ask()
+        if typed.strip() != db_name:
+            fail(_("Confirmation does not match; nothing was run."))
+    console.print(_("Database: {name} → {url}", name=db_name, url=database.url(mask=True)))
+    ensure_installed(cfg, project, install)
+    env = {**os.environ, "DB_PG_CONNECTION_STR": database.url(), "LOGGING_LEVEL": cfg.defaults.logging_level}
+    run_in_service(project, ["poetry", "run", "alembic", *args], env)
+
+
 # --------------------------------------------------------------------------- background instances
 
 

@@ -208,6 +208,29 @@ ES: dict[str, str] = {
     ".env format (KEY=\"value\") instead of export.": "Formato .env (KEY=\"valor\") en lugar de export.",
     "Print the variables of a profile. Usage: eval \"$(pdms env -u supervisor -d local)\".":
         "Imprime las variables de un perfil. Uso: eval \"$(pdms env -u supervisor -d local)\".",
+    # ------------------------------------------------------------------ test / migrate
+    "Run the service's tests (poetry run pytest). Extra arguments go to pytest, e.g. pdms test -- -k name -x.":
+        "Ejecuta los tests del servicio (poetry run pytest). Los argumentos extra van a pytest, p. ej. pdms test -- -k nombre -x.",
+    "Inject this user's DEV_* variables.": "Inyectar las variables DEV_* de este usuario.",
+    "Inject this database's DB_PG_CONNECTION_STR.": "Inyectar el DB_PG_CONNECTION_STR de esta base de datos.",
+    "Profile: {user} @ {db}": "Perfil: {user} @ {db}",
+    "Run Alembic (backend/common/sync-database) against a database, e.g. pdms migrate -d local upgrade head. "
+    "Without arguments: current.":
+        "Ejecuta Alembic (backend/common/sync-database) contra una base de datos, p. ej. pdms migrate -d local upgrade head. "
+        "Sin argumentos: current.",
+    "Allow commands that change a protected (shared) database.":
+        "Permitir comandos que modifican una base de datos protegida (compartida).",
+    "Set the backend folder with [bold]pdms config[/] first.": "Configura primero la carpeta backend con [bold]pdms config[/].",
+    "Alembic project not found at {path}.": "No encontré el proyecto de Alembic en {path}.",
+    "⚠ '{name}' is a protected (shared) database. Running 'alembic {command}' on it can break the pipeline "
+    "and the data of the whole team.":
+        "⚠ '{name}' es una base de datos protegida (compartida). Ejecutar 'alembic {command}' contra ella puede romper "
+        "el pipeline y los datos de todo el equipo.",
+    "Refused. Use a local database, or --allow-protected if you really have to.":
+        "Rechazado. Usa una base de datos local, o --allow-protected si de verdad hace falta.",
+    "Type the database alias ({name}) to confirm:": "Escribe el alias de la base de datos ({name}) para confirmar:",
+    "Confirmation does not match; nothing was run.": "La confirmación no coincide; no se ha ejecutado nada.",
+    "Database: {name} → {url}": "Base de datos: {name} → {url}",
     # ------------------------------------------------------------------ instances
     "starting": "arrancando",
     "stopped": "parado",

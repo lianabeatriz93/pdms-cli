@@ -151,6 +151,23 @@ in the copy under `.venv/lib/python3.*/site-packages/...` or step in with F11 fr
 
 `pdms env -u supervisor -d local` prints the variables (`eval "$(pdms env ...)"`, or `--dotenv` for `.env` format).
 
+## Tests and migrations
+
+```bash
+pdms test lead-tp-create                 # poetry run pytest in the service (smart install first)
+pdms test lead-tp-create -- -k create -x # extra arguments go to pytest
+pdms test -u supervisor -d local         # also inject a profile's DEV_* / DB_PG_CONNECTION_STR
+pdms migrate -d local                    # alembic current, in backend/common/sync-database
+pdms migrate -d local upgrade head
+pdms migrate -d local history
+```
+
+`pdms migrate` passes its arguments to Alembic with `DB_PG_CONNECTION_STR` set for the chosen database.
+Read-only commands (`current`, `history`, `heads`, `show`, `check`, `revision`, `merge`...) work on any database.
+Commands that change the database (`upgrade`, `downgrade`, `stamp`...) are **refused on protected databases**:
+running Alembic against a shared DB can break the pipeline for the whole team. If it is really needed,
+`--allow-protected` unlocks it after typing the database alias (`-y` does not skip this).
+
 ## Command reference
 
 | Command | What it does |
@@ -158,6 +175,7 @@ in the copy under `.venv/lib/python3.*/site-packages/...` or step in with F11 fr
 | `pdms` | Interactive menu |
 | `pdms run` / `pdms debug` / `pdms env` | Run a service / create a VS Code debug configuration / print a profile's variables |
 | `pdms services` | List the services of the backend folder |
+| `pdms test` / `pdms migrate` | Run a service's tests / run Alembic against a database |
 | `pdms ps` / `logs` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
