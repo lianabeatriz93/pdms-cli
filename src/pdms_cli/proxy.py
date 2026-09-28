@@ -43,10 +43,9 @@ def state_path() -> Path:
 def running_proxy() -> dict | None:
     """``{"pid", "port", ...}`` of the proxy currently running on this machine, if any."""
     try:
-        data = json.loads(state_path().read_text())
-        os.kill(int(data["pid"]), 0)
-        return data
-    except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError, ProcessLookupError, PermissionError):
+        data = json.loads(state_path().read_text(encoding="utf-8"))
+        return data if instances.process_alive(int(data["pid"]), float(data.get("created", 0))) else None
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
         return None
 
 
@@ -293,14 +292,15 @@ def serve(gateway: Gateway, host: str, port: int, info: dict) -> None:
     server.daemon_threads = True
     state_path().parent.mkdir(parents=True, exist_ok=True)
     state_path().write_text(json.dumps({
-        "pid": os.getpid(), "port": port, "started_at": datetime.now().isoformat(timespec="seconds"), **info,
-    }))
+        "pid": os.getpid(), "created": instances.creation_time(os.getpid()), "port": port,
+        "started_at": datetime.now().isoformat(timespec="seconds"), **info,
+    }), encoding="utf-8")
     try:
         server.serve_forever()
     finally:
         server.server_close()
         try:
-            if json.loads(state_path().read_text()).get("pid") == os.getpid():
+            if json.loads(state_path().read_text(encoding="utf-8")).get("pid") == os.getpid():
                 state_path().unlink()
         except (FileNotFoundError, json.JSONDecodeError):
             pass

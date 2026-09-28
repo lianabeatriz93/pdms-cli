@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: tests (${{ matrix.os }}, py${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.12"]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "0"  # run with each platform's default encoding, like users do
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: uv sync --locked
+      - name: Tests
+        run: uv run pytest -q
+      - name: Smoke test
+        shell: bash
+        env:
+          PDMS_CONFIG: ${{ runner.temp }}/pdms/config.toml
+          XDG_STATE_HOME: ${{ runner.temp }}/state
+        run: |
+          uv run pdms --help
+          uv run pdms config path
+          uv run pdms ps
+          uv run pdms repo list
+          PDMS_LANG=es uv run pdms --help
+      - name: Build
+        run: uv build

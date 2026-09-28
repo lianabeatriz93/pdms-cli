@@ -159,7 +159,7 @@ def list_services(cfg: Config) -> tuple[Path, list[Path]]:
 
 def label(service: Path, root: Path) -> str:
     try:
-        return str(service.relative_to(root))
+        return service.relative_to(root).as_posix()
     except ValueError:
         return str(service)
 
@@ -520,7 +520,7 @@ ALEMBIC_READ_ONLY = {"current", "history", "heads", "branches", "show", "check",
 
 
 def run_in_service(service: Path, cmd: list[str], env: dict[str, str]) -> None:
-    console.rule(" ".join(cmd))
+    console.rule(" ".join([Path(cmd[0]).stem, *cmd[1:]]))
     try:
         result = subprocess.run(cmd, cwd=service, env=env)
     except KeyboardInterrupt:
@@ -559,7 +559,7 @@ def test(
         env.update(runner.service_env(cfg.defaults, prof.user, prof.db))
         console.print(_("Profile: {user} @ {db}", user=user_name, db=db_name))
     ensure_installed(cfg, target, install)
-    run_in_service(target, ["poetry", "run", "pytest", *ctx.args], env)
+    run_in_service(target, [runner.poetry(), "run", "pytest", *ctx.args], env)
 
 
 @app.command(context_settings=PASSTHROUGH, help=_(
@@ -600,7 +600,7 @@ def migrate(
     console.print(_("Database: {name} → {url}", name=db_name, url=database.url(mask=True)))
     ensure_installed(cfg, project, install)
     env = {**os.environ, "DB_PG_CONNECTION_STR": database.url(), "LOGGING_LEVEL": cfg.defaults.logging_level}
-    run_in_service(project, ["poetry", "run", "alembic", *args], env)
+    run_in_service(project, [runner.poetry(), "run", "alembic", *args], env)
 
 
 # --------------------------------------------------------------------------- background instances
@@ -1616,7 +1616,7 @@ def config_import(
     if not file.is_file():
         fail(_("File not found: {file}", file=file))
     try:
-        doc = transfer.read_document(file.read_text())
+        doc = transfer.read_document(file.read_text(encoding="utf-8"))
     except transfer.TransferError as exc:
         fail(str(exc))
 
@@ -1699,7 +1699,7 @@ def config_edit() -> None:
         cfg.save()
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
     if editor:
-        subprocess.run([*shlex.split(editor), str(config_path())])
+        subprocess.run([*shlex.split(editor, posix=os.name != "nt"), str(config_path())])
     else:
         typer.launch(str(config_path()))
 

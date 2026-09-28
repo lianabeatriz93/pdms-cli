@@ -18,7 +18,7 @@ SPANISH_HINT = re.compile(r"[áéíóúñ¿¡]", re.IGNORECASE)
 def source_strings() -> set[str]:
     found = set()
     for path in SRC.glob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
@@ -55,7 +55,7 @@ def test_no_spanish_left_in_source():
     for path in SRC.glob("*.py"):
         if path.name == "i18n.py":
             continue
-        for number, line in enumerate(path.read_text().splitlines(), 1):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if SPANISH_HINT.search(line):
                 offenders.append(f"{path.name}:{number}: {line.strip()}")
     assert not offenders, "\n".join(offenders)

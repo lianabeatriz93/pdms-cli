@@ -28,8 +28,8 @@ def test_role_filter_accepts_both_forms():
 
 
 def test_alias_from_email():
-    assert alias_for("supervisor.nemt1@gmail.com") == "supervisor-nemt1"
-    assert alias_for("Ana+QA@alivi.com") == "ana-qa"
+    assert alias_for("jane.doe1@example.com") == "jane-doe1"
+    assert alias_for("Ana+QA@example.com") == "ana-qa"
 
 
 def test_merge_adds_updates_by_user_id_and_avoids_alias_clashes():

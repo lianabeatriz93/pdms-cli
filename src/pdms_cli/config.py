@@ -89,6 +89,13 @@ class Stack:
     db: str = ""
 
 
+def _stack(data: dict[str, Any]) -> Stack:
+    stack = _from_dict(Stack, data)
+    # Service paths are stored with "/" on every OS (a config written on Windows may still use "\\").
+    stack.services = [str(svc).replace("\\", "/") for svc in stack.services]
+    return stack
+
+
 @dataclass
 class Repo:
     # Root of a PDMS checkout (the folder that contains backend/ and infra/).
@@ -105,17 +112,6 @@ class Repo:
     @property
     def backend_dir(self) -> Path:
         return self.root / self.backend
-
-
-SEED_USERS = {
-    "supervisor": DevUser(
-        user_id="f3d55402-2dce-476f-aa93-890b2f4d61c4",
-        username="supervisor.nemt1@gmail.com",
-        first_name="Transportation",
-        last_name="Supervisor",
-        roles="TPR.Supervisor",
-    ),
-}
 
 
 @dataclass
@@ -142,7 +138,7 @@ class Config:
             defaults=_from_dict(Defaults, data.get("defaults", {})),
             users={k: _from_dict(DevUser, v) for k, v in data.get("users", {}).items()},
             dbs={k: _from_dict(Database, v) for k, v in data.get("dbs", {}).items()},
-            stacks={k: _from_dict(Stack, v) for k, v in data.get("stacks", {}).items()},
+            stacks={k: _stack(v) for k, v in data.get("stacks", {}).items()},
             repos={k: _from_dict(Repo, v) for k, v in data.get("repos", {}).items()},
             current_repo=state.get("current_repo", ""),
             ignored_repos=list(state.get("ignored_repos", [])),
@@ -175,8 +171,8 @@ class Config:
     def load(cls) -> Config:
         path = config_path()
         if not path.exists():
-            return cls(users=dict(SEED_USERS))
-        return cls.from_dict(tomlkit.parse(path.read_text()).unwrap())
+            return cls()
+        return cls.from_dict(tomlkit.parse(path.read_text(encoding="utf-8")).unwrap())
 
     def save(self) -> None:
         write_private(config_path(), tomlkit.dumps(self.to_dict()))
@@ -186,6 +182,6 @@ def write_private(path: Path, text: str) -> None:
     """Write ``text`` to ``path`` readable only by the current user (it may contain passwords)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as fh:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(text)
     os.chmod(path, 0o600)

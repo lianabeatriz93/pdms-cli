@@ -1,7 +1,8 @@
 """Background service instances: registry, start, stop and logs.
 
-Each instance runs in its own session/process group (so stopping it also stops the uvicorn reloader and
-its workers) and writes stdout+stderr to a log file. The registry lives in
+Each instance runs detached from the terminal (its own session on macOS/Linux, its own process group on Windows),
+is stopped together with all its child processes (the uvicorn reloader and its workers) and writes stdout+stderr
+to a log file. Process handling goes through psutil so it behaves the same on Windows, macOS and Linux. The registry lives in
 ``~/.local/state/pdms/instances.json`` (override the base dir with ``XDG_STATE_HOME``).
 """
 
@@ -13,13 +14,17 @@ import os
 import re
 import signal
 import subprocess
-import time
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
+import psutil
+
 from .i18n import _
+
+WINDOWS = sys.platform == "win32"
 
 
 def state_dir() -> Path:
@@ -57,28 +62,76 @@ class Instance:
     reload: bool
     log: str
     started_at: str
+    # Process creation time, to tell our process apart from a later one that reused the PID (0 = unknown).
+    created: float = 0.0
 
     @property
     def name(self) -> str:
         return Path(self.service).name
 
     def alive(self) -> bool:
-        try:
-            os.kill(self.pid, 0)
-        except ProcessLookupError:
+        return process_alive(self.pid, self.created)
+
+
+def process_alive(pid: int, created: float = 0.0) -> bool:
+    """Whether ``pid`` is running (not a zombie) and, if ``created`` is known, is still the same process."""
+    try:
+        proc = psutil.Process(pid)
+        if proc.status() == psutil.STATUS_ZOMBIE:
             return False
-        except PermissionError:
-            return True
-        # A zombie (exited but not reaped) is not running.
+        return not created or abs(proc.create_time() - created) < 1
+    except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        return False
+    except psutil.AccessDenied:
+        return True
+
+
+def creation_time(pid: int) -> float:
+    try:
+        return psutil.Process(pid).create_time()
+    except psutil.Error:
+        return 0.0
+
+
+def detach_options() -> dict:
+    """Popen options so the service survives the terminal and does not receive its Ctrl+C."""
+    if WINDOWS:
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+    return {"start_new_session": True}
+
+
+def kill_tree(pid: int, created: float = 0.0, timeout: float = 10) -> None:
+    """Terminate ``pid`` and all its descendants, escalating to kill after ``timeout`` seconds."""
+    if not process_alive(pid, created):
+        return
+    try:
+        root = psutil.Process(pid)
+        procs = [*root.children(recursive=True), root]
+    except psutil.Error:
+        return
+    if not WINDOWS:
+        # Also reach processes of the session that were re-parented away from the tree.
         try:
-            return Path(f"/proc/{self.pid}/stat").read_text().split()[2] != "Z"
-        except OSError:
-            return True
+            os.killpg(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    for proc in procs:
+        try:
+            proc.terminate()
+        except psutil.Error:
+            pass
+    _, remaining = psutil.wait_procs(procs, timeout=timeout)
+    for proc in remaining:
+        try:
+            proc.kill()
+        except psutil.Error:
+            pass
+    psutil.wait_procs(remaining, timeout=3)
 
 
 def load() -> dict[str, Instance]:
     try:
-        data = json.loads(registry_path().read_text())
+        data = json.loads(registry_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
     return {k: Instance(**v) for k, v in data.items()}
@@ -87,7 +140,7 @@ def load() -> dict[str, Instance]:
 def save(instances: dict[str, Instance]) -> None:
     path = registry_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({k: asdict(v) for k, v in instances.items()}, indent=2))
+    path.write_text(json.dumps({k: asdict(v) for k, v in instances.items()}, indent=2), encoding="utf-8")
 
 
 def make_key(service: Path, port: int) -> str:
@@ -105,7 +158,7 @@ def start(
     log = log_path(key)
     log.parent.mkdir(parents=True, exist_ok=True)
     rotate_log(log)
-    with open(log, "w") as fh:
+    with open(log, "w", encoding="utf-8", errors="replace") as fh:
         fh.write(f"# pdms {datetime.now():%Y-%m-%d %H:%M:%S} · {' '.join(cmd)}\n")
         fh.flush()
         proc = subprocess.Popen(
@@ -115,11 +168,12 @@ def start(
             stdin=subprocess.DEVNULL,
             stdout=fh,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
+            **detach_options(),
         )
     instance = Instance(
         key=key, pid=proc.pid, service=str(service), host=host, port=port, user=user, db=db,
         reload=reload, log=str(log), started_at=datetime.now().isoformat(timespec="seconds"),
+        created=creation_time(proc.pid),
     )
     instances = load()
     instances[key] = instance
@@ -128,20 +182,8 @@ def start(
 
 
 def stop(instance: Instance, timeout: float = 10) -> None:
-    """SIGTERM the whole process group, escalating to SIGKILL after ``timeout`` seconds."""
-    if instance.alive():
-        try:
-            os.killpg(instance.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        deadline = time.monotonic() + timeout
-        while instance.alive() and time.monotonic() < deadline:
-            time.sleep(0.2)
-        if instance.alive():
-            try:
-                os.killpg(instance.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+    """Stop the instance and all its child processes, then forget it."""
+    kill_tree(instance.pid, instance.created, timeout)
     forget(instance.key)
 
 
@@ -153,7 +195,7 @@ def forget(key: str) -> None:
 
 def tail(path: str, lines: int = 20) -> str:
     try:
-        return "".join(Path(path).read_text(errors="replace").splitlines(keepends=True)[-lines:])
+        return "".join(Path(path).read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)[-lines:])
     except FileNotFoundError:
         return ""
 

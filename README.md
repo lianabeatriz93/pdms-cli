@@ -15,6 +15,19 @@ uv tool install -e ~/Code/Alivi/pdms-cli
 It is an editable install (`-e`), so code changes in the repo apply without reinstalling. When an update adds a
 dependency (`pyproject.toml` changes), refresh the tool's environment with `uv tool install -e . --force`.
 
+### Platforms
+
+Linux, macOS and Windows, with Python 3.10+ (tested in CI on the three systems with Python 3.10 and 3.12).
+Running services also needs [Poetry](https://python-poetry.org/docs/#installation) in `PATH`, as PDMS uses it.
+
+| | Linux / macOS | Windows |
+| --- | --- | --- |
+| Configuration | `~/.config/pdms/config.toml` | `%USERPROFILE%\.config\pdms\config.toml` |
+| State (instances, logs, caches) | `~/.local/state/pdms/` | `%USERPROFILE%\.local\state\pdms\` |
+
+`PDMS_CONFIG` and `XDG_STATE_HOME` override those locations. Background services are detached from the terminal and
+stopped together with their child processes (the uvicorn reloader and its workers) on every system.
+
 First steps:
 
 ```bash
@@ -82,7 +95,7 @@ Reads `public.pdms_user` (read-only) and creates a profile per user: `DEV_USER_I
 (`TRANSPORTATION_PR_SUPERVISOR`) to the external ones the services expect (`TPR.Supervisor`). The mapping is read
 from the current repo (`MAP_INTERNAL_ROLES` in `backend/common/core/core/settings.py` and the `UserRoleEnum` /
 `UserRolePPEnum` enums, parsed without importing them), so new or renamed roles are picked up automatically; a
-built-in copy is used only if the repo cannot be read. Aliases come from the email (`ana.agent@alivi.com` → `ana-agent`); users already imported
+built-in copy is used only if the repo cannot be read. Aliases come from the email (`jane.doe@example.com` → `jane-doe`); users already imported
 (same `DEV_USER_ID`) are updated in place instead of duplicated.
 
 ## Running a service
@@ -266,10 +279,10 @@ db_timeout = 15                           # seconds for `pdms db test` (or `pdms
 # extra variables injected on every run
 
 [users.supervisor]
-user_id = "f3d55402-2dce-476f-aa93-890b2f4d61c4"
-username = "supervisor.nemt1@gmail.com"
-first_name = "Transportation"
-last_name = "Supervisor"
+user_id = "00000000-0000-0000-0000-000000000001"
+username = "supervisor@example.com"
+first_name = "Jane"
+last_name = "Doe"
 roles = "TPR.Supervisor"
 
 [dbs.local]

@@ -28,7 +28,7 @@ def services(incomplete: str) -> list[str]:
         return []
     found = runner.find_services_below(root)
     # Offer the short name and the path relative to the backend folder (e.g. lead-tp-list, lead/lead-tp-list).
-    names = sorted({p.name for p in found} | {str(p.relative_to(root)) for p in found})
+    names = sorted({p.name for p in found} | {p.relative_to(root).as_posix() for p in found})
     return _matching(names, incomplete)
 
 
