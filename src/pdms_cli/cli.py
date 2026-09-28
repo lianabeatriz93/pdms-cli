@@ -19,7 +19,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import completion, i18n, instances, logview, prompts, runner, transfer, vscode
+from . import completion, i18n, instances, logview, logview, prompts, runner, transfer, vscode
 from .config import Config, Database, DevUser, Stack, config_path, write_private
 from .i18n import _
 
