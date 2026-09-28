@@ -91,7 +91,7 @@ def active_backend(cfg: Config) -> Path | None:
 def _read_env_file(path: Path) -> dict[str, str]:
     values = {}
     try:
-        lines = path.read_text().splitlines()
+        lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return values
     for line in lines:
@@ -125,7 +125,7 @@ def point_frontend_to(root: Path, proxy_url: str) -> Path | None:
         return None
     path = frontend / ".env.local"
     wanted = {"VITE_APP_API_URL": proxy_url, "VITE_APP_API_URL_VERSION": "api/v1"}
-    lines = path.read_text().splitlines() if path.exists() else []
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
     done = set()
     for i, line in enumerate(lines):
         key = line.split("=", 1)[0].strip()
@@ -133,7 +133,7 @@ def point_frontend_to(root: Path, proxy_url: str) -> Path | None:
             lines[i] = f"{key}={wanted[key]}"
             done.add(key)
     lines += [f"{key}={value}" for key, value in wanted.items() if key not in done]
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 
 

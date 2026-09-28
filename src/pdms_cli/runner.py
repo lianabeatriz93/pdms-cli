@@ -6,6 +6,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 from pathlib import Path
 
 from .config import Database, Defaults, DevUser
@@ -39,9 +40,16 @@ def find_services_below(root: Path, max_depth: int = 4) -> list[Path]:
     return sorted(found)
 
 
+WINDOWS = sys.platform == "win32"
+
+
 def port_is_free(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if WINDOWS:
+            # On Windows SO_REUSEADDR lets a second socket bind a port in use; ask for exclusive use instead.
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind((host, port))
         except OSError:
@@ -72,9 +80,14 @@ def build_env(defaults: Defaults, user: DevUser, db: Database) -> dict[str, str]
 
 def poetry_python(service: Path) -> Path | None:
     """Interpreter of the service's poetry virtualenv, or None if it has not been created yet."""
-    result = subprocess.run(["poetry", "env", "info", "-e"], cwd=service, capture_output=True, text=True)
+    result = subprocess.run([poetry(), "env", "info", "-e"], cwd=service, capture_output=True, text=True)
     python = Path(result.stdout.strip()) if result.returncode == 0 else None
     return python if python and python.exists() else None
+
+
+def poetry() -> str:
+    """Full path of the poetry executable (on Windows it may be poetry.exe or poetry.cmd)."""
+    return shutil.which("poetry") or "poetry"
 
 
 def ensure_poetry() -> None:
@@ -83,19 +96,31 @@ def ensure_poetry() -> None:
 
 
 def install(service: Path) -> None:
-    for cmd in (["poetry", "lock"], ["poetry", "install"]):
+    for cmd in ([poetry(), "lock"], [poetry(), "install"]):
         subprocess.run(cmd, cwd=service, check=True)
 
 
 def uvicorn_command(host: str, port: int, reload: bool) -> list[str]:
-    cmd = ["poetry", "run", "uvicorn", "main:app"]
+    cmd = [poetry(), "run", "uvicorn", "main:app"]
     if reload:
         cmd.append("--reload")
     return [*cmd, "--host", host, "--port", str(port)]
 
 
 def exec_server(service: Path, cmd: list[str], env: dict[str, str]) -> None:
-    """Replace the current process so Ctrl+C and --reload behave exactly like running uvicorn by hand."""
+    """Run the server in the foreground as if uvicorn had been started by hand.
+
+    On macOS/Linux the current process is replaced (Ctrl+C and --reload behave exactly the same). Windows has no
+    real exec, so the server runs as a child that shares the console (it receives Ctrl+C itself) and pdms exits
+    with its exit code.
+    """
+    if WINDOWS:
+        proc = subprocess.Popen(cmd, cwd=service, env=env)
+        while True:
+            try:
+                sys.exit(proc.wait())
+            except KeyboardInterrupt:
+                continue  # the server got the same Ctrl+C and is shutting down; wait for it
     os.chdir(service)
     os.execvpe(cmd[0], cmd, env)
 

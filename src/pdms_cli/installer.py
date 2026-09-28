@@ -37,7 +37,7 @@ def _poetry_dependency_tables(data: dict) -> list[dict]:
 def path_dependencies(project: Path) -> list[tuple[Path, bool]]:
     """``(directory, develop)`` of the local path dependencies declared in ``project/pyproject.toml``."""
     try:
-        data = tomlkit.parse((project / "pyproject.toml").read_text()).unwrap()
+        data = tomlkit.parse((project / "pyproject.toml").read_text(encoding="utf-8")).unwrap()
     except Exception:  # noqa: BLE001 - unreadable pyproject: no known dependencies
         return []
     found = []
@@ -55,7 +55,7 @@ def _hash_file_meta(digest: "hashlib._Hash", path: Path, root: Path) -> None:
         stat = path.stat()
     except OSError:
         return
-    digest.update(f"{path.relative_to(root)}|{stat.st_size}|{stat.st_mtime_ns}\n".encode())
+    digest.update(f"{path.relative_to(root).as_posix()}|{stat.st_size}|{stat.st_mtime_ns}\n".encode())
 
 
 def _hash_tree(digest: "hashlib._Hash", root: Path) -> None:
@@ -88,7 +88,7 @@ def fingerprint(service: Path) -> str:
 
 def _load() -> dict[str, str]:
     try:
-        return json.loads(fingerprints_path().read_text())
+        return json.loads(fingerprints_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
@@ -103,4 +103,4 @@ def remember(service: Path) -> None:
     data[str(service)] = fingerprint(service)
     path = fingerprints_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2))
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")

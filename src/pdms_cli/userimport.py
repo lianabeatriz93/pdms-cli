@@ -57,14 +57,14 @@ def _map_internal_roles(tree: ast.Module) -> list[tuple[str, str]] | None:
 def repo_role_mapping(root: Path) -> dict[str, str] | None:
     """Internal -> external role names read (not imported) from a PDMS checkout, or None if unreadable."""
     try:
-        models = ast.parse((root / MODELS).read_text())
+        models = ast.parse((root / MODELS).read_text(encoding="utf-8"))
     except (OSError, SyntaxError):
         return None
     internal, external = _enum_values(models, "UserRoleEnum"), _enum_values(models, "UserRolePPEnum")
     if not internal or not external:
         return None
     try:
-        pairs = _map_internal_roles(ast.parse((root / SETTINGS).read_text()))
+        pairs = _map_internal_roles(ast.parse((root / SETTINGS).read_text(encoding="utf-8")))
     except (OSError, SyntaxError):
         pairs = None
     if pairs is None:  # no explicit map: members with the same name correspond (as they do today)
@@ -139,7 +139,7 @@ def fetch_users(
 
 
 def alias_for(username: str) -> str:
-    """A config alias from the email's local part: supervisor.nemt1@gmail.com -> supervisor-nemt1."""
+    """A config alias from the email's local part: jane.doe@example.com -> jane-doe."""
     local = username.split("@", 1)[0].lower()
     return re.sub(r"[^a-z0-9_-]+", "-", local).strip("-") or "user"
 

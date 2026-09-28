@@ -51,7 +51,7 @@ def _parse_file(path: str) -> list[tuple[str, dict]]:
     import hcl2
 
     try:
-        data = hcl2.loads(Path(path).read_text())
+        data = hcl2.loads(Path(path).read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 - a broken file only loses its own routes
         return []
     modules = []
@@ -75,8 +75,11 @@ def parse_routes(repo_root: Path, env: str = "dev") -> list[Route]:
     if len(files) < 40:  # starting worker processes costs more than parsing a handful of files
         parsed = [_parse_file(f) for f in files]
     else:
-        with ProcessPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
-            parsed = list(pool.map(_parse_file, files, chunksize=8))
+        try:
+            with ProcessPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
+                parsed = list(pool.map(_parse_file, files, chunksize=8))
+        except Exception:  # noqa: BLE001 - e.g. process spawning restricted: parse in this process instead
+            parsed = [_parse_file(f) for f in files]
     modules: dict[str, tuple[str, dict]] = {}
     for file, file_modules in zip(files, parsed):
         for name, body in file_modules:
@@ -105,7 +108,7 @@ def parse_routes(repo_root: Path, env: str = "dev") -> list[Route]:
             continue
         service_dir = (Path(lambda_file).parent / _unquote(lambda_body["lambda_path"])).resolve()
         try:
-            service = str(service_dir.relative_to(backend))
+            service = service_dir.relative_to(backend).as_posix()
         except ValueError:
             continue
         path = resource_path(resource)
@@ -122,14 +125,14 @@ def load_routes(repo_root: Path, env: str = "dev") -> list[Route]:
     cache = state_dir() / "routes" / (hashlib.sha1(f"{repo_root.resolve()}|{env}".encode()).hexdigest() + ".json")
     fingerprint = _fingerprint(directory)
     try:
-        data = json.loads(cache.read_text())
+        data = json.loads(cache.read_text(encoding="utf-8"))
         if data.get("version") == CACHE_VERSION and data.get("fingerprint") == fingerprint:
             return [Route(**r) for r in data["routes"]]
     except (FileNotFoundError, json.JSONDecodeError, TypeError):
         pass
     routes = parse_routes(repo_root, env)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"version": CACHE_VERSION, "fingerprint": fingerprint, "routes": [asdict(r) for r in routes]}))
+    cache.write_text(json.dumps({"version": CACHE_VERSION, "fingerprint": fingerprint, "routes": [asdict(r) for r in routes]}), encoding="utf-8")
     return routes
 
 

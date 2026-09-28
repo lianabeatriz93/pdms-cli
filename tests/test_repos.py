@@ -76,3 +76,8 @@ def test_translate_finds_the_same_service_in_another_checkout(tmp_path):
     new = make_repo(tmp_path / "pdms_v2", ("lead/lead-tp-list",))
     assert repos.translate(old / "backend/lead/lead-tp-list", old, new) == new / "backend/lead/lead-tp-list"
     assert repos.translate(old / "backend/lead/only-old", old, new) is None
+
+
+def test_stack_paths_written_on_windows_are_normalized():
+    cfg = Config.from_dict({"stacks": {"tp": {"services": ["lead\\lead-tp-list", "lead/lead-tp-create"]}}})
+    assert cfg.stacks["tp"].services == ["lead/lead-tp-list", "lead/lead-tp-create"]

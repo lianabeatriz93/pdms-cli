@@ -26,7 +26,7 @@ def write_env_file(service: Path, env: dict[str, str]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [f'{key}="{value}"' for key, value in env.items()]
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as fh:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
     os.chmod(path, 0o600)
     return path
@@ -73,7 +73,7 @@ def load_launch(path: Path) -> tuple[dict, bool]:
     """Parsed launch.json and whether comments had to be dropped to read it."""
     if not path.exists():
         return {"version": "0.2.0", "configurations": []}, False
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     try:
         return json.loads(text), False
     except json.JSONDecodeError:
@@ -91,7 +91,7 @@ def upsert_configuration(
     base = f"{NAME_PREFIX}{service.name}"
     name = f"{base} · {description}"
     try:
-        cwd = "${workspaceFolder}/" + str(service.relative_to(root))
+        cwd = "${workspaceFolder}/" + service.relative_to(root).as_posix()
     except ValueError:
         cwd = str(service)
     config = {
@@ -119,5 +119,5 @@ def upsert_configuration(
         backup = launch.with_suffix(".json.bak")
         shutil.copy2(launch, backup)
     launch.parent.mkdir(parents=True, exist_ok=True)
-    launch.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n")
+    launch.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
     return launch, name, backup
