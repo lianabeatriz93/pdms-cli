@@ -1838,6 +1838,7 @@ REPO_AGNOSTIC = {"repo", "config", "env", "db", "user", "self-update"}
 def self_update(
     version: Optional[str] = typer.Option(None, "--version", help=_("Install this version instead of the latest.")),
     check: bool = typer.Option(False, "--check", help=_("Only tell whether there is a newer version.")),
+    pre: bool = typer.Option(False, "--pre", help=_("Include alpha/beta pre-releases (automatic if you run one).")),
 ) -> None:
     kind = update.install_kind()
     if kind == "editable":
@@ -1846,7 +1847,7 @@ def self_update(
         return
     try:
         with console.status(_("Looking for the latest release...")):
-            target = version or update.latest_version()
+            target = version or update.latest_version(pre=pre or update.is_prerelease(__version__))
     except Exception as exc:  # noqa: BLE001 - network errors of any kind
         fail(_("Could not reach GitHub: {error}", error=exc))
     if not version and not update.is_newer(target):

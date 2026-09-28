@@ -546,6 +546,8 @@ ES: dict[str, str] = {
     "The update failed (exit code {code}).": "La actualización falló (código de salida {code}).",
     "pdms updated to {version}.": "pdms actualizado a {version}.",
     "Show the version and exit.": "Muestra la versión y sale.",
+    "Include alpha/beta pre-releases (automatic if you run one).":
+        "Incluir versiones previas alpha/beta (automático si ya usas una).",
     # ------------------------------------------------------------------ menus
     "← Back": "← Volver",
     "Databases:": "Bases de datos:",

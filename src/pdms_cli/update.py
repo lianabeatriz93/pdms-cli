@@ -14,14 +14,34 @@ from . import __version__
 
 REPO = "lianabeatriz93/pdms-cli"
 RELEASES = f"https://github.com/{REPO}/releases"
+API_RELEASES = f"https://api.github.com/repos/{REPO}/releases"
+VERSION = re.compile(r"v?(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?$")
+STAGES = {"a": 0, "b": 1, "rc": 2}
 
 
 def parse_version(text: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in re.findall(r"\d+", text)[:3])
+    """Sortable key for PEP 440 versions like 0.3.0, 0.3.0a1, 0.3.0rc2 (pre-releases sort before the final)."""
+    match = VERSION.match(text.strip())
+    if not match:
+        return (0, 0, 0, -1, 0)
+    major, minor, patch, stage, number = match.groups()
+    return (int(major), int(minor), int(patch), STAGES[stage] if stage else 3, int(number or 0))
 
 
-def latest_version(timeout: float = 10) -> str:
-    """Version of the latest release, from the redirect of /releases/latest (no API rate limits)."""
+def is_prerelease(version: str) -> bool:
+    match = VERSION.match(version.strip())
+    return bool(match and match.group(4))
+
+
+def latest_version(pre: bool = False, timeout: float = 10) -> str:
+    """Version of the latest release; with ``pre``, alpha/beta/rc releases count too."""
+    if pre:
+        with urllib.request.urlopen(f"{API_RELEASES}?per_page=30", timeout=timeout) as response:
+            tags = [r["tag_name"] for r in json.load(response) if not r.get("draft")]
+        if not tags:
+            raise RuntimeError("no release found")
+        return max(tags, key=parse_version).lstrip("v")
+    # The redirect of /releases/latest skips pre-releases and has no API rate limit.
     request = urllib.request.Request(f"{RELEASES}/latest", method="HEAD")
     with urllib.request.urlopen(request, timeout=timeout) as response:
         final = response.geturl()

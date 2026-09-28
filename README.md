@@ -34,6 +34,7 @@ uv tool install https://github.com/lianabeatriz93/pdms-cli/releases/download/v0.
 | --- | --- |
 | Check the version | `pdms --version` |
 | Update | `pdms self-update` (`--check` only tells whether there is a new one; `--version X` for a specific one) |
+| Pre-releases | Installers: `PDMS_PRERELEASE=1` (e.g. `curl ... \| PDMS_PRERELEASE=1 sh`, or `$env:PDMS_PRERELEASE = "1"` on Windows). `pdms self-update --pre`; once you run an alpha, `self-update` keeps following alphas |
 | Uninstall | `uv tool uninstall pdms-cli` (the configuration in `~/.config/pdms` is kept) |
 
 ### Platforms
@@ -365,14 +366,29 @@ built package with `install.sh` / `install.ps1` on the three systems, on every p
 ### Releasing
 
 Versions follow [Conventional Commits](https://www.conventionalcommits.org/) with
-[commitizen](https://commitizen-tools.github.io/commitizen/) (`feat` → minor, `fix` → patch while below 1.0):
+[commitizen](https://commitizen-tools.github.io/commitizen/) (`feat` → minor, `fix` → patch while below 1.0) and
+[PEP 440](https://peps.python.org/pep-0440/).
+
+Regular releases are **alpha pre-releases** of the next version, so the version number only goes up when something
+significant ships:
 
 ```bash
 git checkout main && git pull
-uvx --from commitizen cz bump --dry-run   # preview the next version and changelog
-uvx --from commitizen cz bump             # updates pyproject.toml, uv.lock and CHANGELOG.md, commits and tags vX.Y.Z
+uvx --from commitizen cz bump --prerelease alpha --dry-run   # preview: e.g. 0.2.0 → 0.3.0a0
+uvx --from commitizen cz bump --prerelease alpha             # then 0.3.0a1, 0.3.0a2, ... on the next ones
 git push --follow-tags
 ```
+
+When the accumulated changes are significant, publish the final version (`0.3.0a2` → `0.3.0`):
+
+```bash
+uvx --from commitizen cz bump
+git push --follow-tags
+```
+
+`cz bump` updates `pyproject.toml`, `uv.lock` and `CHANGELOG.md`, commits and creates the `vX.Y.Z[aN]` tag.
+Alpha, beta and rc versions are published as GitHub **pre-releases**: they are not "latest", so the installers and
+`pdms self-update` only pick them with `PDMS_PRERELEASE=1` / `--pre`.
 
 Pushing the tag runs `.github/workflows/release.yml`: it checks that the tag matches the package version, runs the
 tests, builds the wheel and sdist, and publishes a GitHub release with them, both installers and the changelog

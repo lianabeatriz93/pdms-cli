@@ -4,6 +4,7 @@
 #
 # Options (environment variables):
 #   $env:PDMS_VERSION = "0.2.0"     install that version instead of the latest release
+#   $env:PDMS_PRERELEASE = "1"      install the latest release including alpha/beta pre-releases
 #   $env:PDMS_WHEEL = "<path|url>"  install that package file instead of downloading a release (used by CI)
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +39,11 @@ if ($env:PDMS_WHEEL) {
     $source = $env:PDMS_WHEEL
 } else {
     $version = $env:PDMS_VERSION
+    if (-not $version -and $env:PDMS_PRERELEASE) {
+        # The API lists every release (pre-releases included), newest first.
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=1" -UseBasicParsing
+        $version = @($releases)[0].tag_name
+    }
     if (-not $version) {
         $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -UseBasicParsing
         $version = $release.tag_name

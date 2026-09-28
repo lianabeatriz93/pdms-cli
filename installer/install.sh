@@ -5,6 +5,7 @@
 #
 # Options (environment variables):
 #   PDMS_VERSION=0.2.0   install that version instead of the latest release
+#   PDMS_PRERELEASE=1    install the latest release including alpha/beta pre-releases
 #   PDMS_WHEEL=<path|url> install that package file instead of downloading a release (used by CI)
 set -eu
 
@@ -35,6 +36,12 @@ if [ -n "${PDMS_WHEEL:-}" ]; then
     SOURCE="$PDMS_WHEEL"
 else
     VERSION="${PDMS_VERSION:-}"
+    if [ -z "$VERSION" ] && [ -n "${PDMS_PRERELEASE:-}" ]; then
+        # The API lists every release (pre-releases included), newest first.
+        VERSION="$(curl -LsS "https://api.github.com/repos/$REPO/releases?per_page=1" \
+            | grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+        [ -n "$VERSION" ] || fail "could not find the latest pre-release of $REPO"
+    fi
     if [ -z "$VERSION" ]; then
         LATEST="$(curl -LsS -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest")"
         case "$LATEST" in
