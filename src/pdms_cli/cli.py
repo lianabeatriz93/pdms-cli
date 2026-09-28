@@ -19,7 +19,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import completion, i18n, installer, instances, logview, prompts, runner, transfer, userimport, vscode
+from . import completion, i18n, installer, instances, logview, prompts, repos, runner, transfer, userimport, vscode
 from .config import Config, Database, DevUser, Stack, config_path, write_private
 from .i18n import _
 
@@ -30,10 +30,12 @@ db_app = typer.Typer(help=_("Manage databases."), invoke_without_command=True)
 user_app = typer.Typer(help=_("Manage development users (DEV_*)."), invoke_without_command=True)
 config_app = typer.Typer(help=_("General settings."), invoke_without_command=True)
 stack_app = typer.Typer(help=_("Manage stacks (groups of services started together)."), invoke_without_command=True)
+repo_app = typer.Typer(help=_("Manage PDMS repos (checkouts) and choose the current one."), invoke_without_command=True)
 app.add_typer(db_app, name="db")
 app.add_typer(user_app, name="user")
 app.add_typer(config_app, name="config")
 app.add_typer(stack_app, name="stack")
+app.add_typer(repo_app, name="repo")
 
 
 def fail(message: str) -> None:
@@ -128,11 +130,12 @@ def check_db(name: str, db: Database, timeout: int) -> bool:
 
 
 def services_root(cfg: Config) -> Optional[Path]:
-    if cfg.defaults.backend_path:
-        root = Path(cfg.defaults.backend_path).expanduser()
-        if root.is_dir():
-            return root.resolve()
-        console.print(f"[yellow]{_('⚠ The configured backend folder does not exist: {root}', root=root)}[/]")
+    backend = repos.active_backend(cfg)
+    if backend is None:
+        return None
+    if backend.is_dir():
+        return backend.resolve()
+    console.print(f"[yellow]{_('⚠ The configured backend folder does not exist: {root}', root=backend)}[/]")
     return None
 
 
@@ -140,7 +143,7 @@ def list_services(cfg: Config) -> tuple[Path, list[Path]]:
     root = services_root(cfg) or Path.cwd().resolve()
     candidates = runner.find_services_below(root)
     if not candidates:
-        hint = "" if cfg.defaults.backend_path else _(" Set the backend folder with [bold]pdms config[/].")
+        hint = "" if cfg.repos else _(" Register a repo with [bold]pdms repo add <path>[/].")
         fail(_("No services (pyproject.toml + main.py) found in {root}.{hint}", root=root, hint=hint))
     return root, candidates
 
@@ -565,7 +568,7 @@ def migrate(
     ),
 ) -> None:
     cfg = Config.load()
-    root = services_root(cfg) or fail(_("Set the backend folder with [bold]pdms config[/] first."))
+    root = services_root(cfg) or fail(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
     project = root / "common" / "sync-database"
     if not (project / "alembic.ini").is_file():
         fail(_("Alembic project not found at {path}.", path=project))
@@ -635,12 +638,15 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
         console.print(_("No background services."))
         return
     healths = instances.health_all(list(items.values()))
-    table = Table(_("Instance"), _("Status"), "URL", "PID", _("User"), "DB", _("Uptime"))
+    cfg = Config.load()
+    table = Table(_("Instance"), _("Status"), "URL", "Repo", _("User"), "DB", _("Uptime"))
     table.columns[0].no_wrap = table.columns[1].no_wrap = table.columns[2].no_wrap = True
     for inst in items.values():
         state = healths[inst.key].state
+        repo = repos.repo_of(cfg, inst.service) or "-"
         table.add_row(
-            inst.key, status_text(state), f"http://localhost:{inst.port}", str(inst.pid),
+            inst.key, status_text(state), f"http://localhost:{inst.port}",
+            f"[bold]{repo}[/]" if repo == cfg.current_repo else repo,
             inst.user, inst.db, uptime(inst.started_at) if state != "stopped" else "",
         )
     console.print(table)
@@ -875,7 +881,7 @@ def stack_remove(name: Optional[str] = typer.Argument(None, autocompletion=compl
 
 
 def stack_paths(cfg: Config, stack: Stack) -> list[Path]:
-    root = services_root(cfg) or fail(_("Set the backend folder with [bold]pdms config[/] to use stacks."))
+    root = services_root(cfg) or fail(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
     paths = []
     for svc in stack.services:
         path = root / svc
@@ -1125,6 +1131,165 @@ def user_import(
         console.print("[yellow]" + _(
             "⚠ Unknown roles kept as they are (the services will ignore them): {roles}", roles=", ".join(unknown)
         ) + "[/]")
+
+
+# --------------------------------------------------------------------------- repos
+
+
+def interactive_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def switch_repo(cfg: Config, alias: str) -> None:
+    old = cfg.current_repo
+    cfg.current_repo = alias
+    cfg.save()
+    repos.use_for_this_command(None)
+    console.print("[green]✓[/] " + _("Current repo: {alias} ({path})", alias=alias, path=cfg.repos[alias].root))
+    if old and old != alias and old in cfg.repos:
+        handle_instances_of(cfg, old, alias)
+
+
+def handle_instances_of(cfg: Config, old: str, new: str) -> None:
+    """Offer to keep, stop or move to the new repo the instances still running from the old one."""
+    running = [i for i in instances.load().values() if i.alive() and repos.repo_of(cfg, i.service) == old]
+    if not running or not interactive_terminal():
+        return
+    choice = questionary.select(
+        _("{count} instances are running from '{old}': {keys}. What should I do with them?",
+          count=len(running), old=old, keys=", ".join(i.key for i in running)),
+        choices=[
+            questionary.Choice(_("Keep them running (they coexist, each on its port)"), "keep"),
+            questionary.Choice(_("Stop them"), "stop"),
+            questionary.Choice(_("Restart them from '{new}' (same user, DB and port)", new=new), "move"),
+        ],
+    ).unsafe_ask()
+    if choice == "keep":
+        return
+    old_root, new_root = cfg.repos[old].root, cfg.repos[new].root
+    for inst in running:
+        target = repos.translate(Path(inst.service), old_root, new_root) if choice == "move" else None
+        if choice == "move" and target is None:
+            console.print("[yellow]" + _("⚠ {key}: the service does not exist in '{new}'; left running.",
+                                         key=inst.key, new=new) + "[/]")
+            continue
+        with console.status(_("Stopping {key}...", key=inst.key)):
+            instances.stop(inst)
+        console.print("[green]✓[/] " + _("{key} stopped.", key=inst.key))
+        if target is not None:
+            try:
+                do_run(user=inst.user, db=inst.db, port=inst.port, host=inst.host, reload=inst.reload,
+                       yes=True, path=target, background=True)
+            except typer.Exit:
+                pass
+
+
+def check_repo(cfg: Config) -> None:
+    """If the current folder is a PDMS repo other than the current one, offer to switch to it."""
+    here = repos.find_repo_root(Path.cwd())
+    if here is None:
+        return
+    alias = repos.alias_of(cfg, here)
+    if not cfg.repos or not cfg.repo:
+        alias = repos.register(cfg, here)
+        cfg.current_repo = alias
+        cfg.save()
+        console.print(_("[dim]Using {path} as the current repo '{alias}'.[/]", path=here, alias=alias))
+        return
+    if alias == cfg.current_repo or str(here) in cfg.ignored_repos:
+        return
+    if not interactive_terminal():
+        repos.use_for_this_command(here)
+        return
+    choice = questionary.select(
+        _("You are in {here}, but the current repo is '{current}' ({path}). What should I do?",
+          here=here, current=cfg.current_repo, path=cfg.repo.root),
+        choices=[
+            questionary.Choice(_("Switch to {name} (it becomes the default)", name=alias or here.name), "switch"),
+            questionary.Choice(_("Use it only for this command"), "once"),
+            questionary.Choice(_("Don't ask again in this repo"), "ignore"),
+        ],
+    ).unsafe_ask()
+    if choice == "switch":
+        switch_repo(cfg, repos.register(cfg, here))
+    elif choice == "once":
+        repos.use_for_this_command(here)
+    else:
+        cfg.ignored_repos.append(str(here))
+        cfg.save()
+
+
+@repo_app.callback()
+def repo_main(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        repo_menu()
+
+
+@repo_app.command("list", help=_("List the registered repos."))
+def repo_list() -> None:
+    cfg = Config.load()
+    if not cfg.repos:
+        console.print(f"[yellow]{_('No repos registered.')}[/] {_('Use [bold]pdms repo add <path>[/].')}")
+        return
+    counts: dict[str, int] = {}
+    for inst in instances.load().values():
+        if inst.alive() and (alias := repos.repo_of(cfg, inst.service)):
+            counts[alias] = counts.get(alias, 0) + 1
+    table = Table("", _("Name"), _("Path"), _("Running"))
+    for alias, repo in cfg.repos.items():
+        path = str(repo.root) if repo.root.is_dir() else f"[red]{repo.root} ({_('missing')})[/]"
+        table.add_row("●" if alias == cfg.current_repo else "", alias, path, str(counts.get(alias, "")))
+    console.print(table)
+
+
+@repo_app.command("add", help=_("Register a PDMS repo (defaults to the current folder)."))
+def repo_add(
+    path: Optional[Path] = typer.Argument(None, help=_("Folder inside the repo.")),
+    alias: Optional[str] = typer.Option(None, "--alias", "-a", help=_("Name for the repo.")),
+) -> None:
+    cfg = Config.load()
+    root = repos.find_repo_root((path or Path.cwd()).expanduser())
+    if root is None:
+        fail(_("{path} is not inside a PDMS repo (no backend/snakesdk folder).", path=path or Path.cwd()))
+    if existing := repos.alias_of(cfg, root):
+        console.print(_("{path} is already registered as '{alias}'.", path=root, alias=existing))
+        return
+    if alias is None and interactive_terminal():
+        alias = questionary.text(_("Alias ({kind}):", kind=_("repo")), default=repos.suggest_alias(cfg, root),
+                                 validate=lambda v: bool(v.strip()) and v.strip() not in cfg.repos
+                                 or _("That name already exists")).unsafe_ask().strip()
+    was_empty = not cfg.repos
+    alias = repos.register(cfg, root, alias)
+    cfg.save()
+    console.print("[green]✓[/] " + _("Repo '{alias}' registered ({path}).", alias=alias, path=root))
+    if not was_empty and interactive_terminal() and questionary.confirm(
+        _("Make it the current repo?"), default=True
+    ).unsafe_ask():
+        switch_repo(cfg, alias)
+
+
+@repo_app.command("use", help=_("Choose the current repo."))
+def repo_use(alias: Optional[str] = typer.Argument(None, autocompletion=completion.repos)) -> None:
+    cfg = Config.load()
+    alias = pick(cfg.repos, _("repo"), alias, cfg.current_repo)
+    if alias == cfg.current_repo:
+        console.print(_("'{alias}' is already the current repo.", alias=alias))
+        return
+    switch_repo(cfg, alias)
+
+
+@repo_app.command("remove", help=_("Forget a registered repo (nothing is deleted from disk)."))
+def repo_remove(alias: Optional[str] = typer.Argument(None, autocompletion=completion.repos)) -> None:
+    cfg = Config.load()
+    alias = pick(cfg.repos, _("repo"), alias)
+    if interactive_terminal() and not questionary.confirm(_("Delete '{name}'?", name=alias), default=False).unsafe_ask():
+        return
+    root = str(cfg.repos.pop(alias).root)
+    cfg.ignored_repos = [r for r in cfg.ignored_repos if r != root]
+    if cfg.current_repo == alias:
+        cfg.current_repo = next(iter(cfg.repos), "")
+    cfg.save()
+    console.print("[green]✓[/] " + _("'{name}' deleted.", name=alias))
 
 
 # --------------------------------------------------------------------------- config commands
@@ -1404,10 +1569,22 @@ def stack_menu() -> None:
     })
 
 
+def repo_menu() -> None:
+    if not interactive_terminal():
+        return repo_list()
+    _menu(_("Repos:"), {
+        _("List"): repo_list,
+        _("Add"): lambda: repo_add(None, None),
+        _("Choose the current one"): lambda: repo_use(None),
+        _("Delete"): lambda: repo_remove(None),
+    })
+
+
 def settings_menu() -> None:
     prompts.require_tty()
     _menu(_("Settings:"), {
         _("Defaults"): config_defaults,
+        _("Repos"): repo_menu,
         _("Language"): lambda: config_language(None),
         _("Export configuration"): lambda: config_export(None, None, None, False),
         _("Import configuration"): lambda: config_import(None, None, False, False, False),
@@ -1450,8 +1627,16 @@ def main_menu() -> None:
             pass
 
 
+# Commands that do not depend on a repo, so they never trigger the "switch repo?" question.
+REPO_AGNOSTIC = {"repo", "config", "env", "db", "user"}
+
+
 @app.callback(invoke_without_command=True)
 def root(ctx: typer.Context) -> None:
+    if ctx.resilient_parsing:
+        return
+    if ctx.invoked_subcommand not in REPO_AGNOSTIC:
+        check_repo(Config.load())
     if ctx.invoked_subcommand is None:
         main_menu()
 

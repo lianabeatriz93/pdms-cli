@@ -13,7 +13,7 @@ ALL = list(transfer.SECTIONS)
 
 def make_config() -> Config:
     return Config(
-        defaults=Defaults(port=9000, backend_path="~/pdms/backend"),
+        defaults=Defaults(port=9000, language="en"),
         users={"supervisor": DevUser(user_id="u-1", username="sup@x.com", roles="TPR.Supervisor")},
         dbs={
             "local": Database(host="localhost", user="postgres", password="local-secret"),

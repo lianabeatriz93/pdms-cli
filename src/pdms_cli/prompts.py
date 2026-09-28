@@ -6,7 +6,6 @@ All prompts use ``unsafe_ask`` so Ctrl+C raises KeyboardInterrupt, handled once 
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from typing import Callable, Iterable
 
 import questionary
@@ -129,12 +128,6 @@ def ask_defaults(current: Defaults) -> Defaults:
     db_timeout = questionary.text(
         _("Connection test timeout (seconds):"), default=str(current.db_timeout), validate=_is_int
     ).unsafe_ask()
-    backend_path = questionary.path(
-        _("PDMS backend folder (to list services):"),
-        default=current.backend_path,
-        only_directories=True,
-        validate=lambda v: not v or Path(v).expanduser().is_dir() or _("That folder does not exist"),
-    ).unsafe_ask()
     env = dict(current.env)
     while questionary.confirm(
         _("Add/edit extra environment variables? (current: {current})", current=", ".join(env) or _("none")),
@@ -149,5 +142,5 @@ def ask_defaults(current: Defaults) -> Defaults:
     return Defaults(
         language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
         smart_install=smart_install if install else current.smart_install,
-        db_timeout=int(db_timeout), backend_path=backend_path.strip(), env=env,
+        db_timeout=int(db_timeout), env=env,
     )

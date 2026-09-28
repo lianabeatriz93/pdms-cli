@@ -17,7 +17,8 @@ It is an editable install (`-e`), so changes in the repo apply without reinstall
 First steps:
 
 ```bash
-pdms config          # settings: language, backend folder (e.g. ~/Code/Alivi/pdms/backend), default port...
+pdms repo add ~/Code/Alivi/pdms   # register your PDMS checkout (done automatically the first time you run pdms inside it)
+pdms config          # settings: language, default port, install...
 pdms db add          # wizard: alias, host, port, database, user, password
 pdms user add        # wizard: DEV_USER_ID, DEV_USERNAME, DEV_ROLES...
 pdms                 # interactive menu
@@ -31,6 +32,29 @@ pdms --install-completion    # then open a new terminal
 
 Completes service names, instances, users, databases, stacks and languages, e.g. `pdms run lead-tp-<Tab>`,
 `pdms logs <Tab>`, `pdms up <Tab>`, `pdms run -u <Tab>`.
+
+## Repos (several PDMS checkouts)
+
+`pdms` can work with several checkouts of PDMS (e.g. `~/Code/Alivi/pdms` and `~/Code/Alivi/pdms_v2`). One of them is
+the **current repo**: its backend is where services are listed, stacks are resolved and migrations run.
+
+```bash
+pdms repo list                       # ● marks the current one; also shows how many instances run from each
+pdms repo add ~/Code/Alivi/pdms_v2   # alias defaults to the folder name
+pdms repo use pdms_v2
+pdms repo remove pdms                # only forgets it; nothing is deleted from disk
+```
+
+When you run `pdms` inside a registered or unregistered PDMS repo that is not the current one, it asks whether to
+**switch** to it, use it **only for this command**, or **never ask again** in that repo. Without an interactive
+terminal it uses the folder's repo for that command only. The first repo you use becomes the current one
+automatically (an old `backend_path` setting is migrated to a repo).
+
+Instances from different repos can run at the same time (`pdms ps` has a **Repo** column). When you switch repos and
+instances of the previous one are running, `pdms` asks whether to keep them, stop them, or **restart them from the
+new repo** with the same user, DB and port (services that do not exist in the new repo are left running).
+Stacks store paths relative to the backend, so they work with any repo. Repos are not included in
+`pdms config export`, since their paths are machine-specific.
 
 ## Language
 
@@ -69,7 +93,7 @@ pdms run -C backend/lead/lead-tp-create
 ```
 
 `pdms run` finds the service by walking up from the current folder. Outside a service, it lists the services of the
-configured backend folder (or below the current folder) with autocompletion; a unique partial name is enough.
+current repo's backend folder (or below the current folder) with autocompletion; a unique partial name is enough.
 It remembers the last user and DB, proposes the next free port, and asks for confirmation before using a database
 marked as protected.
 
@@ -93,7 +117,7 @@ install) or disable the install altogether (`install = false`). Fingerprints liv
 ## Background services
 
 ```bash
-pdms services tp-                  # services in the backend folder and the ports they are running on
+pdms services tp-                  # services of the current repo and the ports they are running on
 pdms run lead-tp-create -b
 pdms run lead-tp-details -b -p 8081
 pdms ps                            # status, URL, user, DB and uptime of each instance
@@ -174,7 +198,8 @@ running Alembic against a shared DB can break the pipeline for the whole team. I
 | --- | --- |
 | `pdms` | Interactive menu |
 | `pdms run` / `pdms debug` / `pdms env` | Run a service / create a VS Code debug configuration / print a profile's variables |
-| `pdms services` | List the services of the backend folder |
+| `pdms services` | List the services of the current repo |
+| `pdms repo` | Repos menu (`list`, `add`, `use`, `remove`) |
 | `pdms test` / `pdms migrate` | Run a service's tests / run Alembic against a database |
 | `pdms ps` / `logs` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
@@ -199,7 +224,6 @@ logging_level = "DEBUG"
 reload = true
 install = true
 smart_install = true                      # skip the install when nothing changed
-backend_path = "~/Code/Alivi/pdms/backend"
 db_timeout = 15                           # seconds for `pdms db test` (or `pdms db test -t 30`)
 
 [defaults.env]

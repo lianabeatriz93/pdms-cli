@@ -68,7 +68,6 @@ ES: dict[str, str] = {
     "Use only letters, numbers, '-' or '_'": "Usa solo letras, números, '-' o '_'",
     "Must be a number between 1 and 65535": "Debe ser un número entre 1 y 65535",
     "Port {port} is in use": "El puerto {port} está ocupado",
-    "That folder does not exist": "No existe esa carpeta",
     # ------------------------------------------------------------------ prompts
     "Alias ({kind}):": "Alias ({kind}):",
     "Choose {kind}:": "Elige {kind}:",
@@ -99,7 +98,6 @@ ES: dict[str, str] = {
     "{name}: dependencies up to date (nothing changed since the last install), skipping.":
         "{name}: dependencias al día (nada cambió desde la última instalación), me la salto.",
     "Connection test timeout (seconds):": "Timeout del test de conexión (segundos):",
-    "PDMS backend folder (to list services):": "Carpeta backend de PDMS (para listar servicios):",
     "Add/edit extra environment variables? (current: {current})":
         "¿Añadir/editar variables de entorno extra? (actuales: {current})",
     "Variable name:": "Nombre de la variable:",
@@ -138,7 +136,6 @@ ES: dict[str, str] = {
     "'{name}' deleted.": "'{name}' eliminado.",
     # ------------------------------------------------------------------ services
     "⚠ The configured backend folder does not exist: {root}": "⚠ La carpeta backend configurada no existe: {root}",
-    " Set the backend folder with [bold]pdms config[/].": " Configura la carpeta backend con [bold]pdms config[/].",
     "No services (pyproject.toml + main.py) found in {root}.{hint}":
         "No encontré servicios (pyproject.toml + main.py) en {root}.{hint}",
     "running on :{ports}": "corriendo en :{ports}",
@@ -220,7 +217,6 @@ ES: dict[str, str] = {
         "Sin argumentos: current.",
     "Allow commands that change a protected (shared) database.":
         "Permitir comandos que modifican una base de datos protegida (compartida).",
-    "Set the backend folder with [bold]pdms config[/] first.": "Configura primero la carpeta backend con [bold]pdms config[/].",
     "Alembic project not found at {path}.": "No encontré el proyecto de Alembic en {path}.",
     "⚠ '{name}' is a protected (shared) database. Running 'alembic {command}' on it can break the pipeline "
     "and the data of the whole team.":
@@ -303,8 +299,6 @@ ES: dict[str, str] = {
     "Stack '{name}' updated.": "Stack '{name}' actualizado.",
     "Delete a stack.": "Elimina un stack.",
     "Delete stack '{name}'?": "¿Eliminar el stack '{name}'?",
-    "Set the backend folder with [bold]pdms config[/] to use stacks.":
-        "Configura la carpeta backend con [bold]pdms config[/] para usar stacks.",
     "'{svc}' is no longer a service in {root}. Edit the stack with [bold]pdms stack edit[/].":
         "'{svc}' ya no es un servicio en {root}. Edita el stack con [bold]pdms stack edit[/].",
     "Stack to start.": "Stack a levantar.",
@@ -437,6 +431,47 @@ ES: dict[str, str] = {
     "Export configuration": "Exportar configuración",
     "Import configuration": "Importar configuración",
     "Show configuration file path": "Ver la ruta del fichero de configuración",
+    # ------------------------------------------------------------------ repos
+    "repo": "repo",
+    "Repos": "Repos",
+    "Repos:": "Repos:",
+    "Path": "Ruta",
+    "missing": "no existe",
+    " Register a repo with [bold]pdms repo add <path>[/].": " Registra un repo con [bold]pdms repo add <ruta>[/].",
+    "No current repo. Register one with [bold]pdms repo add <path>[/].":
+        "No hay repo actual. Registra uno con [bold]pdms repo add <ruta>[/].",
+    "Manage PDMS repos (checkouts) and choose the current one.":
+        "Gestionar los repos de PDMS (copias del repo) y elegir el actual.",
+    "Current repo: {alias} ({path})": "Repo actual: {alias} ({path})",
+    "{count} instances are running from '{old}': {keys}. What should I do with them?":
+        "Hay {count} instancias corriendo desde '{old}': {keys}. ¿Qué hago con ellas?",
+    "Keep them running (they coexist, each on its port)": "Dejarlas corriendo (conviven, cada una en su puerto)",
+    "Stop them": "Pararlas",
+    "Restart them from '{new}' (same user, DB and port)":
+        "Reiniciarlas desde '{new}' (mismo usuario, DB y puerto)",
+    "⚠ {key}: the service does not exist in '{new}'; left running.":
+        "⚠ {key}: el servicio no existe en '{new}'; lo dejo corriendo.",
+    "[dim]Using {path} as the current repo '{alias}'.[/]": "[dim]Uso {path} como repo actual '{alias}'.[/]",
+    "You are in {here}, but the current repo is '{current}' ({path}). What should I do?":
+        "Estás en {here}, pero el repo actual es '{current}' ({path}). ¿Qué hago?",
+    "Switch to {name} (it becomes the default)": "Cambiar a {name} (pasa a ser el de por defecto)",
+    "Use it only for this command": "Usarlo solo para este comando",
+    "Don't ask again in this repo": "No volver a preguntar en este repo",
+    "List the registered repos.": "Lista los repos registrados.",
+    "No repos registered.": "No hay repos registrados.",
+    "Use [bold]pdms repo add <path>[/].": "Usa [bold]pdms repo add <ruta>[/].",
+    "Register a PDMS repo (defaults to the current folder).": "Registra un repo de PDMS (por defecto la carpeta actual).",
+    "Folder inside the repo.": "Carpeta dentro del repo.",
+    "Name for the repo.": "Nombre para el repo.",
+    "{path} is not inside a PDMS repo (no backend/snakesdk folder).":
+        "{path} no está dentro de un repo de PDMS (no hay carpeta backend/snakesdk).",
+    "{path} is already registered as '{alias}'.": "{path} ya está registrado como '{alias}'.",
+    "Repo '{alias}' registered ({path}).": "Repo '{alias}' registrado ({path}).",
+    "Make it the current repo?": "¿Hacerlo el repo actual?",
+    "Choose the current repo.": "Elige el repo actual.",
+    "'{alias}' is already the current repo.": "'{alias}' ya es el repo actual.",
+    "Forget a registered repo (nothing is deleted from disk).": "Olvida un repo registrado (no se borra nada del disco).",
+    "Choose the current one": "Elegir el actual",
     # ------------------------------------------------------------------ menus
     "← Back": "← Volver",
     "Databases:": "Bases de datos:",

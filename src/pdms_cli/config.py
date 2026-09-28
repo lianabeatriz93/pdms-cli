@@ -74,8 +74,6 @@ class Defaults:
     install: bool = True
     # With install enabled, skip it when nothing that affects the install changed since the last one.
     smart_install: bool = True
-    # Folder that contains the services (e.g. ~/Code/Alivi/pdms/backend), used to list and pick them.
-    backend_path: str = ""
     # Seconds to wait when testing a database connection.
     db_timeout: int = 15
     # Extra environment variables injected on every run.
@@ -89,6 +87,22 @@ class Stack:
     # Optional fixed user/db aliases; empty means "ask when starting".
     user: str = ""
     db: str = ""
+
+
+@dataclass
+class Repo:
+    # Root of a PDMS checkout (the folder that contains backend/ and infra/).
+    path: str
+    # Folder with the services, relative to the root.
+    backend: str = "backend"
+
+    @property
+    def root(self) -> Path:
+        return Path(self.path).expanduser()
+
+    @property
+    def backend_dir(self) -> Path:
+        return self.root / self.backend
 
 
 SEED_USERS = {
@@ -108,28 +122,51 @@ class Config:
     users: dict[str, DevUser] = field(default_factory=dict)
     dbs: dict[str, Database] = field(default_factory=dict)
     stacks: dict[str, Stack] = field(default_factory=dict)
+    repos: dict[str, Repo] = field(default_factory=dict)
+    current_repo: str = ""
+    # Repo roots where pdms must not offer to switch the current repo.
+    ignored_repos: list[str] = field(default_factory=list)
     last_user: str = ""
     last_db: str = ""
+
+    @property
+    def repo(self) -> Repo | None:
+        return self.repos.get(self.current_repo)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Config:
         state = data.get("state", {})
-        return cls(
+        cfg = cls(
             defaults=_from_dict(Defaults, data.get("defaults", {})),
             users={k: _from_dict(DevUser, v) for k, v in data.get("users", {}).items()},
             dbs={k: _from_dict(Database, v) for k, v in data.get("dbs", {}).items()},
             stacks={k: _from_dict(Stack, v) for k, v in data.get("stacks", {}).items()},
+            repos={k: _from_dict(Repo, v) for k, v in data.get("repos", {}).items()},
+            current_repo=state.get("current_repo", ""),
+            ignored_repos=list(state.get("ignored_repos", [])),
             last_user=state.get("last_user", ""),
             last_db=state.get("last_db", ""),
         )
+        # Before repos existed, the services folder was configured as defaults.backend_path.
+        legacy = data.get("defaults", {}).get("backend_path")
+        if legacy and not cfg.repos:
+            backend = Path(legacy).expanduser()
+            root = backend.parent
+            cfg.repos[root.name or "pdms"] = Repo(path=str(root), backend=backend.name)
+            cfg.current_repo = root.name or "pdms"
+        return cfg
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "defaults": asdict(self.defaults),
-            "state": {"last_user": self.last_user, "last_db": self.last_db},
+            "state": {
+                "last_user": self.last_user, "last_db": self.last_db, "current_repo": self.current_repo,
+                "ignored_repos": list(self.ignored_repos),
+            },
             "users": {k: asdict(v) for k, v in self.users.items()},
             "dbs": {k: asdict(v) for k, v in self.dbs.items()},
             "stacks": {k: asdict(v) for k, v in self.stacks.items()},
+            "repos": {k: asdict(v) for k, v in self.repos.items()},
         }
 
     @classmethod
