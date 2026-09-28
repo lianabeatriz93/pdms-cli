@@ -82,7 +82,7 @@ wheels = [
 
 [[package]]
 name = "pdms-cli"
-version = "0.2.1a0"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "psutil" },
