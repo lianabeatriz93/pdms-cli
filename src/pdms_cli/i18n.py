@@ -91,6 +91,13 @@ ES: dict[str, str] = {
     "Default port:": "Puerto por defecto:",
     "Use --reload?": "¿Usar --reload?",
     "Run poetry lock && poetry install before starting?": "¿Hacer poetry lock && poetry install antes de levantar?",
+    "Skip the install when nothing changed since the last one (smart install)?":
+        "¿Saltar la instalación si nada cambió desde la última (instalación inteligente)?",
+    "only if something changed (-i to force)": "solo si algo cambió (-i para forzar)",
+    "Force (-i) or skip (-n) the install; by default only if something changed.":
+        "Forzar (-i) o saltar (-n) la instalación; por defecto solo si algo cambió.",
+    "{name}: dependencies up to date (nothing changed since the last install), skipping.":
+        "{name}: dependencias al día (nada cambió desde la última instalación), me la salto.",
     "Connection test timeout (seconds):": "Timeout del test de conexión (segundos):",
     "PDMS backend folder (to list services):": "Carpeta backend de PDMS (para listar servicios):",
     "Add/edit extra environment variables? (current: {current})":

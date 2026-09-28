@@ -60,14 +60,21 @@ It remembers the last user and DB, proposes the next free port, and asks for con
 marked as protected.
 
 Options of `pdms run [SERVICE]`: `-u/--user`, `-d/--db`, `-p/--port`, `--host`, `-b/--background` / `-f/--foreground`,
-`-i/--install` / `-n/--no-install`, `--reload/--no-reload`, `-y/--yes` (no confirmation for protected DBs),
+`-i/--install` / `-n/--no-install` (force / skip the install), `--reload/--no-reload`, `-y/--yes` (no confirmation for protected DBs),
 `-C/--path`.
 
-### Why always `poetry lock && poetry install`?
+### Smart install
 
 Services depend on the `backend/common/*` libraries with `develop = false`, so a change in `common/` does not reach
-the service until it is reinstalled. If nothing changed, use `-n` to start faster, or set `install = false` in
-`pdms config`.
+the service until it is reinstalled. That is why `pdms` runs `poetry lock && poetry install` before starting, but only
+when something that affects the install changed since the last successful one. The fingerprint covers:
+
+- the service's `pyproject.toml` and `poetry.lock`;
+- recursively, the whole source tree of its path dependencies installed as a copy (`develop = false`);
+- only the `pyproject.toml` of editable path dependencies (`develop = true`), since their code is picked up live.
+
+`-i` forces the install, `-n` skips it. `pdms config` can turn the smart check off (`smart_install = false`, always
+install) or disable the install altogether (`install = false`). Fingerprints live in `~/.local/state/pdms/installs.json`.
 
 ## Background services
 
@@ -159,6 +166,7 @@ port = 8080
 logging_level = "DEBUG"
 reload = true
 install = true
+smart_install = true                      # skip the install when nothing changed
 backend_path = "~/Code/Alivi/pdms/backend"
 db_timeout = 15                           # seconds for `pdms db test` (or `pdms db test -t 30`)
 

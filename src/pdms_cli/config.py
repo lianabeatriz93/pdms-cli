@@ -72,6 +72,8 @@ class Defaults:
     logging_level: str = "DEBUG"
     reload: bool = True
     install: bool = True
+    # With install enabled, skip it when nothing that affects the install changed since the last one.
+    smart_install: bool = True
     # Folder that contains the services (e.g. ~/Code/Alivi/pdms/backend), used to list and pick them.
     backend_path: str = ""
     # Seconds to wait when testing a database connection.
