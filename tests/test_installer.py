@@ -83,3 +83,23 @@ def test_remember_and_is_up_to_date(tmp_path, monkeypatch):
     assert installer.is_up_to_date(service)
     touch(service / "poetry.lock", "# changed\n")
     assert not installer.is_up_to_date(service)
+
+
+def test_parts_tell_which_library_changed(tmp_path):
+    service = make_repo(tmp_path)
+    recorded = installer.dependency_fingerprints(service)
+    assert set(recorded) == {installer.SERVICE_PART, "core", "base", "storage"}
+    assert installer.changed_parts(recorded, service) == []
+
+    touch(tmp_path / "backend/common/base/base/utils.py", "y = 3\n")  # copied, transitive
+    touch(tmp_path / "backend/common/storage/storage/s3.py", "z = 3\n")  # editable: picked up live
+    assert installer.changed_parts(recorded, service) == ["base"]
+
+    touch(service / "poetry.lock", "# relocked\n")
+    assert installer.changed_parts(recorded, service) == [installer.SERVICE_PART, "base"]
+
+
+def test_unknown_install_state_reports_nothing(tmp_path):
+    service = make_repo(tmp_path)
+    assert installer.changed_parts({}, service) is None
+    assert installer.changed_parts(None, service) is None
