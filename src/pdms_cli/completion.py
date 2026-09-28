@@ -5,9 +5,8 @@ They run on every Tab press, so they must be quiet (no prompts or prints) and ne
 
 from __future__ import annotations
 
-from . import i18n, instances, runner
+from . import i18n, instances, runner, userimport
 from .config import Config
-from .userimport import EXTERNAL_TO_INTERNAL_ROLES
 
 
 def _matching(candidates: list[str], incomplete: str) -> list[str]:
@@ -61,7 +60,9 @@ def repos(incomplete: str) -> list[str]:
 
 
 def roles(incomplete: str) -> list[str]:
-    return _matching(list(EXTERNAL_TO_INTERNAL_ROLES), incomplete)
+    cfg = _config()
+    mapping, _source = userimport.role_mapping(cfg.repo.root if cfg and cfg.repo else None)
+    return _matching(list(mapping.values()), incomplete)
 
 
 def languages(incomplete: str) -> list[str]:
