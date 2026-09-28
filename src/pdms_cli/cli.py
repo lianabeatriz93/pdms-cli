@@ -19,7 +19,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import completion, i18n, installer, instances, logview, prompts, runner, transfer, vscode
+from . import completion, i18n, installer, instances, logview, prompts, runner, transfer, userimport, vscode
 from .config import Config, Database, DevUser, Stack, config_path, write_private
 from .i18n import _
 
@@ -964,6 +964,78 @@ def user_remove(name: Optional[str] = typer.Argument(None, autocompletion=comple
         console.print("[green]✓[/] " + _("'{name}' deleted.", name=name))
 
 
+@user_app.command("import", help=_("Create user profiles from the pdms_user table of a database."))
+def user_import(
+    db: Optional[str] = typer.Option(
+        None, "--db", "-d", help=_("Database to read the users from."), autocompletion=completion.dbs
+    ),
+    search: Optional[str] = typer.Option(None, "--search", "-s", help=_("Filter by email or name.")),
+    role: Optional[str] = typer.Option(
+        None, "--role", "-r", help=_("Filter by role (e.g. TPR.Supervisor)."), autocompletion=completion.roles
+    ),
+    inactive: bool = typer.Option(False, "--inactive", help=_("Include inactive users.")),
+    limit: int = typer.Option(200, "--limit", help=_("Maximum number of users to read.")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=_("Import every match without asking.")),
+) -> None:
+    cfg = Config.load()
+    interactive = sys.stdin.isatty()
+    db_name = pick(cfg.dbs, _("database"), db, cfg.last_db)
+    if search is None and interactive and not yes:
+        search = questionary.text(_("Search by email or name (empty = all):")).unsafe_ask().strip()
+    with console.status(_("Reading users from {name}...", name=db_name)):
+        try:
+            found = userimport.fetch_users(
+                cfg.dbs[db_name], search=search or "", role=role or "", include_inactive=inactive, limit=limit,
+                timeout=cfg.defaults.db_timeout,
+            )
+        except Exception as exc:  # noqa: BLE001 - show any driver error to the user
+            fail(_("Could not read the users from {name}: {error}", name=db_name, error=str(exc).strip()))
+    if not found:
+        fail(_("No users match."))
+    if len(found) == limit:
+        console.print(_("[dim]Showing the first {limit}; narrow it down with --search or --role.[/]", limit=limit))
+
+    known = {u.user_id for u in cfg.users.values()}
+    if yes:
+        picked = found
+    else:
+        prompts.require_tty()
+
+        def title(u: userimport.DbUser) -> str:
+            tags = [_("already imported")] if u.user_id in known else []
+            if u.is_active is False:
+                tags.append(_("inactive"))
+            suffix = f"  ({', '.join(tags)})" if tags else ""
+            return f"{u.first_name} {u.last_name} <{u.username}>  {u.dev_roles or '-'}{suffix}"
+
+        picked = questionary.checkbox(
+            _("Which users do you want to import? (space to select)"),
+            choices=[questionary.Choice(title(u), u) for u in found],
+        ).unsafe_ask()
+    if not picked:
+        console.print(_("Nothing selected."))
+        return
+
+    cfg.users, added, updated = userimport.merge_users(cfg.users, picked)
+    cfg.save()
+    table = Table(_("Name"), "DEV_USERNAME", "DEV_ROLES", "")
+    for alias in added + updated:
+        u = cfg.users[alias]
+        table.add_row(alias, u.username, u.roles, _("new") if alias in added else _("updated"))
+    if added or updated:
+        console.print(table)
+    unchanged = len(picked) - len(added) - len(updated)
+    console.print("[green]✓[/] " + _(
+        "{added} added, {updated} updated, {unchanged} unchanged.", added=len(added), updated=len(updated),
+        unchanged=unchanged,
+    ))
+    unknown = sorted({r for u in picked for r in u.unknown_roles})
+    if unknown:
+        console.print("[yellow]" + _(
+            "⚠ Unknown roles kept as they are (the services will ignore them): {roles}", roles=", ".join(unknown)
+        ) + "[/]")
+
+
 # --------------------------------------------------------------------------- config commands
 
 
@@ -1208,6 +1280,7 @@ def user_menu() -> None:
     _menu(_("Users:"), {
         _("List"): user_list,
         _("Add"): user_add,
+        _("Import from a database"): lambda: user_import(None, None, None, False, 200, False),
         _("Edit"): lambda: user_edit(None),
         _("Delete"): lambda: user_remove(None),
     })

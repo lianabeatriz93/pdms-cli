@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import i18n, instances, runner
 from .config import Config
+from .userimport import EXTERNAL_TO_INTERNAL_ROLES
 
 
 def _matching(candidates: list[str], incomplete: str) -> list[str]:
@@ -54,6 +55,10 @@ def dbs(incomplete: str) -> list[str]:
 def stacks(incomplete: str) -> list[str]:
     cfg = _config()
     return _matching(list(cfg.stacks), incomplete) if cfg else []
+
+
+def roles(incomplete: str) -> list[str]:
+    return _matching(list(EXTERNAL_TO_INTERNAL_ROLES), incomplete)
 
 
 def languages(incomplete: str) -> list[str]:
