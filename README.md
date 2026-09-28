@@ -23,6 +23,15 @@ pdms user add        # wizard: DEV_USER_ID, DEV_USERNAME, DEV_ROLES...
 pdms                 # interactive menu
 ```
 
+### Tab completion
+
+```bash
+pdms --install-completion    # then open a new terminal
+```
+
+Completes service names, instances, users, databases, stacks and languages, e.g. `pdms run lead-tp-<Tab>`,
+`pdms logs <Tab>`, `pdms up <Tab>`, `pdms run -u <Tab>`.
+
 ## Language
 
 English is the default. Spanish is also available:
