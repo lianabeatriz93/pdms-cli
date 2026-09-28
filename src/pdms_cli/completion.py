@@ -5,8 +5,6 @@ They run on every Tab press, so they must be quiet (no prompts or prints) and ne
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from . import i18n, instances, runner
 from .config import Config
 from .userimport import EXTERNAL_TO_INTERNAL_ROLES
@@ -26,7 +24,7 @@ def _config() -> Config | None:
 
 def services(incomplete: str) -> list[str]:
     cfg = _config()
-    root = Path(cfg.defaults.backend_path).expanduser() if cfg and cfg.defaults.backend_path else None
+    root = cfg.repo.backend_dir if cfg and cfg.repo else None
     if not root or not root.is_dir():
         return []
     found = runner.find_services_below(root)
@@ -55,6 +53,11 @@ def dbs(incomplete: str) -> list[str]:
 def stacks(incomplete: str) -> list[str]:
     cfg = _config()
     return _matching(list(cfg.stacks), incomplete) if cfg else []
+
+
+def repos(incomplete: str) -> list[str]:
+    cfg = _config()
+    return _matching(list(cfg.repos), incomplete) if cfg else []
 
 
 def roles(incomplete: str) -> list[str]:

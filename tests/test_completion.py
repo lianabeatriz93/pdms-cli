@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pdms_cli import completion
-from pdms_cli.config import Config, Database, DevUser, Stack
+from pdms_cli.config import Config, Database, DevUser, Repo, Stack
 
 
 def test_prefix_matches_win_over_substring_matches():
@@ -12,7 +12,7 @@ def test_prefix_matches_win_over_substring_matches():
 
 
 def test_completes_config_entries_and_services(tmp_path, monkeypatch):
-    backend = tmp_path / "backend"
+    backend = tmp_path / "pdms" / "backend"
     for rel in ("lead/lead-tp-list", "lead/lead-tp-details"):
         (backend / rel).mkdir(parents=True)
         (backend / rel / "pyproject.toml").write_text("")
@@ -23,13 +23,15 @@ def test_completes_config_entries_and_services(tmp_path, monkeypatch):
         dbs={"local": Database("localhost")},
         stacks={"tp": Stack(services=["lead/lead-tp-list"])},
     )
-    cfg.defaults.backend_path = str(backend)
+    cfg.repos = {"pdms": Repo(path=str(backend.parent))}
+    cfg.current_repo = "pdms"
     cfg.save()
 
     assert completion.users("a") == ["agent"]
     assert completion.dbs("") == ["local"]
     assert completion.stacks("t") == ["tp"]
     assert completion.services("lead-tp-d") == ["lead-tp-details"]
+    assert completion.repos("p") == ["pdms"]
     assert "lead/lead-tp-list" in completion.services("lead/")
 
 
