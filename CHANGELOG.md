@@ -1,3 +1,12 @@
+## v0.2.1a0 (2026-09-28)
+
+### Feat
+
+- **doctor**: check the environment and the configuration
+- **ps**: warn when a running instance has outdated installed code
+- **update**: tell when a new pdms version is available
+- **release**: alpha pre-releases between significant versions
+
 ## v0.2.0 (2026-09-28)
 
 ### Feat
