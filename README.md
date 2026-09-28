@@ -12,7 +12,8 @@ git clone git@github.com:lianabeatriz93/pdms-cli.git ~/Code/Alivi/pdms-cli
 uv tool install -e ~/Code/Alivi/pdms-cli
 ```
 
-It is an editable install (`-e`), so changes in the repo apply without reinstalling.
+It is an editable install (`-e`), so code changes in the repo apply without reinstalling. When an update adds a
+dependency (`pyproject.toml` changes), refresh the tool's environment with `uv tool install -e . --force`.
 
 First steps:
 
