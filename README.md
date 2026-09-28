@@ -150,6 +150,34 @@ fails to load:
 | `⚠ error` | The last load failed; the exception is shown (e.g. `ModuleNotFoundError: ...`). Saving the fix reloads it |
 | `✗ stopped` | The process exited; its log is kept |
 
+## Proxy: one port for every service
+
+```bash
+pdms up tp                 # start locally what you are working on
+pdms proxy                 # http://localhost:8000 → local instances first, the remote API (dev) for the rest
+pdms proxy --as agent      # act as another user on local services, without restarting them
+pdms proxy routes -f tp    # which service handles each route and where it would go now
+```
+
+- **Routes** come from the repo's Terraform (`infra/infra_auto/environments/dev/api_rsc_*.tf`, `--env` for others):
+  every `METHOD /api/v1/...` is mapped to its service, preferring literal segments over `{params}` like API Gateway.
+  They are cached until a `.tf` file changes.
+- **Local first:** a request goes to the running instance of its service from the current repo (ports from
+  `pdms ps`). Instances of the same service running from another repo are not used, to avoid mixing versions.
+- **Remote fallback:** anything else is forwarded unchanged (headers, `Authorization`, body) to the repo's remote API,
+  read once from `frontend/.env` (`VITE_APP_API_URL` + stage) and saved per repo; `--remote URL` sets another one and
+  `--no-remote` answers `503` with the command to start the missing service. An API Gateway stage prefix
+  (`/dev/api/v1/...`) is accepted too.
+- **CORS** preflights are answered by the proxy (in AWS, API Gateway does it; the services have no CORS middleware).
+- **`--as USER`** adds the `X-Dev-*` headers that services in `DEVELOPMENT_MODE` use instead of their `DEV_*`
+  variables. They are only sent to local services, never to the remote API.
+- **Frontend:** `pdms proxy` offers to write `VITE_APP_API_URL=http://localhost:8000` and
+  `VITE_APP_API_URL_VERSION=api/v1` into `frontend/.env.local` (git-ignored, other lines are kept). Restart `yarn dev`.
+- **Docs:** `http://localhost:8000/docs` is a Swagger UI with a selector for every local service (live specs from
+  their `/openapi.json`) plus an "All local services" view; "Try it out" goes through the proxy. Each service's own
+  `http://localhost:<port>/docs` keeps working.
+- Every request is logged with its status, target and time. Every response carries an `X-Pdms-Target` header.
+
 ## Stacks: several services at once
 
 ```bash
@@ -207,6 +235,7 @@ running Alembic against a shared DB can break the pipeline for the whole team. I
 | `pdms test` / `pdms migrate` | Run a service's tests / run Alembic against a database |
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
+| `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
 | `pdms user` | Users menu (`list`, `add`, `edit`, `remove`, `import`) |

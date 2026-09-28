@@ -18,8 +18,12 @@ import questionary
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
-from . import completion, i18n, installer, instances, logview, prompts, repos, runner, transfer, userimport, vscode
+from . import (
+    completion, i18n, installer, instances, logview, prompts, proxy, repos, routes, runner, transfer, userimport,
+    vscode,
+)
 from .config import Config, Database, DevUser, Stack, config_path, write_private
 from .i18n import _
 
@@ -31,11 +35,16 @@ user_app = typer.Typer(help=_("Manage development users (DEV_*)."), invoke_witho
 config_app = typer.Typer(help=_("General settings."), invoke_without_command=True)
 stack_app = typer.Typer(help=_("Manage stacks (groups of services started together)."), invoke_without_command=True)
 repo_app = typer.Typer(help=_("Manage PDMS repos (checkouts) and choose the current one."), invoke_without_command=True)
+proxy_app = typer.Typer(
+    help=_("Local API gateway: one port for every service, local instances first, the remote API otherwise."),
+    invoke_without_command=True,
+)
 app.add_typer(db_app, name="db")
 app.add_typer(user_app, name="user")
 app.add_typer(config_app, name="config")
 app.add_typer(stack_app, name="stack")
 app.add_typer(repo_app, name="repo")
+app.add_typer(proxy_app, name="proxy")
 
 
 def fail(message: str) -> None:
@@ -651,6 +660,9 @@ def print_endpoints(inst: instances.Instance, limit: Optional[int] = None, conta
     if limit and len(found) > limit:
         console.print("  [dim]" + _("+{count} more: pdms urls {key}", count=len(found) - limit, key=inst.key) + "[/]")
     console.print("  " + _("Docs: {url}", url=f"http://localhost:{inst.port}/docs"), highlight=False)
+    if running := proxy.running_proxy():
+        console.print("  " + _("Through the proxy: {url} + the same paths", url=f"http://localhost:{running['port']}"),
+                      highlight=False)
 
 
 @app.command(help=_("Show the endpoints (method and full URL) of background services."))
@@ -1340,6 +1352,142 @@ def repo_remove(alias: Optional[str] = typer.Argument(None, autocompletion=compl
     console.print("[green]✓[/] " + _("'{name}' deleted.", name=alias))
 
 
+# --------------------------------------------------------------------------- proxy
+
+
+def current_repo_root(cfg: Config) -> Path:
+    root = repos.active_root(cfg)
+    if root is None or not root.is_dir():
+        fail(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
+    return root
+
+
+def load_repo_routes(root: Path, env: str) -> list[routes.Route]:
+    if not routes.terraform_dir(root, env).is_dir():
+        fail(_("No Terraform for '{env}' in {path}.", env=env, path=routes.terraform_dir(root, env)))
+    with console.status(_("Reading the API routes from Terraform...")):
+        return routes.load_routes(root, env)
+
+
+def resolve_remote(cfg: Config, root: Path, remote: Optional[str], no_remote: bool) -> Optional[str]:
+    if no_remote:
+        return None
+    alias = repos.alias_of(cfg, root)
+    repo = cfg.repos.get(alias) if alias else None
+    if remote:
+        remote = remote.rstrip("/")
+        if repo and repo.remote != remote:
+            repo.remote = remote
+            cfg.save()
+        return remote
+    if repo and repo.remote:
+        return repo.remote
+    detected = repos.remote_from_frontend(root)
+    if detected and repo:
+        repo.remote = detected
+        cfg.save()
+        console.print(_("[dim]Remote API taken from frontend/.env and saved for '{alias}': {url}[/]",
+                        alias=alias, url=detected))
+    return detected
+
+
+def log_request(method: str, path: str, status: int, target: str, seconds: float) -> None:
+    color = "green" if status < 400 else "yellow" if status < 500 else "red"
+    where = "dim" if target in ("remote", "missing", "other-repo") else "cyan"
+    console.print(Text.assemble(
+        (f"{datetime.now():%H:%M:%S} ", "dim"), (f"{method:<6} ", "bold"), (f"{path} ", ""),
+        (f"{status} ", color), ("→ ", "dim"), (target, where), (f"  {seconds * 1000:.0f}ms", "dim"),
+    ), soft_wrap=True)
+
+
+@proxy_app.callback()
+def proxy_main(
+    ctx: typer.Context,
+    port: int = typer.Option(8000, "--port", "-p", help=_("Port to listen on.")),
+    as_user: Optional[str] = typer.Option(
+        None, "--as", help=_("Act as this user on local services (X-Dev-* headers)."), autocompletion=completion.users
+    ),
+    remote: Optional[str] = typer.Option(
+        None, "--remote", help=_("Remote API for what is not running locally (saved for the repo).")
+    ),
+    no_remote: bool = typer.Option(False, "--no-remote", help=_("Never forward to the remote API.")),
+    env: str = typer.Option("dev", "--env", "-e", help=_("Terraform environment to read the routes from.")),
+    frontend: Optional[bool] = typer.Option(
+        None, "--frontend-env/--no-frontend-env", help=_("Point frontend/.env.local to the proxy (asked if omitted).")
+    ),
+) -> None:
+    if ctx is not None and ctx.invoked_subcommand is not None:
+        return
+    if running := proxy.running_proxy():
+        fail(_("The proxy is already running on port {port} (pid {pid}).", port=running["port"], pid=running["pid"]))
+    cfg = Config.load()
+    root = current_repo_root(cfg)
+    repo_routes = load_repo_routes(root, env)
+    target_remote = resolve_remote(cfg, root, remote, no_remote)
+    user = cfg.users[pick(cfg.users, _("user"), as_user)] if as_user else None
+    if not runner.port_is_free("0.0.0.0", port):
+        fail(_("Port {port} is in use (the next free one is {free}). Use --port.",
+               port=port, free=runner.next_free_port("0.0.0.0", port + 1)))
+
+    proxy_url = f"http://localhost:{port}"
+    if (root / "frontend").is_dir() and not repos.frontend_uses(root, proxy_url):
+        if frontend is None and interactive_terminal():
+            frontend = questionary.confirm(
+                _("Point the frontend to the proxy? (writes VITE_APP_API_URL in frontend/.env.local, git-ignored)"),
+                default=True,
+            ).unsafe_ask()
+        if frontend:
+            written = repos.point_frontend_to(root, proxy_url)
+            console.print("[green]✓[/] " + _("{path} updated; restart yarn dev to apply it.", path=written))
+
+    summary = Table.grid(padding=(0, 2))
+    summary.add_row(f"[bold]{_('Proxy')}[/]", proxy_url)
+    summary.add_row(f"[bold]Docs[/]", f"{proxy_url}/docs")
+    summary.add_row(f"[bold]Repo[/]", f"{repos.alias_of(cfg, root) or root.name} ({env}, {len(repo_routes)} {_('routes')})")
+    summary.add_row(f"[bold]{_('Remote')}[/]", target_remote or _("none (only local services)"))
+    summary.add_row(f"[bold]{_('Acting as')}[/]", f"{as_user} ({user.roles})" if user else _("each service's own profile"))
+    console.print(summary)
+    console.rule(_("Requests · Ctrl+C to stop"))
+
+    gateway = proxy.Gateway(
+        routes=repo_routes, backend=(root / "backend"), remote=target_remote, impersonate=user, log=log_request
+    )
+    try:
+        proxy.serve(gateway, "0.0.0.0", port, {"repo": str(root), "remote": target_remote or "", "as": as_user or ""})
+    except KeyboardInterrupt:
+        console.print(f"\n[dim]{_('Proxy stopped.')}[/]")
+
+
+@proxy_app.command("routes", help=_("Show which service handles each route and where the proxy would send it."))
+def proxy_routes(
+    contains: str = typer.Option("", "--filter", "-f", help=_("Only routes whose path or service contains this text.")),
+    local_only: bool = typer.Option(False, "--local", "-l", help=_("Only routes served by a local instance.")),
+    env: str = typer.Option("dev", "--env", "-e", help=_("Terraform environment to read the routes from.")),
+) -> None:
+    cfg = Config.load()
+    root = current_repo_root(cfg)
+    repo_routes = load_repo_routes(root, env)
+    gateway = proxy.Gateway(routes=repo_routes, backend=root / "backend", remote=resolve_remote(cfg, root, None, False))
+    running = gateway.local_instances()
+    table = Table(_("Method"), _("Path"), _("Service"), _("Target"))
+    shown = 0
+    for route in repo_routes:
+        if contains and contains not in route.path and contains not in route.service:
+            continue
+        target = gateway.target(route, running)
+        if local_only and target.kind != "local":
+            continue
+        where = (
+            f"[cyan]{target.instance.key}[/]" if target.kind == "local"
+            else f"[yellow]{_('remote')} ({target.instance.key} {_('in another repo')})[/]" if target.instance
+            else f"[dim]{_('remote')}[/]" if target.kind == "remote" else f"[red]{_('not available')}[/]"
+        )
+        table.add_row(f"[{METHOD_STYLE.get(route.method, 'white')}]{route.method}[/]", route.path, route.service, where)
+        shown += 1
+    console.print(table)
+    console.print(_("{shown} of {total} routes.", shown=shown, total=len(repo_routes)))
+
+
 # --------------------------------------------------------------------------- config commands
 
 
@@ -1658,6 +1806,7 @@ def main_menu() -> None:
                 questionary.Choice(_("▶  Run a service"), "run"),
                 questionary.Choice(_("📋 Background services ({count} running)", count=running), "ps"),
                 questionary.Choice(_("🧩 Stacks (groups of services)"), "stack"),
+                questionary.Choice(_("🌐 Proxy (one port for every service)"), "proxy"),
                 questionary.Choice(_("🗄  Databases"), "db"),
                 questionary.Choice(_("👤 Users"), "user"),
                 questionary.Choice(_("⚙  Settings"), "defaults"),
@@ -1667,7 +1816,8 @@ def main_menu() -> None:
         if choice == "exit":
             return
         actions = {
-            "run": do_run, "ps": instances_menu, "stack": stack_menu, "db": db_menu, "user": user_menu,
+            "run": do_run, "ps": instances_menu, "stack": stack_menu,
+            "proxy": lambda: proxy_main(None, 8000, None, None, False, "dev", None), "db": db_menu, "user": user_menu,
             "defaults": settings_menu,
         }
         try:
