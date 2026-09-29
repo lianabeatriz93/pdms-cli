@@ -138,11 +138,20 @@ jobs:
           c.save()"
       - name: pdms migrate
         working-directory: ${{ runner.temp }}
+        shell: bash
         run: |
           set -x
+          exec > >(tee "$RUNNER_TEMP/flyway-job.log") 2>&1
           uv run --project "$GITHUB_WORKSPACE" pdms migrate migrate -d local
           uv run --project "$GITHUB_WORKSPACE" pdms migrate info -d local | tee info.txt
           grep -q "canary" info.txt
           uv run --project "$GITHUB_WORKSPACE" pdms migrate validate -d local
           ! uv run --project "$GITHUB_WORKSPACE" pdms migrate migrate -d shared
           PGPASSWORD=local psql -h localhost -U postgres -d pdm -tAc "select count(*) from flyway_schema_history" | grep -qE "^[1-9]"
+      - name: Report the failure as an annotation
+        if: failure()
+        shell: bash
+        run: |
+          tail -n 60 "$RUNNER_TEMP/flyway-job.log" | tr -d '\r' | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}' \
+            | sed 's/^/::error title=pdms migrate (last lines)::/'
+          echo
