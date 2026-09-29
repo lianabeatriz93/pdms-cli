@@ -93,6 +93,9 @@ jobs:
 
   flyway:
     name: flyway (pdms migrate, real image)
+    # Once per commit: the push and pull_request runs pulling the 360 MB image at the same time hit public ECR's
+    # throttling for anonymous downloads.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     services:
       postgres:
