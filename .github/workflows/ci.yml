@@ -104,14 +104,16 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      PDMS_CONFIG: ${{ runner.temp }}/pdms/config.toml
-      XDG_STATE_HOME: ${{ runner.temp }}/state
       PDMS_NO_UPDATE_CHECK: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
       - name: Install
-        run: uv sync --locked
+        run: |
+          uv sync --locked
+          # the runner context is only available inside steps
+          echo "PDMS_CONFIG=$RUNNER_TEMP/pdms/config.toml" >> "$GITHUB_ENV"
+          echo "XDG_STATE_HOME=$RUNNER_TEMP/state" >> "$GITHUB_ENV"
       - name: A migrations repo like pdms-db-migrations
         run: |
           mkdir -p "$RUNNER_TEMP/pdms/backend/snakesdk" "$RUNNER_TEMP/pdms-db-migrations/migrations/versioned"
