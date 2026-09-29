@@ -2,7 +2,7 @@
 
 pdms runs this script with the consumer service's own Python (``poetry run python …``) from the service folder, with
 the local-events environment (this folder on PYTHONPATH, so its sitecustomize.py sends the SQS client to the local
-ElasticMQ). It behaves like the AWS SQS → Lambda trigger:
+ElasticMQ). It behaves like the AWS SQS -> Lambda trigger:
 
 * long-polls the queue and calls the handler with ``{"Records": [...]}`` and a Lambda-like context;
 * deletes the messages that were processed; honours ``batchItemFailures`` (partial batch responses);
@@ -88,6 +88,9 @@ def main() -> None:
     args = parser.parse_args()
     queue_name = args.queue_url.rstrip("/").rsplit("/", 1)[-1]
 
+    for stream in (sys.stdout, sys.stderr):  # the log is a file: on Windows it would default to cp1252
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     sys.path.insert(0, os.getcwd())
     module_name, function_name = args.handler.rsplit(".", 1)
@@ -101,7 +104,7 @@ def main() -> None:
     import boto3
 
     client = boto3.client("sqs", region_name=os.environ.get("AWS_REGION") or "us-east-1")
-    log(f"Polling {queue_name} → {args.handler} (batch size {args.batch_size})")
+    log(f"Polling {queue_name} -> {args.handler} (batch size {args.batch_size})")
     while True:
         try:
             response = client.receive_message(
