@@ -83,6 +83,7 @@ def test_the_sibling_migrations_repo_is_found_and_remembered(cli, tmp_path, monk
     from pdms_cli import cli as cli_module, events
 
     monkeypatch.setattr(events, "docker_available", lambda: (True, "test"))
+    monkeypatch.setattr(migrations, "image_present", lambda: True)
     calls = []
     monkeypatch.setattr(cli_module.subprocess, "run", lambda cmd, env: calls.append((cmd, env)) or type("R", (), {"returncode": 0})())
     result = cli("migrate", "info", "-d", "web-dev")
@@ -90,3 +91,14 @@ def test_the_sibling_migrations_repo_is_found_and_remembered(cli, tmp_path, monk
     cmd, env = calls[0]
     assert cmd[-1] == "info" and env["DB_PASSWORD"] == ""
     assert Config.load().repos["pdms"].migrations == str((tmp_path / "pdms-db-migrations").resolve())
+
+
+def test_pull_retries_and_reports_the_last_error(monkeypatch):
+    outcomes = iter([1, 1, 0])
+    monkeypatch.setattr(migrations.subprocess, "run", lambda *a, **k: type(
+        "R", (), {"returncode": next(outcomes), "stderr": "toomanyrequests: Rate exceeded", "stdout": ""})())
+    monkeypatch.setattr(migrations.time, "sleep", lambda s: None)
+    assert migrations.pull_image() == (True, "")
+    monkeypatch.setattr(migrations.subprocess, "run", lambda *a, **k: type(
+        "R", (), {"returncode": 1, "stderr": "error\ntoomanyrequests: Rate exceeded", "stdout": ""})())
+    assert migrations.pull_image(attempts=2) == (False, "toomanyrequests: Rate exceeded")
