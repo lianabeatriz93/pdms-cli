@@ -72,3 +72,11 @@ def test_being_offline_is_silent(tmp_path, monkeypatch):
     update.refresh(pre=False)
     assert update.load_cache() == {}
     assert update.notice_due(pre=False, current="0.2.0") is None
+
+
+def test_editable_checkout_reports_the_pyproject_version():
+    import re
+    from pathlib import Path
+
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    assert __version__ == re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M).group(1)
