@@ -393,6 +393,7 @@ reload = true
 install = true
 smart_install = true                      # skip the install when nothing changed
 update_check = true                       # tell when a new pdms version is out
+banner = true                             # big PDMS banner when the menu opens (or PDMS_NO_BANNER=1)
 events = "auto"                           # auto | local | aws: where services publish SQS events
 events_port = 9324                        # local ElasticMQ (pdms events up)
 db_timeout = 15                           # seconds for `pdms db test` (or `pdms db test -t 30`)

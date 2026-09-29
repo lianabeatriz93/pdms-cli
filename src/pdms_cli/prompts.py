@@ -134,6 +134,7 @@ def ask_defaults(current: Defaults) -> Defaults:
         ],
         default=current.events if current.events in ("auto", "local", "aws") else "auto",
     ).unsafe_ask()
+    banner = questionary.confirm(_("Show the PDMS banner when the menu opens?"), default=current.banner).unsafe_ask()
     update_check = questionary.confirm(
         _("Tell me when a new pdms version is available?"), default=current.update_check
     ).unsafe_ask()
@@ -153,6 +154,6 @@ def ask_defaults(current: Defaults) -> Defaults:
             env.pop(key, None)
     return Defaults(
         language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
-        smart_install=smart_install if install else current.smart_install, update_check=update_check, events=events_mode,
+        smart_install=smart_install if install else current.smart_install, update_check=update_check, events=events_mode, banner=banner,
         db_timeout=int(db_timeout), env=env,
     )
