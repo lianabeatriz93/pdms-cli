@@ -81,7 +81,8 @@ def load_launch(path: Path) -> tuple[dict, bool]:
 
 
 def upsert_configuration(
-    service: Path, *, python: Path, env_file: Path, host: str, port: int, description: str
+    service: Path, *, python: Path, env_file: Path, host: str, port: int, description: str,
+    program: list[str] | None = None,
 ) -> tuple[Path, str, Path | None]:
     """Add or replace this service's pdms configuration. Returns (launch.json, config name, backup path)."""
     root = workspace_root(service)
@@ -98,8 +99,8 @@ def upsert_configuration(
         "name": name,
         "type": "debugpy",
         "request": "launch",
-        "module": "uvicorn",
-        "args": ["main:app", "--host", host, "--port", str(port)],
+        **({"program": program[0], "args": program[1:]} if program else
+           {"module": "uvicorn", "args": ["main:app", "--host", host, "--port", str(port)]}),
         "cwd": cwd,
         "python": str(python),
         "envFile": str(env_file),

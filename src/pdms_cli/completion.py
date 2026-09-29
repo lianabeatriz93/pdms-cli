@@ -65,6 +65,27 @@ def roles(incomplete: str) -> list[str]:
     return _matching(list(mapping.values()), incomplete)
 
 
+def _event_map():
+    try:
+        from . import events
+
+        cfg = _config()
+        return events.load_event_map(cfg.repo.root) if cfg and cfg.repo else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def queues(incomplete: str) -> list[str]:
+    event_map = _event_map()
+    return _matching(sorted(event_map.queues), incomplete) if event_map else []
+
+
+def event_targets(incomplete: str) -> list[str]:
+    """Event types and queue names (what ``pdms events send`` accepts)."""
+    event_map = _event_map()
+    return _matching(sorted(event_map.routes) + sorted(event_map.queues), incomplete) if event_map else []
+
+
 def event_modes(incomplete: str) -> list[str]:
     return _matching(["auto", "local", "aws"], incomplete)
 
