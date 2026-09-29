@@ -1,3 +1,14 @@
+## v0.2.3 (2026-09-29)
+
+### Feat
+
+- **setup**: guided setup that imports a shared configuration first
+
+### Fix
+
+- **migrate**: download the Flyway image with retries
+- **migrate**: Flyway instead of the frozen Alembic migrations
+
 ## v0.2.2 (2026-09-29)
 
 ### Feat
