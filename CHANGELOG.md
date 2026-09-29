@@ -1,3 +1,19 @@
+## v0.2.2 (2026-09-29)
+
+### Feat
+
+- PDMS banner when the interactive menu opens
+- **events**: send, peek and purge events; debug consumers
+- **events**: run the broker and event consumers locally
+- **events**: services publish to the local broker
+- **events**: event map of the repo and a local ElasticMQ
+
+### Fix
+
+- editable installs report the checkout's version
+- **events**: UTF-8 logs for the poller and background instances on Windows
+- **release**: merge pre-release entries into the final version's changelog
+
 ## v0.2.1 (2026-09-28)
 
 ### Feat
