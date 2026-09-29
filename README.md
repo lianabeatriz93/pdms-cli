@@ -232,6 +232,30 @@ pdms proxy routes -f tp    # which service handles each route and where it would
   `http://localhost:<port>/docs` keeps working.
 - Every request is logged with its status, target and time. Every response carries an `X-Pdms-Target` header.
 
+## Events (local SQS)
+
+PDMS services publish SQS events to the **broker** queue (`SQS_EVENT_BROKER_URL`); the `broker-sqs-event` Lambda
+routes each one by its `type` to a destination queue, consumed by an event Lambda (`*-ev`). `pdms` reads that whole
+map from the current repo — nothing has to be registered by hand:
+
+| What | Where it comes from |
+| --- | --- |
+| Queues (name, FIFO, visibility timeout) | `aws_sqs_queue` in the repo's Terraform, resolving `var.*` defaults |
+| Consumer of each queue and its handler | `aws_lambda_event_source_mapping` → the Lambda's `lambda_path` / `handler` |
+| Queue of each event type | `EVENT_ROUTE_DEST` + `EventType` in `backend/common/event` and the broker Lambda's environment in Terraform |
+| Queues of events without Terraform yet | extra queues in `infra/local_sqs/elasticmq.conf` |
+
+```bash
+pdms events map -f email   # event type → queue → consumer (and queues the broker does not route)
+pdms events up             # local ElasticMQ (Docker) with every queue, at http://localhost:9324
+pdms events status         # messages waiting / in flight per queue (--all for empty ones)
+pdms events down
+```
+
+`pdms events up` generates the ElasticMQ configuration from that map and recreates the container only when the
+queues change. The port is `events_port` in the configuration (9324 by default). Docker is required; `pdms doctor`
+checks it.
+
 ## Stacks: several services at once
 
 ```bash
@@ -290,6 +314,7 @@ running Alembic against a shared DB can break the pipeline for the whole team. I
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |
+| `pdms events` | Local SQS: event map and ElasticMQ (`map`, `up`, `status`, `down`) |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
 | `pdms user` | Users menu (`list`, `add`, `edit`, `remove`, `import`) |
@@ -313,6 +338,7 @@ reload = true
 install = true
 smart_install = true                      # skip the install when nothing changed
 update_check = true                       # tell when a new pdms version is out
+events_port = 9324                        # local ElasticMQ (pdms events up)
 db_timeout = 15                           # seconds for `pdms db test` (or `pdms db test -t 30`)
 
 [defaults.env]

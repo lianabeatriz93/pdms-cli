@@ -616,6 +616,52 @@ ES: dict[str, str] = {
     "With errors": "Con errores",
     "Stopped": "Paradas",
     "Outdated installed code": "Código instalado desactualizado",
+    # ------------------------------------------------------------------ events
+    "Local SQS events: the repo's event map and a local ElasticMQ with all its queues.":
+        "Eventos SQS en local: el mapa de eventos del repo y un ElasticMQ local con todas sus colas.",
+    "Reading the event map (Terraform and backend/common/event)...":
+        "Leyendo el mapa de eventos (Terraform y backend/common/event)...",
+    "No SQS queues found in {path}.": "No encontré colas SQS en {path}.",
+    "Show every event type, the queue the broker sends it to and its consumer.":
+        "Muestra cada tipo de evento, la cola a la que lo envía el broker y su consumidor.",
+    "Only rows containing this text.": "Solo las filas que contengan este texto.",
+    "Event type": "Tipo de evento",
+    "Queue": "Cola",
+    "Consumer": "Consumidor",
+    "Source": "Origen",
+    "Queues not routed by the broker": "Colas que no enruta el broker",
+    "{types} event types · {queues} queues · {consumers} consumers · broker: {broker}":
+        "{types} tipos de evento · {queues} colas · {consumers} consumidores · broker: {broker}",
+    "Start a local ElasticMQ (Docker) with every queue of the repo.":
+        "Levanta un ElasticMQ local (Docker) con todas las colas del repo.",
+    "Docker is not available: {detail}": "Docker no está disponible: {detail}",
+    "docker not found": "no encuentro docker",
+    "Port {port} is in use by something else (maybe infra/local_sqs's docker compose). Stop it or change "
+    "events_port in pdms config.":
+        "El puerto {port} lo usa otra cosa (quizá el docker compose de infra/local_sqs). Páralo o cambia "
+        "events_port en pdms config.",
+    "Starting ElasticMQ...": "Arrancando ElasticMQ...",
+    "Could not start ElasticMQ: {error}": "No pude arrancar ElasticMQ: {error}",
+    "ElasticMQ did not answer on {url}; see: docker logs {name}": "ElasticMQ no responde en {url}; mira: docker logs {name}",
+    "ElasticMQ started": "ElasticMQ arrancado",
+    "ElasticMQ restarted with the updated queues": "ElasticMQ reiniciado con las colas actualizadas",
+    "ElasticMQ was already running with these queues": "ElasticMQ ya estaba corriendo con estas colas",
+    "{count} queues ({extra} only in infra/local_sqs/elasticmq.conf) · broker: {broker}":
+        "{count} colas ({extra} solo en infra/local_sqs/elasticmq.conf) · broker: {broker}",
+    "Stop the local ElasticMQ (its messages are lost).": "Para el ElasticMQ local (se pierden sus mensajes).",
+    "ElasticMQ stopped.": "ElasticMQ parado.",
+    "ElasticMQ is not running.": "ElasticMQ no está corriendo.",
+    "Show whether ElasticMQ is running and the messages waiting in each queue.":
+        "Muestra si ElasticMQ está corriendo y los mensajes pendientes en cada cola.",
+    "Also list empty queues.": "Listar también las colas vacías.",
+    "ElasticMQ is not running. Start it with [bold]pdms events up[/].":
+        "ElasticMQ no está corriendo. Levántalo con [bold]pdms events up[/].",
+    "Waiting": "Pendientes",
+    "In flight": "En proceso",
+    "ElasticMQ running at {url} · {count} queues": "ElasticMQ corriendo en {url} · {count} colas",
+    "All queues are empty (--all to list them).": "Todas las colas están vacías (--all para listarlas).",
+    "Install Docker and start it: https://docs.docker.com/get-docker/":
+        "Instala Docker y arráncalo: https://docs.docker.com/get-docker/",
     # ------------------------------------------------------------------ menus
     "← Back": "← Volver",
     "Databases:": "Bases de datos:",

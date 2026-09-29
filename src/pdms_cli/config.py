@@ -74,6 +74,8 @@ class Defaults:
     install: bool = True
     # With install enabled, skip it when nothing that affects the install changed since the last one.
     smart_install: bool = True
+    # Host port of the local ElasticMQ (SQS) started by `pdms events up`.
+    events_port: int = 9324
     # Tell when a new pdms version is published (checked at most once a day).
     update_check: bool = True
     # Seconds to wait when testing a database connection.
