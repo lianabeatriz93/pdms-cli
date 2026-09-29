@@ -79,6 +79,8 @@ class Defaults:
     events: str = "auto"
     # Host port of the local ElasticMQ (SQS) started by `pdms events up`.
     events_port: int = 9324
+    # Show the big PDMS banner when the interactive menu opens.
+    banner: bool = True
     # Tell when a new pdms version is published (checked at most once a day).
     update_check: bool = True
     # Seconds to wait when testing a database connection.

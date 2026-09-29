@@ -24,7 +24,7 @@ from rich.table import Table
 from rich.text import Text
 
 from . import (
-    __version__, completion, events, i18n, installer, instances, logview, prompts, proxy, repos, routes, runner, transfer,
+    __version__, banner, completion, events, i18n, installer, instances, logview, prompts, proxy, repos, routes, runner, transfer,
     update, userimport, vscode,
 )
 from . import doctor as diagnostics
@@ -2201,6 +2201,8 @@ def settings_menu() -> None:
 def main_menu() -> None:
     prompts.require_tty()
     cfg = Config.load()
+    if cfg.defaults.banner and not os.environ.get("PDMS_NO_BANNER"):
+        banner.render(console, __version__, _("Local PDMS services, made easy"))
     if not config_path().exists():
         cfg.save()
         console.print(_("[dim]Configuration created at {path}[/]", path=config_path()))
