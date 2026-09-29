@@ -73,6 +73,13 @@ class EventMap:
         queue = self.routes.get(event_type)
         return self.consumers.get(queue) if queue else None
 
+    def queue_of_service(self, service: str) -> tuple[str, Consumer] | None:
+        """``(queue, consumer)`` when the service (relative to the backend folder) is an SQS consumer."""
+        for queue, consumer in sorted(self.consumers.items()):
+            if consumer.service == service:
+                return queue, consumer
+        return None
+
 
 # ---------------------------------------------------------------------- parsing
 
@@ -262,6 +269,7 @@ def load_event_map(root: Path, env: str = "dev") -> EventMap:
 
 
 PATCH_DIR = Path(__file__).resolve().parent / "sqs_patch"
+POLLER = PATCH_DIR / "pdms_sqs_poller.py"
 EVENT_MODES = ("auto", "local", "aws")
 
 
@@ -273,6 +281,14 @@ def local_env(event_map: EventMap, port: int) -> dict[str, str]:
     env["PDMS_SQS_ENDPOINT"] = endpoint(port)
     env["PYTHONPATH"] = str(PATCH_DIR)  # its sitecustomize.py redirects the SQS clients (see sqs_patch/)
     return env
+
+
+def poller_command(poetry: str, queue: Queue, consumer: Consumer, port: int) -> list[str]:
+    return [
+        poetry, "run", "python", str(POLLER), "--queue-url", queue_url(queue.name, port),
+        "--handler", consumer.handler, "--function-name", Path(consumer.service).name,
+        "--timeout", str(queue.visibility_timeout),
+    ]
 
 
 def running(port: int) -> bool:

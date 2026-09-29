@@ -68,6 +68,12 @@ class Instance:
     deps: dict[str, str] = field(default_factory=dict)
     # Where it publishes SQS events: "local" (pdms ElasticMQ) or "aws".
     events: str = "aws"
+    # SQS consumers (event Lambdas) have no port: the queue they read from.
+    queue: str = ""
+
+    @property
+    def is_consumer(self) -> bool:
+        return bool(self.queue)
 
     @property
     def name(self) -> str:
@@ -148,16 +154,16 @@ def save(instances: dict[str, Instance]) -> None:
 
 
 def make_key(service: Path, port: int) -> str:
-    return f"{service.name}@{port}"
+    return f"{service.name}@{port}" if port else f"{service.name}@sqs"
 
 
 def running_ports() -> set[int]:
-    return {i.port for i in load().values() if i.alive()}
+    return {i.port for i in load().values() if i.port and i.alive()}
 
 
 def start(
     service: Path, cmd: list[str], env: dict[str, str], *, host: str, port: int, user: str, db: str, reload: bool,
-    deps: dict[str, str] | None = None, events: str = "aws",
+    deps: dict[str, str] | None = None, events: str = "aws", queue: str = "",
 ) -> Instance:
     key = make_key(service, port)
     log = log_path(key)
@@ -178,7 +184,7 @@ def start(
     instance = Instance(
         key=key, pid=proc.pid, service=str(service), host=host, port=port, user=user, db=db,
         reload=reload, log=str(log), started_at=datetime.now().isoformat(timespec="seconds"),
-        created=creation_time(proc.pid), deps=deps or {}, events=events,
+        created=creation_time(proc.pid), deps=deps or {}, events=events, queue=queue,
     )
     instances = load()
     instances[key] = instance
@@ -245,9 +251,14 @@ def startup_error(log: str, lines: int = 300) -> str:
     return exceptions[-1] if exceptions else _("app failed to load")
 
 
+POLLER_READY = "[pdms-poller] Polling"
+
+
 def health(instance: Instance) -> Health:
     if not instance.alive():
         return Health("stopped")
+    if instance.is_consumer:  # no HTTP: ready once the poller listens on its queue
+        return Health("ok") if POLLER_READY in tail(instance.log, 200) else Health("starting")
     if responds(instance.host, instance.port):
         return Health("ok")
     error = startup_error(instance.log)
