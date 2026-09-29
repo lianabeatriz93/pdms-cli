@@ -32,26 +32,15 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          uv run python - <<'PY'
-          import pathlib
-          import xml.etree.ElementTree as ET
-
-          def annotate(title, text):
-              text = text.strip().replace("%", "%25").replace("\r", "").replace("\n", "%0A")
-              print(f"::error title={title}::{text[-3500:]}")
-
-          reported = False
-          try:
-              for case in ET.parse("junit.xml").iter("testcase"):
-                  for problem in [*case.iter("failure"), *case.iter("error")]:
-                      annotate(f"{case.get('classname')}.{case.get('name')}", problem.text or problem.get("message") or "")
-                      reported = True
-          except Exception as exc:
-              annotate("junit.xml could not be read", repr(exc))
-          if not reported:
-              log = pathlib.Path("pytest.log")
-              annotate("pytest output (last lines)", "\n".join(log.read_text(errors="replace").splitlines()[-60:]) if log.exists() else "no pytest.log")
-          PY
+          # Plain bash on purpose: this must work even when the Python environment is the problem.
+          if [ -f pytest.log ]; then
+            grep -E "^(FAILED|ERROR) " pytest.log | head -n 20 | sed 's/^/::error title=pytest::/' || true
+            tail -n 80 pytest.log | tr -d '\r' | sed 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}' \
+              | sed 's/^/::error title=pytest output (last lines)::/'
+            echo
+          else
+            echo "::error title=pytest::pytest.log was not created"
+          fi
       - name: Smoke test
         shell: bash
         env:
