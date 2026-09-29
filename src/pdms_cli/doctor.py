@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import __version__, instances, installer, proxy, repos, routes, runner, update
+from . import __version__, events, instances, installer, proxy, repos, routes, runner, update
 from .config import Config, config_path
 from .i18n import _
 
@@ -124,6 +124,9 @@ def check_tools() -> list[Check]:
         ok = code == 0 and version >= (1, 2)
         checks.append(Check(section, "Poetry", OK if ok else FAIL, out.splitlines()[-1] if out else poetry,
                             "" if ok else _("PDMS services need Poetry 1.2 or newer (dependency groups).")))
+    docker_ok, docker_detail = events.docker_available()
+    checks.append(Check(section, "Docker", OK if docker_ok else FAIL, docker_detail or _("not available"),
+                        "" if docker_ok else _("Install Docker and start it: https://docs.docker.com/get-docker/")))
     pythons = python_versions_available()
     checks.append(Check(
         section, _("Python for the services"), OK if pythons else WARN,

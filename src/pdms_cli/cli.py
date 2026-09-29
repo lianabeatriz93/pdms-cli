@@ -23,7 +23,7 @@ from rich.table import Table
 from rich.text import Text
 
 from . import (
-    __version__, completion, i18n, installer, instances, logview, prompts, proxy, repos, routes, runner, transfer,
+    __version__, completion, events, i18n, installer, instances, logview, prompts, proxy, repos, routes, runner, transfer,
     update, userimport, vscode,
 )
 from . import doctor as diagnostics
@@ -38,6 +38,10 @@ user_app = typer.Typer(help=_("Manage development users (DEV_*)."), invoke_witho
 config_app = typer.Typer(help=_("General settings."), invoke_without_command=True)
 stack_app = typer.Typer(help=_("Manage stacks (groups of services started together)."), invoke_without_command=True)
 repo_app = typer.Typer(help=_("Manage PDMS repos (checkouts) and choose the current one."), invoke_without_command=True)
+events_app = typer.Typer(
+    help=_("Local SQS events: the repo's event map and a local ElasticMQ with all its queues."),
+    invoke_without_command=True,
+)
 proxy_app = typer.Typer(
     help=_("Local API gateway: one port for every service, local instances first, the remote API otherwise."),
     invoke_without_command=True,
@@ -48,6 +52,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(stack_app, name="stack")
 app.add_typer(repo_app, name="repo")
 app.add_typer(proxy_app, name="proxy")
+app.add_typer(events_app, name="events")
 
 
 def fail(message: str) -> None:
@@ -1517,6 +1522,124 @@ def proxy_routes(
         shown += 1
     console.print(table)
     console.print(_("{shown} of {total} routes.", shown=shown, total=len(repo_routes)))
+
+
+# --------------------------------------------------------------------------- events
+
+
+def load_events(env: str = "dev") -> tuple[Path, events.EventMap]:
+    cfg = Config.load()
+    root = current_repo_root(cfg)
+    with console.status(_("Reading the event map (Terraform and backend/common/event)...")):
+        event_map = events.load_event_map(root, env)
+    if not event_map.queues:
+        fail(_("No SQS queues found in {path}.", path=root))
+    return root, event_map
+
+
+@events_app.callback()
+def events_main(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        events_status()
+
+
+@events_app.command("map", help=_("Show every event type, the queue the broker sends it to and its consumer."))
+def events_map(
+    contains: str = typer.Option("", "--filter", "-f", help=_("Only rows containing this text.")),
+    env: str = typer.Option("dev", "--env", "-e", help=_("Terraform environment to read the routes from.")),
+) -> None:
+    _root, event_map = load_events(env)
+    table = Table(_("Event type"), _("Queue"), _("Consumer"))
+    routed = set()
+    for event_type, queue in sorted(event_map.routes.items()):
+        consumer = event_map.consumers.get(queue)
+        row = (event_type, queue, consumer.service if consumer else f"[red]{_('none')}[/]")
+        routed.add(queue)
+        if not contains or any(contains in str(v) for v in row):
+            table.add_row(*row)
+    console.print(table)
+    others = Table(_("Queue"), _("Consumer"), _("Source"), title=_("Queues not routed by the broker"), title_justify="left")
+    for name, queue in sorted(event_map.queues.items()):
+        if name in routed:
+            continue
+        consumer = event_map.consumers.get(name)
+        row = (name, consumer.service if consumer else "-", queue.source)
+        if not contains or any(contains in str(v) for v in row):
+            others.add_row(*row)
+    if others.row_count:
+        console.print(others)
+    console.print(_("{types} event types · {queues} queues · {consumers} consumers · broker: {broker}",
+                    types=len(event_map.routes), queues=len(event_map.queues), consumers=len(event_map.consumers),
+                    broker=event_map.broker_queue or _("not found")))
+
+
+@events_app.command("up", help=_("Start a local ElasticMQ (Docker) with every queue of the repo."))
+def events_up(env: str = typer.Option("dev", "--env", "-e", help=_("Terraform environment to read the routes from."))) -> None:
+    ok, detail = events.docker_available()
+    if not ok:
+        fail(_("Docker is not available: {detail}", detail=detail or _("docker not found")))
+    cfg = Config.load()
+    _root, event_map = load_events(env)
+    port = cfg.defaults.events_port
+    state = events.container_state()
+    if not (state and state["running"] and state["port"] == port) and not runner.port_is_free("127.0.0.1", port):
+        fail(_("Port {port} is in use by something else (maybe infra/local_sqs's docker compose). Stop it or change "
+               "events_port in pdms config.", port=port))
+    with console.status(_("Starting ElasticMQ...")):
+        try:
+            result = events.start(event_map.queues, port)
+        except RuntimeError as exc:
+            fail(_("Could not start ElasticMQ: {error}", error=exc))
+        for _attempt in range(60):
+            if events.is_up(port):
+                break
+            time.sleep(0.5)
+        else:
+            fail(_("ElasticMQ did not answer on {url}; see: docker logs {name}", url=events.endpoint(port),
+                   name=events.CONTAINER))
+    extra = sum(q.source != "terraform" for q in event_map.queues.values())
+    message = {
+        "created": _("ElasticMQ started"), "restarted": _("ElasticMQ restarted with the updated queues"),
+        "unchanged": _("ElasticMQ was already running with these queues"),
+    }[result]
+    console.print("[green]✓[/] " + message + f" · {events.endpoint(port)}")
+    console.print("  " + _("{count} queues ({extra} only in infra/local_sqs/elasticmq.conf) · broker: {broker}",
+                           count=len(event_map.queues), extra=extra, broker=event_map.broker_queue or "-"))
+
+
+@events_app.command("down", help=_("Stop the local ElasticMQ (its messages are lost)."))
+def events_down() -> None:
+    if events.stop():
+        console.print("[green]✓[/] " + _("ElasticMQ stopped."))
+    else:
+        console.print(_("ElasticMQ is not running."))
+
+
+@events_app.command("status", help=_("Show whether ElasticMQ is running and the messages waiting in each queue."))
+def events_status(
+    all_: bool = typer.Option(False, "--all", "-a", help=_("Also list empty queues.")),
+) -> None:
+    cfg = Config.load()
+    port = cfg.defaults.events_port
+    state = events.container_state()
+    if not state or not state["running"] or not events.is_up(port):
+        console.print(_("ElasticMQ is not running. Start it with [bold]pdms events up[/]."))
+        return
+    root = repos.active_root(cfg)
+    event_map = events.load_event_map(root) if root and root.is_dir() else events.EventMap()
+    counts = events.queue_counts(port)
+    table = Table(_("Queue"), _("Waiting"), _("In flight"), _("Consumer"))
+    for name, count in sorted(counts.items()):
+        if not all_ and not count["visible"] and not count["in_flight"]:
+            continue
+        consumer = event_map.consumers.get(name)
+        table.add_row(name, str(count["visible"]), str(count["in_flight"]), consumer.service if consumer else "-")
+    console.print("[green]●[/] " + _("ElasticMQ running at {url} · {count} queues", url=events.endpoint(port),
+                                     count=len(counts)))
+    if table.row_count:
+        console.print(table)
+    else:
+        console.print("  [dim]" + _("All queues are empty (--all to list them).") + "[/]")
 
 
 # --------------------------------------------------------------------------- config commands
