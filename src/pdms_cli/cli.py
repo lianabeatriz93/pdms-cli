@@ -267,6 +267,7 @@ def choose_profile(
     port: Optional[int],
     host: Optional[str],
     yes: bool,
+    needs_port: bool = True,
 ) -> Profile:
     """Resolve service, dev user, database and a free port, asking for whatever was not given."""
     service = resolve_service(cfg, service_name, path)
@@ -286,6 +287,8 @@ def choose_profile(
         console.print("[yellow]" + _("⚠ Database '{name}' has no password configured.", name=db_name) + "[/]")
 
     host = host or cfg.defaults.host
+    if not needs_port:  # SQS consumers listen on a queue, not on a port
+        return Profile(service, user_name, dev_user, db_name, database, host, 0)
     # Ports of background instances count as taken even while they are still booting.
     taken = instances.running_ports()
     is_free = lambda p: p not in taken and runner.port_is_free(host, p)  # noqa: E731
@@ -393,6 +396,23 @@ def events_for(cfg: Config, service: Path, mode: Optional[str]) -> tuple[dict[st
     return events.local_env(event_map, port), label, "local"
 
 
+def consumer_of(cfg: Config, service: Path) -> Optional[tuple[events.Queue, events.Consumer]]:
+    """The queue and handler when ``service`` is an SQS consumer (event Lambda) of its repo."""
+    root = repos.find_repo_root(service) or repos.active_root(cfg)
+    if not root:
+        return None
+    try:
+        relative = service.resolve().relative_to((root / "backend").resolve()).as_posix()
+    except ValueError:
+        return None
+    event_map = events.load_event_map(root)
+    found = event_map.queue_of_service(relative)
+    if not found:
+        return None
+    queue_name, consumer = found
+    return event_map.queues.get(queue_name) or events.Queue(queue_name), consumer
+
+
 def do_run(
     service_name: Optional[str] = None,
     user: Optional[str] = None,
@@ -407,14 +427,25 @@ def do_run(
     events_mode: Optional[str] = None,
 ) -> None:
     cfg = Config.load()
-    prof = choose_profile(cfg, service_name, path, user, db, port, host, yes)
+    service = resolve_service(cfg, service_name, path)
+    consumer = consumer_of(cfg, service)
+    if consumer:
+        events_mode = "local"  # a consumer reads its queue from the local ElasticMQ
+    prof = choose_profile(cfg, None, service, user, db, port, host, yes, needs_port=not consumer)
     if background is None:
         background = sys.stdin.isatty() and prompts.ask_background()
     reload = cfg.defaults.reload if reload is None else reload
     events_env, events_label, events_kind = events_for(cfg, prof.service, events_mode)
 
+    if consumer:
+        queue, handler = consumer
+        what = {_("Consumer"): f"{queue.name} → {handler.handler}"}
+        cmd = events.poller_command(runner.poetry(), queue, handler, cfg.defaults.events_port)
+    else:
+        what = {_("Server"): f"http://{prof.host}:{prof.port}  reload={yes_no(reload)}  log={cfg.defaults.logging_level}"}
+        cmd = runner.uvicorn_command(prof.host, prof.port, reload)
     print_summary(cfg, prof, {
-        _("Server"): f"http://{prof.host}:{prof.port}  reload={yes_no(reload)}  log={cfg.defaults.logging_level}",
+        **what,
         _("Mode"): _("background") if background else _("foreground"),
         _("Events"): events_label,
         _("Install"): install_label(cfg, install),
@@ -422,15 +453,14 @@ def do_run(
     confirm_protected(cfg, prof, yes)
     ensure_installed(cfg, prof.service, install)
 
-    cmd = runner.uvicorn_command(prof.host, prof.port, reload)
     env = runner.build_env(cfg.defaults, prof.user, prof.db, events_env)
     if not background:
-        console.rule(f"uvicorn :{prof.port}")
+        console.rule(consumer[0].name if consumer else f"uvicorn :{prof.port}")
         runner.exec_server(prof.service, cmd, env)
 
     inst = instances.start(
         prof.service, cmd, env, host=prof.host, port=prof.port, user=prof.user_name, db=prof.db_name, reload=reload,
-        deps=installed_parts(prof.service), events=events_kind,
+        deps=installed_parts(prof.service), events=events_kind, queue=consumer[0].name if consumer else "",
     )
     wait_until_ready(inst)
 
@@ -444,6 +474,10 @@ def wait_until_ready(inst: instances.Instance, timeout: float = 90) -> None:
                 instances.forget(inst.key)
                 console.print(instances.tail(inst.log, 30), markup=False, highlight=False)
                 fail(_("{key} exited while starting. Full log: {log}", key=inst.key, log=inst.log))
+            if health.state == "ok" and inst.is_consumer:
+                console.print("[green]✓[/] " + _("{key} is consuming {queue} (pid {pid})",
+                                                 key=inst.key, queue=inst.queue, pid=inst.pid))
+                break
             if health.state == "ok":
                 console.print(f"[green]✓[/] " + _(
                     "{key} is responding at http://localhost:{port} (pid {pid})",
@@ -739,7 +773,7 @@ def urls(
             if inst not in targets:
                 targets.append(inst)
     else:
-        targets = [i for i in instances.load().values() if i.alive()]
+        targets = [i for i in instances.load().values() if i.alive() and not i.is_consumer]
         if not targets:
             fail(_("No background services. Start one with [bold]pdms run -b[/]."))
     for inst in targets:
@@ -765,7 +799,7 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
         state = healths[inst.key].state
         repo = repos.repo_of(cfg, inst.service) or "-"
         table.add_row(
-            inst.key, status_text(state), f"http://localhost:{inst.port}",
+            inst.key, status_text(state), f"sqs ← {inst.queue}" if inst.is_consumer else f"http://localhost:{inst.port}",
             f"[bold]{repo}[/]" if repo == cfg.current_repo else repo,
             inst.user, inst.db, uptime(inst.started_at) if state != "stopped" else "",
         )
@@ -860,6 +894,8 @@ def open_cmd(
     path: str = typer.Option("/docs", "--path", "-P", help=_("Path to open, e.g. /redoc or /.")),
 ) -> None:
     inst = pick_instance(key, only_alive=True, message=_("Which instance do you want to open?"))
+    if inst.is_consumer:
+        fail(_("{key} is an event consumer: it has no web page. See its logs: pdms logs {key}", key=inst.key))
     url = f"http://localhost:{inst.port}/{path.lstrip('/')}"
     console.print(_("Opening {url}", url=url))
     if not webbrowser.open(url):
@@ -1050,30 +1086,37 @@ def up(
         return
 
     taken = set(instances.running_ports())
-    plan = []
+    plan = []  # (path, port, consumer): consumers get no port
     port = cfg.defaults.port
     for path in pending:
+        consumer = consumer_of(cfg, path)
+        if consumer:
+            plan.append((path, 0, consumer))
+            continue
         port = runner.next_free_port(host, port, taken)
         taken.add(port)
-        plan.append((path, port))
+        plan.append((path, port, None))
+    if any(c for _p, _port, c in plan):
+        events_mode = "local"  # consumers read from the local ElasticMQ
 
     first = Profile(plan[0][0], user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], host, plan[0][1])
     events_env, events_label, events_kind = events_for(cfg, plan[0][0], events_mode)
     print_summary(cfg, first, {
-        _("Services"): "\n".join(f"{p.name} → :{port}" for p, port in plan),
+        _("Services"): "\n".join(f"{p.name} → " + (f"sqs ← {c[0].name}" if c else f":{port}") for p, port, c in plan),
         _("Events"): events_label,
         _("Install"): install_label(cfg, install, each=True),
     }, show_service=False)
     confirm_protected(cfg, first, yes)
 
     started = []
-    for path, port in plan:
+    for path, port, consumer in plan:
         ensure_installed(cfg, path, install)
         env = runner.build_env(cfg.defaults, cfg.users[user_name], cfg.dbs[db_name], events_env)
-        cmd = runner.uvicorn_command(host, port, cfg.defaults.reload)
+        cmd = events.poller_command(runner.poetry(), consumer[0], consumer[1], cfg.defaults.events_port) if consumer \
+            else runner.uvicorn_command(host, port, cfg.defaults.reload)
         started.append(instances.start(
             path, cmd, env, host=host, port=port, user=user_name, db=db_name, reload=cfg.defaults.reload,
-            deps=installed_parts(path), events=events_kind,
+            deps=installed_parts(path), events=events_kind, queue=consumer[0].name if consumer else "",
         ))
     failed = 0
     for inst in started:
@@ -1613,8 +1656,11 @@ def events_map(
                     broker=event_map.broker_queue or _("not found")))
 
 
-@events_app.command("up", help=_("Start a local ElasticMQ (Docker) with every queue of the repo."))
-def events_up(env: str = typer.Option("dev", "--env", "-e", help=_("Terraform environment to read the routes from."))) -> None:
+@events_app.command("up", help=_("Start a local ElasticMQ (Docker) with every queue of the repo, and the broker."))
+def events_up(
+    env: str = typer.Option("dev", "--env", "-e", help=_("Terraform environment to read the routes from.")),
+    broker: bool = typer.Option(True, "--broker/--no-broker", help=_("Also run the broker (broker-sqs-event) locally.")),
+) -> None:
     ok, detail = events.docker_available()
     if not ok:
         fail(_("Docker is not available: {detail}", detail=detail or _("docker not found")))
@@ -1645,10 +1691,38 @@ def events_up(env: str = typer.Option("dev", "--env", "-e", help=_("Terraform en
     console.print("[green]✓[/] " + message + f" · {events.endpoint(port)}")
     console.print("  " + _("{count} queues ({extra} only in infra/local_sqs/elasticmq.conf) · broker: {broker}",
                            count=len(event_map.queues), extra=extra, broker=event_map.broker_queue or "-"))
+    if broker:
+        start_broker(cfg, _root, event_map)
+
+
+def start_broker(cfg: Config, root: Path, event_map: events.EventMap) -> None:
+    """Run broker-sqs-event locally, so published events are routed to their queues as in AWS."""
+    service = root / "backend" / events.BROKER_SERVICE
+    if not event_map.broker_queue or not runner.is_service(service):
+        console.print("[yellow]" + _("⚠ The broker ({service}) was not found in the repo; events stay in the broker "
+                                     "queue.", service=events.BROKER_SERVICE) + "[/]")
+        return
+    if any(i.is_consumer and i.queue == event_map.broker_queue and i.alive() for i in instances.load().values()):
+        console.print(_("[dim]The broker is already running.[/]"))
+        return
+    if not cfg.users or not cfg.dbs:
+        console.print("[yellow]" + _("⚠ Configure a user and a database to run the broker (pdms user add, pdms db "
+                                     "add), then: pdms run {service} -b", service=events.BROKER_SERVICE) + "[/]")
+        return
+    console.rule(_("Broker"))
+    try:
+        do_run(user=cfg.last_user or None, db=cfg.last_db or None, path=service, background=True, yes=True,
+               events_mode="local")
+    except typer.Exit:
+        console.print("[yellow]" + _("⚠ The broker did not start; see pdms logs {name}", name=service.name) + "[/]")
 
 
 @events_app.command("down", help=_("Stop the local ElasticMQ (its messages are lost)."))
 def events_down() -> None:
+    for inst in [i for i in instances.load().values() if i.is_consumer and i.alive()]:
+        with console.status(_("Stopping {key}...", key=inst.key)):
+            instances.stop(inst)
+        console.print("[green]✓[/] " + _("{key} stopped.", key=inst.key))
     if events.stop():
         console.print("[green]✓[/] " + _("ElasticMQ stopped."))
     else:
@@ -1673,7 +1747,9 @@ def events_status(
         if not all_ and not count["visible"] and not count["in_flight"]:
             continue
         consumer = event_map.consumers.get(name)
-        table.add_row(name, str(count["visible"]), str(count["in_flight"]), consumer.service if consumer else "-")
+        running = next((i.key for i in instances.load().values() if i.is_consumer and i.queue == name and i.alive()), "")
+        table.add_row(name, str(count["visible"]), str(count["in_flight"]),
+                      f"[green]● {running}[/]" if running else (f"[dim]{consumer.service}[/]" if consumer else "-"))
     console.print("[green]●[/] " + _("ElasticMQ running at {url} · {count} queues", url=events.endpoint(port),
                                      count=len(counts)))
     publishers = [i.key for i in instances.load().values() if i.alive() and i.events == "local"]

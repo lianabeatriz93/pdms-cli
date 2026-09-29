@@ -632,8 +632,20 @@ ES: dict[str, str] = {
     "Queues not routed by the broker": "Colas que no enruta el broker",
     "{types} event types · {queues} queues · {consumers} consumers · broker: {broker}":
         "{types} tipos de evento · {queues} colas · {consumers} consumidores · broker: {broker}",
-    "Start a local ElasticMQ (Docker) with every queue of the repo.":
-        "Levanta un ElasticMQ local (Docker) con todas las colas del repo.",
+    "Start a local ElasticMQ (Docker) with every queue of the repo, and the broker.":
+        "Levanta un ElasticMQ local (Docker) con todas las colas del repo, y el broker.",
+    "Also run the broker (broker-sqs-event) locally.": "Levantar también el broker (broker-sqs-event) en local.",
+    "Broker": "Broker",
+    "[dim]The broker is already running.[/]": "[dim]El broker ya está corriendo.[/]",
+    "⚠ The broker ({service}) was not found in the repo; events stay in the broker queue.":
+        "⚠ No encontré el broker ({service}) en el repo; los eventos se quedarán en la cola del broker.",
+    "⚠ Configure a user and a database to run the broker (pdms user add, pdms db add), then: pdms run {service} -b":
+        "⚠ Configura un usuario y una base de datos para levantar el broker (pdms user add, pdms db add), y luego: "
+        "pdms run {service} -b",
+    "⚠ The broker did not start; see pdms logs {name}": "⚠ El broker no arrancó; mira pdms logs {name}",
+    "{key} is consuming {queue} (pid {pid})": "{key} está consumiendo {queue} (pid {pid})",
+    "{key} is an event consumer: it has no web page. See its logs: pdms logs {key}":
+        "{key} es un consumidor de eventos: no tiene página web. Mira sus logs: pdms logs {key}",
     "Docker is not available: {detail}": "Docker no está disponible: {detail}",
     "docker not found": "no encuentro docker",
     "Port {port} is in use by something else (maybe infra/local_sqs's docker compose). Stop it or change "

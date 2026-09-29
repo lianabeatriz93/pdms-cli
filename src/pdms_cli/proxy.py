@@ -88,7 +88,7 @@ class Gateway:
     def local_instances(self) -> dict[str, list[instances.Instance]]:
         found: dict[str, list[instances.Instance]] = {}
         for inst in instances.load().values():
-            if inst.alive():
+            if inst.alive() and not inst.is_consumer:  # event consumers have no HTTP API
                 found.setdefault(str(Path(inst.service).resolve()), []).append(inst)
         return found
 

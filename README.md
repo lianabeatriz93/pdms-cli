@@ -273,6 +273,25 @@ local ElasticMQ runs, otherwise the service's own configuration), `local` (alway
 publishing locally. Queues are FIFO with content-based deduplication, like in AWS: the same message body sent twice
 within 5 minutes is stored once.
 
+### Broker and consumers
+
+`pdms events up` also runs the **broker** (`broker-sqs-event`, with the last used user/DB; `--no-broker` to skip it),
+so published events are routed to their queues exactly as in AWS. Event Lambdas run like any other service:
+
+```bash
+pdms run email-notify -b        # detected as the consumer of email-send-sqs-queue.fifo: no port, no uvicorn
+pdms ps                         # email-notify@sqs · sqs ← email-send-sqs-queue.fifo
+pdms logs --all                 # received / processed / failed messages of every consumer, next to the services
+pdms events down                # stops the consumers, the broker and ElasticMQ
+```
+
+A service is a consumer when the repo's Terraform maps a queue to it. pdms then runs its own poller with the
+service's Python: it long-polls the local queue and calls the Lambda `handler` from Terraform with
+`{"Records": [...]}` and a Lambda-like context, deletes processed messages and honours `batchItemFailures`. A failed
+message is retried after 5 seconds (not the queue's visibility timeout) and dropped with a warning after 3 attempts,
+since there is no dead-letter queue locally. Consumers work with `ps`, `logs`, `stop`, `restart`, stacks and the
+outdated-code warning; they always use the local ElasticMQ (and publish to the local broker), offering to start it.
+
 ## Stacks: several services at once
 
 ```bash
