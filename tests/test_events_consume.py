@@ -44,14 +44,15 @@ def test_consumers_are_keyed_by_queue_and_report_ready_from_their_log(tmp_path):
     assert instances.make_key(Path("/x/email-notify"), 0) == "email-notify@sqs"
     assert instances.make_key(Path("/x/lead-tp-list"), 8080) == "lead-tp-list@8080"
     log = tmp_path / "email-notify@sqs.log"
-    log.write_text("# pdms start\n")
+    log.write_text("# pdms start\n", encoding="utf-8")
     inst = instances.Instance(
         key="email-notify@sqs", pid=os.getpid(), service="/x/email-notify", host="0.0.0.0", port=0, user="u",
         db="d", reload=False, log=str(log), started_at=datetime.now().isoformat(), queue="email-send-sqs-queue.fifo",
     )
     assert inst.is_consumer
     assert instances.health(inst).state == "starting"
-    log.write_text("# pdms start\n10:00:00 [pdms-poller] Polling email-send-sqs-queue.fifo → main.lambda_handler\n")
+    log.write_text("# pdms start\n10:00:00 [pdms-poller] Polling email-send-sqs-queue.fifo -> main.lambda_handler\n",
+                   encoding="utf-8")
     assert instances.health(inst).state == "ok"
 
 

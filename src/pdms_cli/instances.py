@@ -175,7 +175,9 @@ def start(
         proc = subprocess.Popen(
             cmd,
             cwd=service,
-            env={**env, "PYTHONUNBUFFERED": "1"},
+            # Logs are files read as UTF-8; without this, Windows would write them in cp1252 and a service
+            # printing a non-cp1252 character would crash.
+            env={"PYTHONIOENCODING": "utf-8", **env, "PYTHONUNBUFFERED": "1"},
             stdin=subprocess.DEVNULL,
             stdout=fh,
             stderr=subprocess.STDOUT,
