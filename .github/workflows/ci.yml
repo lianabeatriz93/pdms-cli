@@ -117,6 +117,35 @@ jobs:
           # the runner context is only available inside steps
           echo "PDMS_CONFIG=$RUNNER_TEMP/pdms/config.toml" >> "$GITHUB_ENV"
           echo "XDG_STATE_HOME=$RUNNER_TEMP/state" >> "$GITHUB_ENV"
+      # Public ECR caps the data anonymous clients download, and the runners share their IPs with everyone else
+      # ("toomanyrequests: Data limit exceeded"), so the image comes from ECR only once per tag and from the cache
+      # afterwards.
+      - name: Flyway image name
+        id: image
+        run: echo "name=$(uv run python -c 'from pdms_cli.migrations import IMAGE; print(IMAGE)')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Flyway image
+        id: image-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/flyway-image.tar
+          key: flyway-image-${{ steps.image.outputs.name }}
+      - name: Load the cached Flyway image
+        if: steps.image-cache.outputs.cache-hit == 'true'
+        run: docker load -i "$RUNNER_TEMP/flyway-image.tar"
+      - name: Download the Flyway image
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        run: |
+          uv run python -c "
+          from pdms_cli.migrations import pull_image
+          ok, error = pull_image(attempts=5, wait=30)
+          raise SystemExit(0 if ok else f'::error title=docker pull::{error}')"
+          docker save -o "$RUNNER_TEMP/flyway-image.tar" '${{ steps.image.outputs.name }}'
+      - name: Cache the Flyway image
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/flyway-image.tar
+          key: flyway-image-${{ steps.image.outputs.name }}
       - name: A migrations repo like pdms-db-migrations
         run: |
           mkdir -p "$RUNNER_TEMP/pdms/backend/snakesdk" "$RUNNER_TEMP/pdms-db-migrations/migrations/versioned"
