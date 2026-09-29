@@ -662,6 +662,24 @@ ES: dict[str, str] = {
     "All queues are empty (--all to list them).": "Todas las colas están vacías (--all para listarlas).",
     "Install Docker and start it: https://docs.docker.com/get-docker/":
         "Instala Docker y arráncalo: https://docs.docker.com/get-docker/",
+    # ------------------------------------------------------------------ events: publishing
+    "Where the service publishes SQS events: auto, local (pdms events broker) or aws.":
+        "Dónde publica el servicio los eventos SQS: auto, local (broker de pdms events) o aws.",
+    "Unknown events mode '{mode}'. Available: {codes}": "Modo de eventos desconocido '{mode}'. Disponibles: {codes}",
+    "AWS (the service's own configuration)": "AWS (la configuración del propio servicio)",
+    "AWS (run pdms events up to publish locally)": "AWS (ejecuta pdms events up para publicar en local)",
+    "The local ElasticMQ is not running. Start it now?": "El ElasticMQ local no está corriendo. ¿Lo levanto ahora?",
+    "--events local needs the local ElasticMQ: pdms events up": "--events local necesita el ElasticMQ local: pdms events up",
+    "⚠ No broker queue found in the repo's Terraform; SQS_EVENT_BROKER_URL is left as configured.":
+        "⚠ No encontré la cola del broker en el Terraform del repo; SQS_EVENT_BROKER_URL queda como esté configurado.",
+    "local broker · {url}": "broker local · {url}",
+    "local ElasticMQ · {url}": "ElasticMQ local · {url}",
+    "Events": "Eventos",
+    "Publishing to the local broker: {names}": "Publicando en el broker local: {names}",
+    "Where should services publish SQS events?": "¿Dónde deben publicar los servicios los eventos SQS?",
+    "auto: local broker when pdms events up is running": "auto: broker local cuando pdms events up está corriendo",
+    "local: always the local broker": "local: siempre el broker local",
+    "aws: as configured by each service": "aws: como lo tenga configurado cada servicio",
     # ------------------------------------------------------------------ menus
     "← Back": "← Volver",
     "Databases:": "Bases de datos:",

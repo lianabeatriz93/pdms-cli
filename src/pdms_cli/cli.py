@@ -364,6 +364,35 @@ def ensure_installed(cfg: Config, service: Path, install: Optional[bool]) -> Non
     poetry_install(service)
 
 
+EVENTS_HELP = _("Where the service publishes SQS events: auto, local (pdms events broker) or aws.")
+
+
+def events_for(cfg: Config, service: Path, mode: Optional[str]) -> tuple[dict[str, str], str, str]:
+    """``(extra environment, summary label, kind)`` for publishing events, kind being ``local`` or ``aws``."""
+    mode = mode or cfg.defaults.events
+    if mode not in events.EVENT_MODES:
+        fail(_("Unknown events mode '{mode}'. Available: {codes}", mode=mode, codes=", ".join(events.EVENT_MODES)))
+    if mode == "aws":
+        return {}, _("AWS (the service's own configuration)"), "aws"
+    port = cfg.defaults.events_port
+    if not events.running(port):
+        if mode == "auto":
+            return {}, _("AWS (run pdms events up to publish locally)"), "aws"
+        if not interactive_terminal() or not questionary.confirm(
+            _("The local ElasticMQ is not running. Start it now?"), default=True
+        ).unsafe_ask():
+            fail(_("--events local needs the local ElasticMQ: pdms events up"))
+        events_up("dev")
+    root = repos.find_repo_root(service) or repos.active_root(cfg)
+    event_map = events.load_event_map(root) if root else events.EventMap()
+    if not event_map.broker_queue:
+        console.print("[yellow]" + _("⚠ No broker queue found in the repo's Terraform; SQS_EVENT_BROKER_URL is left "
+                                     "as configured.") + "[/]")
+    label = _("local broker · {url}", url=events.queue_url(event_map.broker_queue, port)) \
+        if event_map.broker_queue else _("local ElasticMQ · {url}", url=events.endpoint(port))
+    return events.local_env(event_map, port), label, "local"
+
+
 def do_run(
     service_name: Optional[str] = None,
     user: Optional[str] = None,
@@ -375,30 +404,33 @@ def do_run(
     yes: bool = False,
     path: Optional[Path] = None,
     background: Optional[bool] = None,
+    events_mode: Optional[str] = None,
 ) -> None:
     cfg = Config.load()
     prof = choose_profile(cfg, service_name, path, user, db, port, host, yes)
     if background is None:
         background = sys.stdin.isatty() and prompts.ask_background()
     reload = cfg.defaults.reload if reload is None else reload
+    events_env, events_label, events_kind = events_for(cfg, prof.service, events_mode)
 
     print_summary(cfg, prof, {
         _("Server"): f"http://{prof.host}:{prof.port}  reload={yes_no(reload)}  log={cfg.defaults.logging_level}",
         _("Mode"): _("background") if background else _("foreground"),
+        _("Events"): events_label,
         _("Install"): install_label(cfg, install),
     })
     confirm_protected(cfg, prof, yes)
     ensure_installed(cfg, prof.service, install)
 
     cmd = runner.uvicorn_command(prof.host, prof.port, reload)
-    env = runner.build_env(cfg.defaults, prof.user, prof.db)
+    env = runner.build_env(cfg.defaults, prof.user, prof.db, events_env)
     if not background:
         console.rule(f"uvicorn :{prof.port}")
         runner.exec_server(prof.service, cmd, env)
 
     inst = instances.start(
         prof.service, cmd, env, host=prof.host, port=prof.port, user=prof.user_name, db=prof.db_name, reload=reload,
-        deps=installed_parts(prof.service),
+        deps=installed_parts(prof.service), events=events_kind,
     )
     wait_until_ready(inst)
 
@@ -452,8 +484,9 @@ def run(
     background: Optional[bool] = typer.Option(None, "--background/--foreground", "-b/-f", help=_("Background or foreground.")),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
     path: Optional[Path] = typer.Option(None, "--path", "-C", help=_("Service folder (defaults to the current one).")),
+    events_mode: Optional[str] = typer.Option(None, "--events", help=EVENTS_HELP, autocompletion=completion.event_modes),
 ) -> None:
-    do_run(service, user, db, port, host, install, reload, yes, path, background)
+    do_run(service, user, db, port, host, install, reload, yes, path, background, events_mode)
 
 
 # --------------------------------------------------------------------------- debugging
@@ -473,11 +506,14 @@ def debug(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
     path: Optional[Path] = typer.Option(None, "--path", "-C", help=_("Service folder (defaults to the current one).")),
+    events_mode: Optional[str] = typer.Option(None, "--events", help=EVENTS_HELP, autocompletion=completion.event_modes),
 ) -> None:
     cfg = Config.load()
     prof = choose_profile(cfg, service, path, user, db, port, host, yes)
+    events_env, events_label, _events_kind = events_for(cfg, prof.service, events_mode)
     print_summary(cfg, prof, {
         _("Debug"): _("http://{host}:{port} (no --reload, so breakpoints work)", host=prof.host, port=prof.port),
+        _("Events"): events_label,
         _("Install"): install_label(cfg, install),
     })
     confirm_protected(cfg, prof, yes)
@@ -490,7 +526,7 @@ def debug(
             _("Could not find the virtualenv python (poetry env info -e).")
         )
 
-    env_file = vscode.write_env_file(prof.service, runner.service_env(cfg.defaults, prof.user, prof.db))
+    env_file = vscode.write_env_file(prof.service, runner.service_env(cfg.defaults, prof.user, prof.db, events_env))
     launch, name, backup = vscode.upsert_configuration(
         prof.service, python=python, env_file=env_file, host=prof.host, port=prof.port,
         description=f"{prof.user_name} @ {prof.db_name} :{prof.port}",
@@ -884,6 +920,7 @@ def restart(
     do_run(
         user=user, db=db, port=inst.port, host=inst.host, install=install, reload=inst.reload,
         yes=True, path=Path(inst.service), background=True,
+        events_mode="local" if inst.events == "local" else None,
     )
 
 
@@ -992,6 +1029,7 @@ def up(
         None, "--install/--no-install", "-i/-n", help=_("Force (-i) or skip (-n) the install; by default only if something changed.")
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
+    events_mode: Optional[str] = typer.Option(None, "--events", help=EVENTS_HELP, autocompletion=completion.event_modes),
 ) -> None:
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
@@ -1020,8 +1058,10 @@ def up(
         plan.append((path, port))
 
     first = Profile(plan[0][0], user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], host, plan[0][1])
+    events_env, events_label, events_kind = events_for(cfg, plan[0][0], events_mode)
     print_summary(cfg, first, {
         _("Services"): "\n".join(f"{p.name} → :{port}" for p, port in plan),
+        _("Events"): events_label,
         _("Install"): install_label(cfg, install, each=True),
     }, show_service=False)
     confirm_protected(cfg, first, yes)
@@ -1029,11 +1069,11 @@ def up(
     started = []
     for path, port in plan:
         ensure_installed(cfg, path, install)
-        env = runner.build_env(cfg.defaults, cfg.users[user_name], cfg.dbs[db_name])
+        env = runner.build_env(cfg.defaults, cfg.users[user_name], cfg.dbs[db_name], events_env)
         cmd = runner.uvicorn_command(host, port, cfg.defaults.reload)
         started.append(instances.start(
             path, cmd, env, host=host, port=port, user=user_name, db=db_name, reload=cfg.defaults.reload,
-            deps=installed_parts(path),
+            deps=installed_parts(path), events=events_kind,
         ))
     failed = 0
     for inst in started:
@@ -1636,6 +1676,8 @@ def events_status(
         table.add_row(name, str(count["visible"]), str(count["in_flight"]), consumer.service if consumer else "-")
     console.print("[green]●[/] " + _("ElasticMQ running at {url} · {count} queues", url=events.endpoint(port),
                                      count=len(counts)))
+    publishers = [i.key for i in instances.load().values() if i.alive() and i.events == "local"]
+    console.print("  " + _("Publishing to the local broker: {names}", names=", ".join(publishers) or _("none")))
     if table.row_count:
         console.print(table)
     else:

@@ -125,6 +125,15 @@ def ask_defaults(current: Defaults) -> Defaults:
     smart_install = install and questionary.confirm(
         _("Skip the install when nothing changed since the last one (smart install)?"), default=current.smart_install
     ).unsafe_ask()
+    events_mode = questionary.select(
+        _("Where should services publish SQS events?"),
+        choices=[
+            questionary.Choice(_("auto: local broker when pdms events up is running"), "auto"),
+            questionary.Choice(_("local: always the local broker"), "local"),
+            questionary.Choice(_("aws: as configured by each service"), "aws"),
+        ],
+        default=current.events if current.events in ("auto", "local", "aws") else "auto",
+    ).unsafe_ask()
     update_check = questionary.confirm(
         _("Tell me when a new pdms version is available?"), default=current.update_check
     ).unsafe_ask()
@@ -144,6 +153,6 @@ def ask_defaults(current: Defaults) -> Defaults:
             env.pop(key, None)
     return Defaults(
         language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
-        smart_install=smart_install if install else current.smart_install, update_check=update_check,
+        smart_install=smart_install if install else current.smart_install, update_check=update_check, events=events_mode,
         db_timeout=int(db_timeout), env=env,
     )

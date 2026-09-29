@@ -256,6 +256,23 @@ pdms events down
 queues change. The port is `events_port` in the configuration (9324 by default). Docker is required; `pdms doctor`
 checks it.
 
+### Publishing to the local broker
+
+While `pdms events up` is running, every service started with `pdms run`, `pdms up`, `pdms restart` or `pdms debug`
+publishes its events to the **local broker** — no `.env` to edit:
+
+- `SQS_EVENT_BROKER_URL` points to the local broker queue, and the broker's destination variables
+  (`SQS_EMAIL_NOTIFY`, …) to their local queues;
+- a `sitecustomize.py` shipped with pdms is put on `PYTHONPATH`: Python loads it in every process of the service,
+  including the ones uvicorn `--reload` spawns, and it sends the SQS clients created by botocore (1.29 in PDMS, which
+  predates `AWS_ENDPOINT_URL_SQS`) to ElasticMQ with dummy credentials. Other AWS clients (S3, …) are not touched.
+
+The `events` setting chooses the behaviour (`--events` overrides it per command): `auto` (default: local while the
+local ElasticMQ runs, otherwise the service's own configuration), `local` (always; offers to start ElasticMQ) or
+`aws`. The summary of every run shows where the service publishes, and `pdms events status` lists the instances
+publishing locally. Queues are FIFO with content-based deduplication, like in AWS: the same message body sent twice
+within 5 minutes is stored once.
+
 ## Stacks: several services at once
 
 ```bash
@@ -338,6 +355,7 @@ reload = true
 install = true
 smart_install = true                      # skip the install when nothing changed
 update_check = true                       # tell when a new pdms version is out
+events = "auto"                           # auto | local | aws: where services publish SQS events
 events_port = 9324                        # local ElasticMQ (pdms events up)
 db_timeout = 15                           # seconds for `pdms db test` (or `pdms db test -t 30`)
 

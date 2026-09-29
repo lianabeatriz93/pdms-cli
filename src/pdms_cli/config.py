@@ -74,6 +74,9 @@ class Defaults:
     install: bool = True
     # With install enabled, skip it when nothing that affects the install changed since the last one.
     smart_install: bool = True
+    # Where services publish SQS events: "auto" (the local broker when `pdms events up` is running, else as
+    # configured by the service), "local" (always the local broker) or "aws" (never touch it).
+    events: str = "auto"
     # Host port of the local ElasticMQ (SQS) started by `pdms events up`.
     events_port: int = 9324
     # Tell when a new pdms version is published (checked at most once a day).

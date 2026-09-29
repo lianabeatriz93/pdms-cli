@@ -66,6 +66,8 @@ class Instance:
     created: float = 0.0
     # Fingerprint of each installed part (service + local libraries) when it started; empty = unknown.
     deps: dict[str, str] = field(default_factory=dict)
+    # Where it publishes SQS events: "local" (pdms ElasticMQ) or "aws".
+    events: str = "aws"
 
     @property
     def name(self) -> str:
@@ -155,7 +157,7 @@ def running_ports() -> set[int]:
 
 def start(
     service: Path, cmd: list[str], env: dict[str, str], *, host: str, port: int, user: str, db: str, reload: bool,
-    deps: dict[str, str] | None = None,
+    deps: dict[str, str] | None = None, events: str = "aws",
 ) -> Instance:
     key = make_key(service, port)
     log = log_path(key)
@@ -176,7 +178,7 @@ def start(
     instance = Instance(
         key=key, pid=proc.pid, service=str(service), host=host, port=port, user=user, db=db,
         reload=reload, log=str(log), started_at=datetime.now().isoformat(timespec="seconds"),
-        created=creation_time(proc.pid), deps=deps or {},
+        created=creation_time(proc.pid), deps=deps or {}, events=events,
     )
     instances = load()
     instances[key] = instance
