@@ -568,8 +568,8 @@ ES: dict[str, str] = {
     "Configuration": "Configuración",
     "File": "Fichero",
     "{path} does not exist yet": "{path} aún no existe",
-    "It is created the first time you save something (e.g. pdms user add).":
-        "Se crea la primera vez que guardas algo (p. ej. pdms user add).",
+    "Run pdms setup to create it.":
+        "Ejecuta pdms setup para crearlo.",
     "Permissions": "Permisos",
     "Users": "Usuarios",
     "Databases": "Bases de datos",
@@ -746,6 +746,53 @@ ES: dict[str, str] = {
         "No encontré un repo de migraciones de Flyway. Clona pdms-db-migrations junto al repo de PDMS, o usa --migrations RUTA.",
     "Clone pdms-db-migrations next to the PDMS repo, or pdms migrate --migrations PATH":
         "Clona pdms-db-migrations junto al repo de PDMS, o pdms migrate --migrations RUTA",
+    # ------------------------------------------------------------------ guided setup
+    "Guided setup: import a shared configuration, then configure whatever is still missing.":
+        "Configuración guiada: importa una configuración compartida y luego configura lo que falte.",
+    "Guided setup": "Configuración guiada",
+    "[bold]pdms setup[/]: first a configuration to import, if you have one, then whatever is missing.":
+        "[bold]pdms setup[/]: primero una configuración para importar, si tienes una, y luego lo que falte.",
+    "Welcome! There is no pdms configuration yet. Run the guided setup now?":
+        "¡Bienvenido/a! Todavía no hay configuración de pdms. ¿Hacemos ahora la configuración guiada?",
+    "Do you have a pdms configuration to import (e.g. exported by a teammate)?":
+        "¿Tienes una configuración de pdms para importar (p. ej. exportada por alguien del equipo)?",
+    "Another file...": "Otro fichero...",
+    "Nothing imported; the next steps set it up by hand.":
+        "No se ha importado nada; los siguientes pasos lo configuran a mano.",
+    "Skipped; do it later with {command}.": "Omitido; hazlo más tarde con {command}.",
+    "PDMS repo": "Repo de PDMS",
+    "Use {path} as the PDMS repo?": "¿Usar {path} como repo de PDMS?",
+    "Folder of your PDMS checkout (empty = skip):": "Carpeta de tu checkout de PDMS (vacío = omitir):",
+    "Not a PDMS repo (no backend/snakesdk folder).": "No es un repo de PDMS (no hay carpeta backend/snakesdk).",
+    "Folder of your pdms-db-migrations checkout (empty = skip):":
+        "Carpeta de tu checkout de pdms-db-migrations (vacío = omitir):",
+    "Not a Flyway migrations repo (flyway.toml + migrations/).":
+        "No es un repo de migraciones de Flyway (flyway.toml + migrations/).",
+    "Services need at least one database to run.": "Los servicios necesitan al menos una base de datos.",
+    "Add a database now?": "¿Añadir una base de datos ahora?",
+    "Add another database?": "¿Añadir otra base de datos?",
+    "Password of '{name}' ({user}@{host}) (empty = later):": "Contraseña de '{name}' ({user}@{host}) (vacío = más tarde):",
+    "Test the connection to {names}?": "¿Probar la conexión con {names}?",
+    "Development users": "Usuarios de desarrollo",
+    "Services run as a DEV_* user. How do you want to add them?":
+        "Los servicios corren con un usuario DEV_*. ¿Cómo quieres añadirlos?",
+    "Import them from the pdms_user table of a database": "Importarlos de la tabla pdms_user de una base de datos",
+    "Add one by hand": "Añadir uno a mano",
+    "Later": "Más tarde",
+    "Add another user?": "¿Añadir otro usuario?",
+    "Stacks": "Stacks",
+    "Create a stack (services you usually start together) now?":
+        "¿Crear ahora un stack (servicios que sueles levantar juntos)?",
+    "Review the other defaults (port, log level, install, events...)?":
+        "¿Revisar el resto de valores por defecto (puerto, nivel de log, install, eventos...)?",
+    "Using the standard values (change them with pdms config).":
+        "Se usan los valores estándar (cámbialos con pdms config).",
+    "Check the environment now (pdms doctor)?": "¿Comprobar ahora el entorno (pdms doctor)?",
+    "Setup finished. Run pdms to open the menu; pdms setup again completes what is left.":
+        "Configuración terminada. Ejecuta pdms para abrir el menú; pdms setup de nuevo completa lo que falte.",
+    "Still missing: {steps}": "Falta todavía: {steps}",
+    "migrations repo": "repo de migraciones",
+    "database passwords": "contraseñas de las bases de datos",
     # ------------------------------------------------------------------ menus
     "← Back": "← Volver",
     "Databases:": "Bases de datos:",

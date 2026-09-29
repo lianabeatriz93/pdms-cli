@@ -144,7 +144,7 @@ def check_config(cfg: Config) -> list[Check]:
     path = config_path()
     if not path.exists():
         return [Check(section, _("File"), WARN, _("{path} does not exist yet", path=path),
-                      _("It is created the first time you save something (e.g. pdms user add)."))]
+                      _("Run pdms setup to create it."))]
     checks = [Check(section, _("File"), OK, str(path))]
     if os.name == "posix":
         mode = stat.S_IMODE(path.stat().st_mode)

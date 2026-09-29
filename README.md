@@ -364,11 +364,33 @@ repo, the one saved for the repo, or a sibling of the PDMS checkout (`~/Code/Ali
 the one whose suffix matches, e.g. `pdms_v2` ↔ `pdms-db-migrations-v2`). `--migrations PATH` sets another one.
 `pdms doctor` and `pdms repo list` show it.
 
+## Getting started: `pdms setup`
+
+The first time you run `pdms` (with no configuration yet) it offers a guided setup. You can run it again at any time
+with `pdms setup` (or **Settings → Guided setup**) to complete whatever is still missing.
+
+1. **Import** — it first asks whether you have a configuration to import, such as the one a teammate exported with
+   `pdms config export`. It suggests the `pdms-config*.toml` files it finds in the current folder, `~/Downloads` and
+   your home, or you can pick another file. The import works as `pdms config import`.
+2. **Then only what is missing**, whether the import happened or not:
+   - the **language**, on a first setup when the import did not bring the defaults;
+   - the **PDMS repo**: the checkout you are in, or a folder you enter;
+   - the **migrations repo** (pdms-db-migrations), found next to the PDMS repo when possible;
+   - **databases**: add one if there are none, and type the **passwords** that imported databases do not carry
+     (exports leave them out by default), with an optional connection test;
+   - **development users**: import them from the `pdms_user` table of a database, or add one by hand;
+   - optionally a **stack**, and a review of the other defaults.
+3. Finally it offers to run `pdms doctor`.
+
+Steps that are already configured are just listed with a ✓, and every step can be skipped (it tells you the command to
+do it later).
+
 ## Command reference
 
 | Command | What it does |
 | --- | --- |
 | `pdms` | Interactive menu |
+| `pdms setup` | Guided setup: import a shared configuration, then configure what is missing |
 | `pdms run` / `pdms debug` / `pdms env` | Run a service / create a VS Code debug configuration / print a profile's variables |
 | `pdms services` | List the services of the current repo |
 | `pdms repo` | Repos menu (`list`, `add`, `use`, `remove`) |
