@@ -292,6 +292,25 @@ message is retried after 5 seconds (not the queue's visibility timeout) and drop
 since there is no dead-letter queue locally. Consumers work with `ps`, `logs`, `stop`, `restart`, stacks and the
 outdated-code warning; they always use the local ElasticMQ (and publish to the local broker), offering to start it.
 
+### Sending and inspecting events
+
+```bash
+pdms events send email-notify --template             # the event's fields, from its class in backend/common/event
+pdms events send email-notify -b '{"to_emails": ["a@x.com"]}'   # through the broker, like a publishing service
+pdms events send email-notify --direct -f event.json # straight to its queue, skipping the broker
+pdms events send demo-sqs-queue.fifo -b '{"raw": 1}' # a raw message to any queue
+pdms events peek email-send-sqs-queue.fifo           # messages waiting, without consuming them
+pdms events purge email-send-sqs-queue.fifo          # or --all
+pdms debug email-notify                              # VS Code configuration running the consumer under the debugger
+```
+
+`send` with an event type builds the same message a service publishes (common/event's `Event` as JSON: `event_id`,
+`type`, `app_context` and the given fields) and, by default, sends it to the broker queue. Every message gets its own
+deduplication id, so sending the same test body twice is not swallowed by the FIFO deduplication. It warns when
+nothing is consuming the target queue. `peek` counts as a receive in SQS, but the local poller counts its own
+attempts, so peeking does not make a failing message be dropped sooner. The interactive menu has an **Events** entry
+with all of this.
+
 ## Stacks: several services at once
 
 ```bash
@@ -350,7 +369,7 @@ running Alembic against a shared DB can break the pipeline for the whole team. I
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |
-| `pdms events` | Local SQS: event map and ElasticMQ (`map`, `up`, `status`, `down`) |
+| `pdms events` | Local SQS: map, ElasticMQ and broker (`map`, `up`, `status`, `send`, `peek`, `purge`, `down`) |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
 | `pdms user` | Users menu (`list`, `add`, `edit`, `remove`, `import`) |

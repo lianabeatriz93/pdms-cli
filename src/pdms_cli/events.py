@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import urllib.parse
+import uuid
 import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ProcessPoolExecutor
@@ -434,3 +435,96 @@ def is_up(port: int) -> bool:
         return True
     except Exception:  # noqa: BLE001 - not listening / not ElasticMQ yet
         return False
+
+
+# ---------------------------------------------------------------------- sending and inspecting messages
+
+
+def send(port: int, queue: str, body: str, fifo: bool = True) -> str:
+    """Send ``body`` to a local queue; returns the message id.
+
+    FIFO messages get a random group (as common/event does) and an explicit deduplication id, so sending the same
+    test body twice is not silently dropped by content-based deduplication.
+    """
+    params = {"Action": "SendMessage", "MessageBody": body}
+    if fifo:
+        params["MessageGroupId"] = str(uuid.uuid4())
+        params["MessageDeduplicationId"] = str(uuid.uuid4())
+    root = _sqs(port, params, url=queue_url(queue, port))
+    ids = [el.text for el in root.iter() if _local(el.tag) == "MessageId"]
+    return ids[0] if ids else ""
+
+
+def peek(port: int, queue: str, limit: int = 10) -> list[dict]:
+    """Messages waiting in a queue, without consuming them (they stay visible for consumers)."""
+    found: dict[str, dict] = {}
+    for _attempt in range(max(1, (limit + 9) // 10) * 3):
+        root = _sqs(port, {
+            "Action": "ReceiveMessage", "MaxNumberOfMessages": str(min(10, limit)), "VisibilityTimeout": "0",
+            "AttributeName.1": "All", "WaitTimeSeconds": "0",
+        }, url=queue_url(queue, port))
+        for message in (el for el in root.iter() if _local(el.tag) == "Message"):
+            data, attrs, name = {}, {}, None
+            for child in message.iter():
+                tag = _local(child.tag)
+                if tag in ("MessageId", "Body"):
+                    data[tag] = child.text or ""
+                elif tag == "Name":
+                    name = child.text
+                elif tag == "Value" and name:
+                    attrs[name] = child.text
+            if data.get("MessageId"):
+                found.setdefault(data["MessageId"], {**data, "Attributes": attrs})
+        if len(found) >= limit:
+            break
+    return list(found.values())[:limit]
+
+
+def purge(port: int, queue: str) -> None:
+    _sqs(port, {"Action": "PurgeQueue"}, url=queue_url(queue, port))
+
+
+PLACEHOLDERS = {"str": "", "int": 0, "float": 0.0, "bool": False, "list": [], "List": [], "dict": {}, "Dict": {}}
+
+
+def event_template(root: Path, event_type: str) -> dict | None:
+    """A JSON skeleton of the event class whose ``type`` defaults to ``event_type`` (from common/event models)."""
+    try:
+        models = ast.parse((root / EVENT_MODELS).read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return None
+    members = {}
+    for node in ast.walk(models):
+        if isinstance(node, ast.ClassDef) and node.name == "EventType":
+            members = {t.targets[0].id: t.value.value for t in node.body
+                       if isinstance(t, ast.Assign) and isinstance(t.value, ast.Constant)}
+    for node in models.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        fields, matches = {}, False
+        for item in node.body:
+            if not isinstance(item, ast.AnnAssign) or not isinstance(item.target, ast.Name):
+                continue
+            name = item.target.id
+            if name == "type":
+                default = item.value
+                member = default.attr if isinstance(default, ast.Attribute) else None
+                matches = members.get(member) == event_type
+                continue
+            if item.value is not None:
+                try:
+                    fields[name] = ast.literal_eval(item.value)
+                    continue
+                except (ValueError, SyntaxError):
+                    pass
+            annotation = ast.unparse(item.annotation)
+            base = annotation.split("[", 1)[0].split("|", 1)[0].strip()
+            fields[name] = None if "None" in annotation else PLACEHOLDERS.get(base)
+        if matches:
+            return fields
+    return None
+
+
+def event_body(event_type: str, data: dict) -> str:
+    """The message a service would publish: common/event's Event serialized as JSON."""
+    return json.dumps({"event_id": str(uuid.uuid4()), "app_context": None, **data, "type": event_type})

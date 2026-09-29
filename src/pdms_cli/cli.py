@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import shutil
@@ -543,10 +544,16 @@ def debug(
     events_mode: Optional[str] = typer.Option(None, "--events", help=EVENTS_HELP, autocompletion=completion.event_modes),
 ) -> None:
     cfg = Config.load()
-    prof = choose_profile(cfg, service, path, user, db, port, host, yes)
+    target = resolve_service(cfg, service, path)
+    consumer = consumer_of(cfg, target)
+    if consumer:
+        events_mode = "local"
+    prof = choose_profile(cfg, None, target, user, db, port, host, yes, needs_port=not consumer)
     events_env, events_label, _events_kind = events_for(cfg, prof.service, events_mode)
+    program = events.poller_command("", consumer[0], consumer[1], cfg.defaults.events_port)[3:] if consumer else None
     print_summary(cfg, prof, {
-        _("Debug"): _("http://{host}:{port} (no --reload, so breakpoints work)", host=prof.host, port=prof.port),
+        _("Debug"): f"{consumer[0].name} -> {consumer[1].handler}" if consumer else
+        _("http://{host}:{port} (no --reload, so breakpoints work)", host=prof.host, port=prof.port),
         _("Events"): events_label,
         _("Install"): install_label(cfg, install),
     })
@@ -563,7 +570,8 @@ def debug(
     env_file = vscode.write_env_file(prof.service, runner.service_env(cfg.defaults, prof.user, prof.db, events_env))
     launch, name, backup = vscode.upsert_configuration(
         prof.service, python=python, env_file=env_file, host=prof.host, port=prof.port,
-        description=f"{prof.user_name} @ {prof.db_name} :{prof.port}",
+        description=f"{prof.user_name} @ {prof.db_name} " + (f"sqs {consumer[0].name}" if consumer else f":{prof.port}"),
+        program=program,
     )
     console.print("[green]✓[/] " + _("Configuration [bold]{name}[/] saved to {launch}", name=name, launch=launch))
     if backup:
@@ -1760,6 +1768,134 @@ def events_status(
         console.print("  [dim]" + _("All queues are empty (--all to list them).") + "[/]")
 
 
+def require_elasticmq(cfg: Config) -> int:
+    port = cfg.defaults.events_port
+    if not events.running(port):
+        fail(_("ElasticMQ is not running. Start it with [bold]pdms events up[/]."))
+    return port
+
+
+@events_app.command("send", help=_("Send an event (through the broker, or --direct to its queue) or a message to a queue."))
+def events_send(
+    target: str = typer.Argument(..., help=_("Event type (e.g. email-notify) or queue name."),
+                                 autocompletion=completion.event_targets),
+    body: Optional[str] = typer.Option(None, "--body", "-b", help=_("Event fields / message body as JSON.")),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help=_("Read the JSON from a file ('-' = stdin).")),
+    direct: bool = typer.Option(False, "--direct", help=_("Skip the broker: send the event straight to its queue.")),
+    template: bool = typer.Option(False, "--template", "-t", help=_("Print the fields of the event type and exit.")),
+) -> None:
+    cfg = Config.load()
+    root, event_map = load_events()
+    if target not in event_map.routes and target not in event_map.queues:
+        close = [t for t in sorted(event_map.routes) + sorted(event_map.queues) if target in t][:8]
+        fail(_("'{target}' is not an event type nor a queue.", target=target)
+             + (" " + _("Did you mean: {names}", names=", ".join(close)) if close else " pdms events map"))
+    is_event = target in event_map.routes
+    if template:
+        fields = events.event_template(root, target) if is_event else None
+        if fields is None:
+            fail(_("No event class found for '{target}' in backend/common/event.", target=target))
+        print(json.dumps(fields, indent=2))
+        return
+    if file is not None:
+        raw = sys.stdin.read() if str(file) == "-" else file.read_text(encoding="utf-8")
+    else:
+        raw = body if body is not None else "{}"
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        fail(_("Invalid JSON: {error}", error=exc))
+    port = require_elasticmq(cfg)
+    if is_event:
+        if not isinstance(data, dict):
+            fail(_("Event fields must be a JSON object."))
+        queue = event_map.routes[target] if direct or not event_map.broker_queue else event_map.broker_queue
+        message = events.event_body(target, data)
+    else:
+        queue = target
+        message = raw if body is not None or file is not None else "{}"
+    message_id = events.send(port, queue, message, fifo=event_map.queues.get(queue, events.Queue(queue)).fifo)
+    console.print("[green]✓[/] " + _("Sent {id} to {queue}", id=message_id[:8], queue=queue))
+    if is_event and queue == event_map.broker_queue:
+        consumer = event_map.consumer_of_type(target)
+        console.print("  [dim]" + _("The broker routes it to {queue} (consumer: {consumer}).",
+                                    queue=event_map.routes[target], consumer=consumer.service if consumer else "-") + "[/]")
+    if not any(i.is_consumer and i.queue == queue and i.alive() for i in instances.load().values()):
+        console.print("  [yellow]" + _("Nothing is consuming {queue} right now; it waits there (pdms events peek {queue}).",
+                                       queue=queue) + "[/]")
+
+
+@events_app.command("peek", help=_("Show the messages waiting in a queue, without consuming them."))
+def events_peek(
+    queue: str = typer.Argument(..., help=_("Queue name."), autocompletion=completion.queues),
+    limit: int = typer.Option(10, "--limit", "-n", help=_("Maximum number of messages.")),
+    full: bool = typer.Option(False, "--full", help=_("Print the whole body of each message.")),
+) -> None:
+    cfg = Config.load()
+    port = require_elasticmq(cfg)
+    try:
+        messages = events.peek(port, queue, limit)
+    except Exception as exc:  # noqa: BLE001 - unknown queue, ElasticMQ error
+        fail(_("Could not read {queue}: {error}", queue=queue, error=exc))
+    if not messages:
+        console.print(_("{queue} is empty.", queue=queue))
+        return
+    for message in messages:
+        body = message.get("Body", "")
+        try:
+            parsed = json.loads(body)
+            kind = parsed.get("type", "-") if isinstance(parsed, dict) else "-"
+            pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
+        except json.JSONDecodeError:
+            kind, pretty = "-", body
+        receives = message["Attributes"].get("ApproximateReceiveCount", "?")
+        console.rule(f"{message['MessageId'][:8]} · type={kind} · " + _("received {n} times", n=receives), align="left")
+        console.print(pretty if full or len(pretty) < 1500 else pretty[:1500] + " …", markup=False, highlight=False)
+
+
+@events_app.command("purge", help=_("Delete every message of a queue (or of all of them)."))
+def events_purge(
+    queue: Optional[str] = typer.Argument(None, help=_("Queue name."), autocompletion=completion.queues),
+    all_: bool = typer.Option(False, "--all", "-a", help=_("Purge every queue.")),
+    yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation.")),
+) -> None:
+    cfg = Config.load()
+    port = require_elasticmq(cfg)
+    counts = events.queue_counts(port)
+    if all_:
+        targets = [q for q, c in counts.items() if c["visible"] or c["in_flight"]]
+    elif queue:
+        if queue not in counts:
+            fail(_("Unknown queue '{queue}'. See pdms events status --all.", queue=queue))
+        targets = [queue]
+    else:
+        prompts.require_tty()
+        targets = [prompts.select_name(_("Queue:"), sorted(counts))]
+    if not targets:
+        console.print(_("All queues are empty (--all to list them)."))
+        return
+    total = sum(counts[q]["visible"] + counts[q]["in_flight"] for q in targets)
+    if not yes and not (interactive_terminal() and questionary.confirm(
+        _("Delete {count} messages from {queues}?", count=total, queues=", ".join(targets)), default=False
+    ).unsafe_ask()):
+        raise typer.Exit(1)
+    for name in targets:
+        events.purge(port, name)
+    console.print("[green]✓[/] " + _("Purged {queues}.", queues=", ".join(targets)))
+
+
+def events_menu() -> None:
+    prompts.require_tty()
+    _menu(_("Events (local SQS):"), {
+        _("Status"): lambda: events_status(False),
+        _("Start ElasticMQ and the broker"): lambda: events_up("dev", True),
+        _("Event map"): lambda: events_map("", "dev"),
+        _("Peek a queue"): lambda: events_peek(prompts.select_name(_("Queue:"), sorted(load_events()[1].queues)), 10, False),
+        _("Purge a queue"): lambda: events_purge(None, False, False),
+        _("Stop everything"): events_down,
+    })
+
+
 # --------------------------------------------------------------------------- config commands
 
 
@@ -2080,6 +2216,7 @@ def main_menu() -> None:
                 questionary.Choice(_("📋 Background services ({count} running)", count=running), "ps"),
                 questionary.Choice(_("🧩 Stacks (groups of services)"), "stack"),
                 questionary.Choice(_("🌐 Proxy (one port for every service)"), "proxy"),
+                questionary.Choice(_("📨 Events (local SQS)"), "events"),
                 questionary.Choice(_("🗄  Databases"), "db"),
                 questionary.Choice(_("👤 Users"), "user"),
                 questionary.Choice(_("⚙  Settings"), "defaults"),
@@ -2090,7 +2227,8 @@ def main_menu() -> None:
             return
         actions = {
             "run": do_run, "ps": instances_menu, "stack": stack_menu,
-            "proxy": lambda: proxy_main(None, 8000, None, None, False, "dev", None), "db": db_menu, "user": user_menu,
+            "proxy": lambda: proxy_main(None, 8000, None, None, False, "dev", None),
+            "events": events_menu, "db": db_menu, "user": user_menu,
             "defaults": settings_menu,
         }
         try:

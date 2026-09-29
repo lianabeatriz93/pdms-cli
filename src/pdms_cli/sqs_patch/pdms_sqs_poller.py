@@ -105,6 +105,8 @@ def main() -> None:
 
     client = boto3.client("sqs", region_name=os.environ.get("AWS_REGION") or "us-east-1")
     log(f"Polling {queue_name} -> {args.handler} (batch size {args.batch_size})")
+    # Our own attempt count: ApproximateReceiveCount also counts `pdms events peek` and other readers.
+    attempts: dict[str, int] = {}
     while True:
         try:
             response = client.receive_message(
@@ -130,11 +132,13 @@ def main() -> None:
             failed = {m["MessageId"] for m in messages}
         took = f"{(time.monotonic() - started) * 1000:.0f}ms"
         for message in messages:
-            receives = int(message.get("Attributes", {}).get("ApproximateReceiveCount", 1))
+            receives = attempts[message["MessageId"]] = attempts.get(message["MessageId"], 0) + 1
             if message["MessageId"] not in failed:
+                attempts.pop(message["MessageId"], None)
                 client.delete_message(QueueUrl=args.queue_url, ReceiptHandle=message["ReceiptHandle"])
                 log(f"Processed {describe(message)} in {took}")
             elif receives >= args.max_receives:
+                attempts.pop(message["MessageId"], None)
                 client.delete_message(QueueUrl=args.queue_url, ReceiptHandle=message["ReceiptHandle"])
                 log(f"FAILED {describe(message)} {receives} times: dropped (there is no dead-letter queue locally)")
             else:
