@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import __version__, events, instances, installer, proxy, repos, routes, runner, update
+from . import __version__, events, instances, installer, migrations, proxy, repos, routes, runner, update
 from .config import Config, config_path
 from .i18n import _
 
@@ -206,6 +206,11 @@ def check_repo(cfg: Config) -> list[Check]:
     remote = (repo.remote if repo else "") or repos.remote_from_frontend(root)
     checks.append(Check(section, _("Remote API for the proxy"), OK if remote else WARN, remote or _("not configured"),
                         "" if remote else _("pdms proxy --remote <url> (or set VITE_APP_API_URL in frontend/.env)")))
+    saved = repo.migrations if repo and repo.migrations and migrations.is_migrations_repo(Path(repo.migrations)) else ""
+    near = migrations.siblings(root)
+    guess = saved or (str(near[0]) if len(near) == 1 else str(migrations.best_match(root, near) or ""))
+    checks.append(Check(section, _("Migrations repo (Flyway)"), OK if guess else WARN, guess or _("not found"),
+                        "" if guess else _("Clone pdms-db-migrations next to the PDMS repo, or pdms migrate --migrations PATH")))
     return checks
 
 

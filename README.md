@@ -346,16 +346,23 @@ in the copy under `.venv/lib/python3.*/site-packages/...` or step in with F11 fr
 pdms test lead-tp-create                 # poetry run pytest in the service (smart install first)
 pdms test lead-tp-create -- -k create -x # extra arguments go to pytest
 pdms test -u supervisor -d local         # also inject a profile's DEV_* / DB_PG_CONNECTION_STR
-pdms migrate -d local                    # alembic current, in backend/common/sync-database
-pdms migrate -d local upgrade head
-pdms migrate -d local history
+pdms migrate -d web-dev                  # flyway info: applied and pending migrations (read-only)
+pdms migrate validate -d web-dev         # flyway validate, like the pipeline (pending ones are not errors)
+pdms migrate migrate -d local            # apply them — only against a local database
 ```
 
-`pdms migrate` passes its arguments to Alembic with `DB_PG_CONNECTION_STR` set for the chosen database.
-Read-only commands (`current`, `history`, `heads`, `show`, `check`, `revision`, `merge`...) work on any database.
-Commands that change the database (`upgrade`, `downgrade`, `stamp`...) are **refused on protected databases**:
-running Alembic against a shared DB can break the pipeline for the whole team. If it is really needed,
-`--allow-protected` unlocks it after typing the database alias (`-y` does not skip this).
+`pdms migrate` runs [Flyway](https://flywaydb.org/) from the `pdms-db-migrations` repo (PDMP-467; the Alembic
+migrations in `backend/common/sync-database` are frozen) with the same Docker image and arguments as the
+CodePipeline (`flyway-postgres:11.20.2-1`, `-configFiles=flyway.toml,placeholder.toml -environment=local`), so no
+Flyway install is needed — only Docker. `info` and `validate` work against any database; `migrate` only against a
+local one (`localhost`, not protected), since shared databases are migrated by the pipeline; other Flyway commands
+(`clean`, `repair`, …) are not allowed. The database password is passed to the container as an environment
+variable, never on the command line.
+
+The migrations checkout is found automatically and remembered per PDMS repo: the current folder if it is a Flyway
+repo, the one saved for the repo, or a sibling of the PDMS checkout (`~/Code/Alivi/pdms-db-migrations`; with several,
+the one whose suffix matches, e.g. `pdms_v2` ↔ `pdms-db-migrations-v2`). `--migrations PATH` sets another one.
+`pdms doctor` and `pdms repo list` show it.
 
 ## Command reference
 
@@ -365,7 +372,7 @@ running Alembic against a shared DB can break the pipeline for the whole team. I
 | `pdms run` / `pdms debug` / `pdms env` | Run a service / create a VS Code debug configuration / print a profile's variables |
 | `pdms services` | List the services of the current repo |
 | `pdms repo` | Repos menu (`list`, `add`, `use`, `remove`) |
-| `pdms test` / `pdms migrate` | Run a service's tests / run Alembic against a database |
+| `pdms test` / `pdms migrate` | Run a service's tests / Flyway `info`, `validate` (and `migrate` locally) |
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |
