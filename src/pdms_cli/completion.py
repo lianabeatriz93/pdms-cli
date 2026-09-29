@@ -65,5 +65,9 @@ def roles(incomplete: str) -> list[str]:
     return _matching(list(mapping.values()), incomplete)
 
 
+def event_modes(incomplete: str) -> list[str]:
+    return _matching(["auto", "local", "aws"], incomplete)
+
+
 def languages(incomplete: str) -> list[str]:
     return _matching(list(i18n.LANGUAGES), incomplete)

@@ -15,7 +15,10 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "botocore>=1.29",
+    "pytest>=8",
+]
 
 [project.scripts]
 pdms = "pdms_cli.launcher:main"

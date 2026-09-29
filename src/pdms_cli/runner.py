@@ -63,7 +63,9 @@ def next_free_port(host: str, port: int, exclude: set[int] = frozenset()) -> int
     return port
 
 
-def service_env(defaults: Defaults, user: DevUser, db: Database) -> dict[str, str]:
+def service_env(
+    defaults: Defaults, user: DevUser, db: Database, extra: dict[str, str] | None = None
+) -> dict[str, str]:
     """Only the variables pdms sets for a service (no inherited environment)."""
     return {
         "DEVELOPMENT_MODE": "True",
@@ -71,11 +73,17 @@ def service_env(defaults: Defaults, user: DevUser, db: Database) -> dict[str, st
         **user.env(),
         "DB_PG_CONNECTION_STR": db.url(),
         **defaults.env,
+        **(extra or {}),
     }
 
 
-def build_env(defaults: Defaults, user: DevUser, db: Database) -> dict[str, str]:
-    return {**os.environ, **service_env(defaults, user, db)}
+def build_env(
+    defaults: Defaults, user: DevUser, db: Database, extra: dict[str, str] | None = None
+) -> dict[str, str]:
+    env = {**os.environ, **service_env(defaults, user, db, extra)}
+    if extra and "PYTHONPATH" in extra and os.environ.get("PYTHONPATH"):
+        env["PYTHONPATH"] = extra["PYTHONPATH"] + os.pathsep + os.environ["PYTHONPATH"]  # keep the user's entries
+    return env
 
 
 def poetry_python(service: Path) -> Path | None:

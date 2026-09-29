@@ -261,6 +261,25 @@ def load_event_map(root: Path, env: str = "dev") -> EventMap:
 # ---------------------------------------------------------------------- ElasticMQ
 
 
+PATCH_DIR = Path(__file__).resolve().parent / "sqs_patch"
+EVENT_MODES = ("auto", "local", "aws")
+
+
+def local_env(event_map: EventMap, port: int) -> dict[str, str]:
+    """Variables that make a service publish to (and, for the broker, route through) the local ElasticMQ."""
+    env = {name: queue_url(queue, port) for name, queue in event_map.broker_destinations.items()}
+    if event_map.broker_queue:
+        env[BROKER_URL_VARIABLE] = queue_url(event_map.broker_queue, port)
+    env["PDMS_SQS_ENDPOINT"] = endpoint(port)
+    env["PYTHONPATH"] = str(PATCH_DIR)  # its sitecustomize.py redirects the SQS clients (see sqs_patch/)
+    return env
+
+
+def running(port: int) -> bool:
+    state = container_state()
+    return bool(state and state["running"]) and is_up(port)
+
+
 def endpoint(port: int) -> str:
     return f"http://localhost:{port}"
 
