@@ -723,6 +723,12 @@ def migrate(
     summary.add_row("[bold]DB[/]", f"{db_name} → {database.url(mask=True)}")
     summary.add_row("[bold]Flyway[/]", f"{command} · {migrations.IMAGE.rsplit('/', 1)[-1]}")
     console.print(summary)
+    if not migrations.image_present():
+        with console.status(_("Downloading the Flyway image (about 360 MB, only the first time)...")):
+            pulled, error = migrations.pull_image()
+        if not pulled:
+            fail(_("Could not download {image}: {error}. Check the connection (public ECR also limits anonymous "
+                   "downloads; try again in a few minutes).", image=migrations.IMAGE, error=error))
     console.rule(f"flyway {command}")
     try:
         result = subprocess.run(migrations.docker_command(repo, database, command),

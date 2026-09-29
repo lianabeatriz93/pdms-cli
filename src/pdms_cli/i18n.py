@@ -729,6 +729,12 @@ ES: dict[str, str] = {
         "migrate solo se ejecuta contra una base de datos local (localhost, no protegida). '{name}' ({host}) es "
         "compartida: la migra el pipeline de pdms-db-migrations.",
     "Migrations": "Migraciones",
+    "Downloading the Flyway image (about 360 MB, only the first time)...":
+        "Descargando la imagen de Flyway (unos 360 MB, solo la primera vez)...",
+    "Could not download {image}: {error}. Check the connection (public ECR also limits anonymous downloads; try "
+    "again in a few minutes).":
+        "No pude descargar {image}: {error}. Revisa la conexión (el ECR público también limita las descargas "
+        "anónimas; prueba de nuevo en unos minutos).",
     "Migrations repo (Flyway)": "Repo de migraciones (Flyway)",
     "[dim]Migrations repo saved for '{alias}': {path}[/]": "[dim]Repo de migraciones guardado para '{alias}': {path}[/]",
     "{path} is not a Flyway migrations repo (flyway.toml + migrations/).":
