@@ -90,3 +90,57 @@ jobs:
           }
           & (Join-Path (uv tool dir --bin).Trim() "pdms.exe") --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  flyway:
+    name: flyway (pdms migrate, real image)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: local
+          POSTGRES_DB: pdm
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PDMS_CONFIG: ${{ runner.temp }}/pdms/config.toml
+      XDG_STATE_HOME: ${{ runner.temp }}/state
+      PDMS_NO_UPDATE_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - name: Install
+        run: uv sync --locked
+      - name: A migrations repo like pdms-db-migrations
+        run: |
+          mkdir -p "$RUNNER_TEMP/pdms/backend/snakesdk" "$RUNNER_TEMP/pdms-db-migrations/migrations/versioned"
+          cat > "$RUNNER_TEMP/pdms-db-migrations/flyway.toml" <<'TOML'
+          [flyway]
+          cleanDisabled = true
+          locations = ["filesystem:migrations/versioned"]
+          baselineOnMigrate = true
+          table = "flyway_schema_history"
+          [environments.local]
+          schemas = ["public"]
+          url = "jdbc:postgresql://${env.DB_HOST}:${env.DB_PORT}/${env.DB_NAME}"
+          user = "${env.DB_USER}"
+          password = "${env.DB_PASSWORD}"
+          TOML
+          echo "create table pdms_ci_canary (id int);" > "$RUNNER_TEMP/pdms-db-migrations/migrations/versioned/V2026.01.01.1.01__canary.sql"
+          uv run python -c "
+          from pdms_cli.config import Config, Database, Repo
+          c = Config(repos={'pdms': Repo(path='$RUNNER_TEMP/pdms')}, current_repo='pdms')
+          c.dbs = {'local': Database('localhost', port=5432, database='pdm', user='postgres', password='local'),
+                   'shared': Database('db.example.com', protected=True)}
+          c.save()"
+      - name: pdms migrate
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -x
+          uv run --project "$GITHUB_WORKSPACE" pdms migrate migrate -d local
+          uv run --project "$GITHUB_WORKSPACE" pdms migrate info -d local | tee info.txt
+          grep -q "canary" info.txt
+          uv run --project "$GITHUB_WORKSPACE" pdms migrate validate -d local
+          ! uv run --project "$GITHUB_WORKSPACE" pdms migrate migrate -d shared
+          PGPASSWORD=local psql -h localhost -U postgres -d pdm -tAc "select count(*) from flyway_schema_history" | grep -qE "^[1-9]"

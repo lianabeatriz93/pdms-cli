@@ -24,7 +24,8 @@ from rich.table import Table
 from rich.text import Text
 
 from . import (
-    __version__, banner, completion, events, i18n, installer, instances, logview, prompts, proxy, repos, routes, runner, transfer,
+    __version__, banner, completion, events, i18n, installer, instances, logview, migrations, prompts, proxy, repos, routes,
+    runner, transfer,
     update, userimport, vscode,
 )
 from . import doctor as diagnostics
@@ -607,8 +608,6 @@ def env(
 # --------------------------------------------------------------------------- tests and migrations
 
 PASSTHROUGH = {"allow_extra_args": True, "ignore_unknown_options": True}
-# Alembic commands that only read the database (revision/merge write files, not the DB).
-ALEMBIC_READ_ONLY = {"current", "history", "heads", "branches", "show", "check", "revision", "merge"}
 
 
 def run_in_service(service: Path, cmd: list[str], env: dict[str, str]) -> None:
@@ -654,45 +653,83 @@ def test(
     run_in_service(target, [runner.poetry(), "run", "pytest", *ctx.args], env)
 
 
-@app.command(context_settings=PASSTHROUGH, help=_(
-    "Run Alembic (backend/common/sync-database) against a database, e.g. pdms migrate -d local upgrade head. "
-    "Without arguments: current."
+def resolve_migrations(cfg: Config, given: Optional[Path]) -> Path:
+    """The pdms-db-migrations checkout: --migrations, the current folder, the one saved for the repo, or a sibling."""
+    root = repos.active_root(cfg)
+    alias = repos.alias_of(cfg, root) if root else None
+    repo = cfg.repos.get(alias) if alias else None
+
+    def remember(path: Path) -> Path:
+        path = path.resolve()
+        if repo and repo.migrations != str(path):
+            repo.migrations = str(path)
+            cfg.save()
+            console.print(_("[dim]Migrations repo saved for '{alias}': {path}[/]", alias=alias, path=path))
+        return path
+
+    if given:
+        found = migrations.find_upwards(given.expanduser())
+        if not found:
+            fail(_("{path} is not a Flyway migrations repo (flyway.toml + migrations/).", path=given))
+        return remember(found)
+    if here := migrations.find_upwards(Path.cwd()):
+        return here
+    if repo and repo.migrations and migrations.is_migrations_repo(Path(repo.migrations)):
+        return Path(repo.migrations)
+    candidates = migrations.siblings(root) if root else []
+    if len(candidates) == 1:
+        return remember(candidates[0])
+    if candidates:
+        suggested = migrations.best_match(root, candidates)
+        if not interactive_terminal():
+            if suggested:
+                return remember(suggested)
+            fail(_("Several migrations repos found ({names}); choose one with --migrations PATH.",
+                   names=", ".join(c.name for c in candidates)))
+        choice = questionary.select(
+            _("Which migrations repo goes with '{alias}'?", alias=alias or root.name),
+            choices=[questionary.Choice(str(c), c) for c in candidates], default=suggested,
+        ).unsafe_ask()
+        return remember(choice)
+    fail(_("No Flyway migrations repo found. Clone pdms-db-migrations next to the PDMS repo, or use --migrations PATH."))
+
+
+@app.command(help=_(
+    "Flyway (pdms-db-migrations): info and validate against any database; migrate only against a local one."
 ))
 def migrate(
-    ctx: typer.Context,
+    command: str = typer.Argument("info", help=_("info (default), validate or migrate."),
+                                  autocompletion=completion.flyway_commands),
     db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias."), autocompletion=completion.dbs),
-    allow_protected: bool = typer.Option(
-        False, "--allow-protected", help=_("Allow commands that change a protected (shared) database.")
-    ),
-    install: Optional[bool] = typer.Option(
-        None, "--install/--no-install", "-i/-n",
-        help=_("Force (-i) or skip (-n) the install; by default only if something changed."),
+    migrations_path: Optional[Path] = typer.Option(
+        None, "--migrations", "-m", help=_("pdms-db-migrations folder (remembered for the repo).")
     ),
 ) -> None:
+    if command not in migrations.COMMANDS:
+        fail(_("'{command}' is not allowed from pdms. Available: {codes}.", command=command,
+               codes=", ".join(migrations.COMMANDS)))
     cfg = Config.load()
-    root = services_root(cfg) or fail(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
-    project = root / "common" / "sync-database"
-    if not (project / "alembic.ini").is_file():
-        fail(_("Alembic project not found at {path}.", path=project))
-    args = ctx.args or ["current"]
     db_name = pick(cfg.dbs, _("database"), db, cfg.last_db)
     database = cfg.dbs[db_name]
-    writes = args[0] not in ALEMBIC_READ_ONLY
-    if writes and database.protected:
-        console.print("[red]" + _(
-            "⚠ '{name}' is a protected (shared) database. Running 'alembic {command}' on it can break the pipeline "
-            "and the data of the whole team.", name=db_name, command=args[0],
-        ) + "[/]")
-        if not allow_protected:
-            fail(_("Refused. Use a local database, or --allow-protected if you really have to."))
-        prompts.require_tty()
-        typed = questionary.text(_("Type the database alias ({name}) to confirm:", name=db_name)).unsafe_ask()
-        if typed.strip() != db_name:
-            fail(_("Confirmation does not match; nothing was run."))
-    console.print(_("Database: {name} → {url}", name=db_name, url=database.url(mask=True)))
-    ensure_installed(cfg, project, install)
-    env = {**os.environ, "DB_PG_CONNECTION_STR": database.url(), "LOGGING_LEVEL": cfg.defaults.logging_level}
-    run_in_service(project, [runner.poetry(), "run", "alembic", *args], env)
+    if command == "migrate" and not migrations.is_local(database):
+        fail(_("migrate only runs against a local database (localhost, not protected). '{name}' ({host}) is shared: "
+               "it is migrated by the pdms-db-migrations pipeline.", name=db_name, host=database.host))
+    repo = resolve_migrations(cfg, migrations_path)
+    ok, detail = events.docker_available()
+    if not ok:
+        fail(_("Docker is not available: {detail}", detail=detail or _("docker not found")))
+    summary = Table.grid(padding=(0, 2))
+    summary.add_row(f"[bold]{_('Migrations')}[/]", str(repo))
+    summary.add_row("[bold]DB[/]", f"{db_name} → {database.url(mask=True)}")
+    summary.add_row("[bold]Flyway[/]", f"{command} · {migrations.IMAGE.rsplit('/', 1)[-1]}")
+    console.print(summary)
+    console.rule(f"flyway {command}")
+    try:
+        result = subprocess.run(migrations.docker_command(repo, database, command),
+                                env={**os.environ, "DB_PASSWORD": database.password})
+    except KeyboardInterrupt:
+        raise typer.Exit(130)
+    raise typer.Exit(result.returncode)
 
 
 # --------------------------------------------------------------------------- background instances
@@ -1422,10 +1459,11 @@ def repo_list() -> None:
     for inst in instances.load().values():
         if inst.alive() and (alias := repos.repo_of(cfg, inst.service)):
             counts[alias] = counts.get(alias, 0) + 1
-    table = Table("", _("Name"), _("Path"), _("Running"))
+    table = Table("", _("Name"), _("Path"), _("Migrations"), _("Running"))
     for alias, repo in cfg.repos.items():
         path = str(repo.root) if repo.root.is_dir() else f"[red]{repo.root} ({_('missing')})[/]"
-        table.add_row("●" if alias == cfg.current_repo else "", alias, path, str(counts.get(alias, "")))
+        table.add_row("●" if alias == cfg.current_repo else "", alias, path,
+                      Path(repo.migrations).name if repo.migrations else "[dim]-[/]", str(counts.get(alias, "")))
     console.print(table)
 
 

@@ -86,6 +86,10 @@ def event_targets(incomplete: str) -> list[str]:
     return _matching(sorted(event_map.routes) + sorted(event_map.queues), incomplete) if event_map else []
 
 
+def flyway_commands(incomplete: str) -> list[str]:
+    return _matching(["info", "validate", "migrate"], incomplete)
+
+
 def event_modes(incomplete: str) -> list[str]:
     return _matching(["auto", "local", "aws"], incomplete)
 

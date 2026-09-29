@@ -113,6 +113,8 @@ class Repo:
     backend: str = "backend"
     # Remote API the proxy falls back to, e.g. https://<id>.execute-api.us-east-1.amazonaws.com/dev
     remote: str = ""
+    # Flyway migrations checkout (pdms-db-migrations) that goes with this repo.
+    migrations: str = ""
 
     @property
     def root(self) -> Path:

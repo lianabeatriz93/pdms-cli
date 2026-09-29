@@ -211,22 +211,6 @@ ES: dict[str, str] = {
     "Inject this user's DEV_* variables.": "Inyectar las variables DEV_* de este usuario.",
     "Inject this database's DB_PG_CONNECTION_STR.": "Inyectar el DB_PG_CONNECTION_STR de esta base de datos.",
     "Profile: {user} @ {db}": "Perfil: {user} @ {db}",
-    "Run Alembic (backend/common/sync-database) against a database, e.g. pdms migrate -d local upgrade head. "
-    "Without arguments: current.":
-        "Ejecuta Alembic (backend/common/sync-database) contra una base de datos, p. ej. pdms migrate -d local upgrade head. "
-        "Sin argumentos: current.",
-    "Allow commands that change a protected (shared) database.":
-        "Permitir comandos que modifican una base de datos protegida (compartida).",
-    "Alembic project not found at {path}.": "No encontré el proyecto de Alembic en {path}.",
-    "⚠ '{name}' is a protected (shared) database. Running 'alembic {command}' on it can break the pipeline "
-    "and the data of the whole team.":
-        "⚠ '{name}' es una base de datos protegida (compartida). Ejecutar 'alembic {command}' contra ella puede romper "
-        "el pipeline y los datos de todo el equipo.",
-    "Refused. Use a local database, or --allow-protected if you really have to.":
-        "Rechazado. Usa una base de datos local, o --allow-protected si de verdad hace falta.",
-    "Type the database alias ({name}) to confirm:": "Escribe el alias de la base de datos ({name}) para confirmar:",
-    "Confirmation does not match; nothing was run.": "La confirmación no coincide; no se ha ejecutado nada.",
-    "Database: {name} → {url}": "Base de datos: {name} → {url}",
     # ------------------------------------------------------------------ instances
     "starting": "arrancando",
     "stopped": "parado",
@@ -734,6 +718,28 @@ ES: dict[str, str] = {
     "Purge a queue": "Vaciar una cola",
     "Stop everything": "Parar todo",
     "📨 Events (local SQS)": "📨 Eventos (SQS local)",
+    # ------------------------------------------------------------------ migrations (Flyway)
+    "Flyway (pdms-db-migrations): info and validate against any database; migrate only against a local one.":
+        "Flyway (pdms-db-migrations): info y validate contra cualquier base de datos; migrate solo contra una local.",
+    "info (default), validate or migrate.": "info (por defecto), validate o migrate.",
+    "pdms-db-migrations folder (remembered for the repo).": "Carpeta de pdms-db-migrations (se recuerda para el repo).",
+    "'{command}' is not allowed from pdms. Available: {codes}.": "'{command}' no está permitido desde pdms. Disponibles: {codes}.",
+    "migrate only runs against a local database (localhost, not protected). '{name}' ({host}) is shared: "
+    "it is migrated by the pdms-db-migrations pipeline.":
+        "migrate solo se ejecuta contra una base de datos local (localhost, no protegida). '{name}' ({host}) es "
+        "compartida: la migra el pipeline de pdms-db-migrations.",
+    "Migrations": "Migraciones",
+    "Migrations repo (Flyway)": "Repo de migraciones (Flyway)",
+    "[dim]Migrations repo saved for '{alias}': {path}[/]": "[dim]Repo de migraciones guardado para '{alias}': {path}[/]",
+    "{path} is not a Flyway migrations repo (flyway.toml + migrations/).":
+        "{path} no es un repo de migraciones de Flyway (flyway.toml + migrations/).",
+    "Several migrations repos found ({names}); choose one with --migrations PATH.":
+        "Hay varios repos de migraciones ({names}); elige uno con --migrations RUTA.",
+    "Which migrations repo goes with '{alias}'?": "¿Qué repo de migraciones va con '{alias}'?",
+    "No Flyway migrations repo found. Clone pdms-db-migrations next to the PDMS repo, or use --migrations PATH.":
+        "No encontré un repo de migraciones de Flyway. Clona pdms-db-migrations junto al repo de PDMS, o usa --migrations RUTA.",
+    "Clone pdms-db-migrations next to the PDMS repo, or pdms migrate --migrations PATH":
+        "Clona pdms-db-migrations junto al repo de PDMS, o pdms migrate --migrations RUTA",
     # ------------------------------------------------------------------ menus
     "← Back": "← Volver",
     "Databases:": "Bases de datos:",
