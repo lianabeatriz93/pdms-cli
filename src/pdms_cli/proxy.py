@@ -13,6 +13,7 @@ import http.client
 import json
 import os
 import signal
+import socketserver
 import sys
 import threading
 import time
@@ -352,6 +353,12 @@ def format_request(method: str, path: str, status: int, target: str, seconds: fl
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
+    def server_bind(self) -> None:
+        # HTTPServer.server_bind also looks up the host's FQDN (reverse DNS), which can hang for many seconds on
+        # macOS; the proxy never uses that name.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
     def handle_error(self, request: object, client_address: object) -> None:
         if not isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError)):  # a client that went away
             super().handle_error(request, client_address)
@@ -367,6 +374,8 @@ def serve(gateway: Gateway, host: str, port: int, info: dict) -> None:
         "pid": os.getpid(), "created": instances.creation_time(os.getpid()), "port": port,
         "started_at": datetime.now().isoformat(timespec="seconds"), **info,
     }), encoding="utf-8")
+    if info.get("background"):
+        print(f"# listening on :{port} (pid {os.getpid()})", flush=True)
     try:
         server.serve_forever()
     finally:
