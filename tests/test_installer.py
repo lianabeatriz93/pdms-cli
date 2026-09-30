@@ -103,3 +103,21 @@ def test_unknown_install_state_reports_nothing(tmp_path):
     service = make_repo(tmp_path)
     assert installer.changed_parts({}, service) is None
     assert installer.changed_parts(None, service) is None
+
+
+def test_copied_dependencies_lists_every_copy_transitively(tmp_path: Path) -> None:
+    service = make_repo(tmp_path)
+    common = (tmp_path / "backend" / "common").resolve()
+    assert installer.copied_dependencies(service) == [common / "core", common / "base"]
+
+
+def test_install_force_reinstalls_the_copied_dependencies(tmp_path: Path, monkeypatch) -> None:
+    from pdms_cli import runner
+
+    service = make_repo(tmp_path)
+    calls = []
+    monkeypatch.setattr(runner.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    runner.install(service)
+    assert [c[1] for c in calls] == ["lock", "install", "run"]
+    assert "--force-reinstall" in calls[2] and "--no-deps" in calls[2]
+    assert [Path(p).name for p in calls[2][-2:]] == ["core", "base"]

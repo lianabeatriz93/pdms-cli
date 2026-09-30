@@ -50,6 +50,26 @@ def path_dependencies(project: Path) -> list[tuple[Path, bool]]:
     return found
 
 
+def copied_dependencies(project: Path) -> list[Path]:
+    """Directories of every local path dependency installed as a copy (``develop = false``), transitive ones included.
+
+    ``poetry install`` does not reinstall them while their version stays the same, so their code changes never reach
+    the virtualenv unless they are reinstalled by hand.
+    """
+    copied: list[Path] = []
+    seen: set[Path] = set()
+    pending = path_dependencies(project)
+    while pending:
+        directory, develop = pending.pop(0)
+        if directory in seen or not directory.is_dir():
+            continue
+        seen.add(directory)
+        if not develop:
+            copied.append(directory)
+        pending.extend(path_dependencies(directory))
+    return copied
+
+
 def _hash_file_meta(digest: "hashlib._Hash", path: Path, root: Path) -> None:
     try:
         stat = path.stat()
