@@ -228,10 +228,12 @@ ES: dict[str, str] = {
     "[dim]Stopped ones keep their log (pdms logs <instance>). Remove them with pdms ps --clean.[/]":
         "[dim]Las paradas conservan su log (pdms logs <instancia>). Bórralas con pdms ps --clean.[/]",
     "Instance (or part of the service name).": "Instancia (o parte del nombre del servicio).",
+    "Instance (or part of the service name), or proxy.": "Instancia (o parte del nombre del servicio), o proxy.",
     "Follow the output live.": "Seguir la salida en vivo.",
     "Show the console of background services (Ctrl+C to exit).":
         "Muestra la consola de servicios en segundo plano (Ctrl+C para salir).",
     "Instances (or parts of the service name).": "Instancias (o partes del nombre del servicio).",
+    "Instances (or parts of the service name), or proxy.": "Instancias (o partes del nombre del servicio), o proxy.",
     "All running instances, including ones started later.":
         "Todas las instancias corriendo, incluidas las que se levanten después.",
     "All instances of a stack.": "Todas las instancias de un stack.",
@@ -263,7 +265,7 @@ ES: dict[str, str] = {
     "Only endpoints whose path contains this text.": "Solo los endpoints cuya ruta contenga este texto.",
     "Show endpoints (URLs)": "Ver endpoints (URLs)",
     "Which instance do you want to see the logs of?": "¿De qué instancia quieres ver los logs?",
-    "Stop all.": "Parar todas.",
+    "Stop all, the proxy included.": "Parar todas, el proxy incluido.",
     "Stop background services.": "Para servicios en segundo plano.",
     "Which instances do you want to stop? (space to select)": "¿Qué instancias quieres parar? (espacio para marcar)",
     "Nothing to stop.": "No hay nada que parar.",
@@ -504,6 +506,21 @@ ES: dict[str, str] = {
     "each service's own profile": "el perfil de cada servicio",
     "Requests · Ctrl+C to stop": "Peticiones · Ctrl+C para parar",
     "Proxy stopped.": "Proxy parado.",
+    "Background (pdms ps, logs proxy, stop proxy) or foreground (asked if omitted).":
+        "En segundo plano (pdms ps, logs proxy, stop proxy) o en primer plano (se pregunta si se omite).",
+    "How should the proxy run?": "¿Cómo quieres correr el proxy?",
+    "Foreground (in this terminal, with every request live)": "En primer plano (en esta terminal, con cada petición en vivo)",
+    "Background (keeps running; requests with pdms logs proxy)":
+        "En segundo plano (sigue corriendo; las peticiones con pdms logs proxy)",
+    "Starting the proxy...": "Arrancando el proxy...",
+    "The proxy exited while starting. Full log: {log}": "El proxy terminó mientras arrancaba. Log completo: {log}",
+    "The proxy is responding at {url} (pid {pid})": "El proxy responde en {url} (pid {pid})",
+    "⚠ The proxy is not responding yet; check its log.": "⚠ El proxy todavía no responde; revisa su log.",
+    "  Requests: [bold]pdms logs proxy[/]   Stop: [bold]pdms stop proxy[/]":
+        "  Peticiones: [bold]pdms logs proxy[/]   Parar: [bold]pdms stop proxy[/]",
+    "The proxy is not running.": "El proxy no está corriendo.",
+    "The proxy has no log. Start it in the background with [bold]pdms proxy -b[/].":
+        "El proxy no tiene log. Arráncalo en segundo plano con [bold]pdms proxy -b[/].",
     "Show which service handles each route and where the proxy would send it.":
         "Muestra qué servicio atiende cada ruta y adónde la enviaría el proxy.",
     "Only routes whose path or service contains this text.": "Solo las rutas cuya ruta o servicio contenga este texto.",

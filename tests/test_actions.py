@@ -201,3 +201,59 @@ def test_save_and_remove_stack_validate_first(cfg) -> None:
     assert "ok" not in cfg.stacks
     with pytest.raises(actions.ActionError):
         actions.remove_stack(cfg, "ok")
+
+
+# --------------------------------------------------------------------------- proxy
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch) -> Path:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    (tmp_path / "repo" / "frontend").mkdir(parents=True)
+    return tmp_path / "repo"
+
+
+def test_plan_proxy_hands_back_a_busy_port(cfg, ports, repo) -> None:
+    ports["busy"].add(8000)
+    with pytest.raises(actions.PortBusy) as busy:
+        actions.plan_proxy(cfg, repo, [], port=8000, frontend=False)
+    assert (busy.value.port, busy.value.free) == (8000, 8001)
+
+
+def test_plan_proxy_asks_whether_to_point_the_frontend(cfg, ports, repo) -> None:
+    with pytest.raises(actions.PointFrontend) as asked:
+        actions.plan_proxy(cfg, repo, [], port=8000)
+    assert asked.value.url == "http://localhost:8000"
+    plan = actions.plan_proxy(cfg, repo, [], port=8000, frontend=True, user_name="agent")
+    assert plan.frontend and plan.user == cfg.users["agent"]
+    assert actions.point_frontend(plan) == str(repo / "frontend" / ".env.local")
+    # Already pointing to the proxy (or no frontend at all): nothing to ask or change.
+    assert not actions.plan_proxy(cfg, repo, [], port=8000).frontend
+
+
+def test_plan_proxy_rejects_an_unknown_user(cfg, ports, repo) -> None:
+    with pytest.raises(actions.ActionError):
+        actions.plan_proxy(cfg, repo, [], port=8000, user_name="nobody", frontend=False)
+
+
+def test_proxy_routes_needs_the_terraform_environment(repo) -> None:
+    with pytest.raises(actions.ActionError):
+        actions.proxy_routes(repo, "dev")
+
+
+def test_proxy_remote_saves_what_it_detects(cfg, repo) -> None:
+    from pdms_cli.config import Repo
+
+    cfg.repos = {"pdms": Repo(path=str(repo))}
+    (repo / "frontend" / ".env").write_text("VITE_APP_API_URL=https://abc.execute-api.us-east-1.amazonaws.com/dev\n")
+    assert actions.proxy_remote(cfg, repo, None, True) == (None, False)
+    url, detected = actions.proxy_remote(cfg, repo, None, False)
+    assert detected and url == cfg.repos["pdms"].remote
+    assert actions.proxy_remote(cfg, repo, None, False) == (url, False)  # saved: not detected again
+    assert actions.proxy_remote(cfg, repo, "https://other/", False) == ("https://other", False)
+
+
+def test_clear_proxy_leftovers_fails_while_a_proxy_runs(repo, monkeypatch) -> None:
+    monkeypatch.setattr(actions.proxy, "running_proxy", lambda: {"pid": 1, "port": 8000})
+    with pytest.raises(actions.ActionError):
+        actions.clear_proxy_leftovers()

@@ -339,3 +339,37 @@ def test_frontend_change_is_undone_from_the_state_file(tmp_path, monkeypatch):
     assert not proxy.frontend_change_path().exists()
     assert not (tmp_path / "frontend" / ".env.local").exists()
     assert proxy.restore_frontend_change() is None  # nothing pending
+
+
+def test_background_proxy_starts_answers_and_stops(tmp_path, monkeypatch):
+    import socket
+    import urllib.request
+
+    from pdms_cli import actions
+    from pdms_cli.config import Config
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("PDMS_CONFIG", str(tmp_path / "config.toml"))
+    root = tmp_path / "repo"
+    (root / "frontend").mkdir(parents=True)
+    routes.terraform_dir(root, "dev").mkdir(parents=True)
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    plan = actions.plan_proxy(Config(), root, [], port=port, frontend=True)
+    assert actions.point_frontend(plan)
+    started = actions.start_proxy(plan)
+    try:
+        assert actions.wait_for_proxy(started) == "ok", instances.tail(str(started.log), 30)
+        running = proxy.running_proxy()
+        assert running["pid"] == started.pid and running["background"]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/docs", timeout=5) as response:
+            assert response.status == 200
+        assert started.log.read_text().splitlines()[1].startswith(f"# proxy :{port}")
+    finally:
+        restored = actions.stop_proxy()
+    assert restored == str(root / "frontend" / ".env.local")
+    assert not (root / "frontend" / ".env.local").exists()
+    assert not instances.process_alive(started.pid) and proxy.running_proxy() is None
+    assert not proxy.state_path().exists()

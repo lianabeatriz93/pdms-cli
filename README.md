@@ -179,7 +179,7 @@ pdms urls lead-tp-list -f health   # one instance, only paths containing 'health
 pdms open lead-tp-create           # Swagger (/docs) in the browser; --path /redoc for another page
 pdms restart lead-tp-create        # same user, DB and port
 pdms restart lead-tp-create -u agent   # switch user (-d for DB, -c to pick interactively)
-pdms stop                          # pick which ones to stop; pdms stop --all
+pdms stop                          # pick which ones to stop; pdms stop --all (the proxy included)
 ```
 
 When a background service starts, `pdms` also prints its endpoints (read live from its `/openapi.json`).
@@ -210,6 +210,7 @@ and suggests `pdms restart <instance>`, which reinstalls them automatically (sma
 pdms up tp                 # start locally what you are working on
 pdms proxy                 # http://localhost:8000 → local instances first, the remote API (dev) for the rest
 pdms proxy --as agent      # act as another user on local services, without restarting them
+pdms proxy -b              # in the background: pdms ps shows it, pdms logs proxy, pdms stop proxy
 pdms proxy routes -f tp    # which service handles each route and where it would go now
 ```
 
@@ -233,6 +234,9 @@ pdms proxy routes -f tp    # which service handles each route and where it would
   their `/openapi.json`) plus an "All local services" view; "Try it out" goes through the proxy. Each service's own
   `http://localhost:<port>/docs` keeps working.
 - Every request is logged with its status, target and time. Every response carries an `X-Pdms-Target` header.
+- **Background:** `pdms proxy -b` keeps it running without a terminal (asked if you give neither `-b` nor `-f`).
+  It shows up in `pdms ps` as `proxy@<port>`, its requests go to a log file (`pdms logs proxy`) and
+  `pdms stop proxy` (or `pdms stop --all`) stops it and puts `frontend/.env.local` back.
 
 ## Events (local SQS)
 

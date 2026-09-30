@@ -810,7 +810,8 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
         for inst in [i for i in items.values() if not i.alive()]:
             instances.forget(inst.key)
             items.pop(inst.key)
-    if not items:
+    running_proxy = proxy.running_proxy()
+    if not items and not running_proxy:
         console.print(_("No background services."))
         return
     healths = instances.health_all(list(items.values()))
@@ -824,6 +825,16 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
             inst.key, status_text(state), f"sqs ← {inst.queue}" if inst.is_consumer else f"http://localhost:{inst.port}",
             f"[bold]{repo}[/]" if repo == cfg.current_repo else repo,
             inst.user, inst.db, uptime(inst.started_at) if state != "stopped" else "",
+        )
+    if running_proxy:
+        port = running_proxy["port"]
+        repo = repos.repo_of(cfg, running_proxy["repo"]) if running_proxy.get("repo") else None
+        repo = repo or "-"
+        table.add_row(
+            proxy.display_key(running_proxy),
+            status_text("ok" if instances.responds("127.0.0.1", port) else "starting"), f"http://localhost:{port}",
+            f"[bold]{repo}[/]" if repo == cfg.current_repo else repo, running_proxy.get("as") or "-", "-",
+            uptime(running_proxy["started_at"]) if running_proxy.get("started_at") else "",
         )
     console.print(table)
     for key, health in healths.items():
@@ -842,7 +853,9 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
 
 @app.command(help=_("Show the console of background services (Ctrl+C to exit)."))
 def logs(
-    keys: Optional[list[str]] = typer.Argument(None, help=_("Instances (or parts of the service name)."), autocompletion=completion.instance_keys),
+    keys: Optional[list[str]] = typer.Argument(
+        None, help=_("Instances (or parts of the service name), or proxy."), autocompletion=completion.instance_or_proxy_keys
+    ),
     all_: bool = typer.Option(False, "--all", "-a", help=_("All running instances, including ones started later.")),
     stack: Optional[str] = typer.Option(None, "--stack", "-s", help=_("All instances of a stack."), autocompletion=completion.stacks),
     follow: bool = typer.Option(True, "--follow/--no-follow", "-F/-N", help=_("Follow the output live.")),
@@ -853,6 +866,8 @@ def logs(
         False, "--previous", "-p", help=_("Show the log of the previous run (kept when restarting).")
     ),
 ) -> None:
+    if keys and proxy.is_key(keys[0]):
+        return proxy_logs(follow, lines, previous)
     if previous:
         inst = pick_instance(keys[0] if keys else None, message=_("Which instance do you want to see the logs of?"))
         old = instances.previous_log_path(inst.log)
@@ -910,6 +925,27 @@ def logs(
     logview.follow(console, targets, lines, discover)
 
 
+def proxy_logs(follow: bool, lines: Optional[int], previous: bool) -> None:
+    """The requests of the background proxy (a foreground one shows them in its own terminal)."""
+    log = proxy.log_path()
+    if previous:
+        log = instances.previous_log_path(log)
+    if not log.exists():
+        fail(_("The proxy has no log. Start it in the background with [bold]pdms proxy -b[/]."))
+    running = proxy.running_proxy()
+    key = proxy.display_key(running) if running else proxy.KEY
+    if previous or not follow or not running:
+        console.print(instances.tail(str(log), lines or 100), markup=False, highlight=False, end="")
+        return
+    console.rule(_("{names} · Ctrl+C to exit", names=key))
+    inst = instances.Instance(
+        key=key, pid=int(running["pid"]), service=running.get("repo", ""), host=actions.PROXY_HOST,
+        port=running["port"], user=running.get("as", ""), db="", reload=False, log=str(log),
+        started_at=running.get("started_at", ""), created=float(running.get("created", 0)),
+    )
+    logview.follow(console, [inst], lines or 100, None)
+
+
 @app.command("open", help=_("Open a background service in the browser (Swagger /docs by default)."))
 def open_cmd(
     key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name)."), autocompletion=completion.instance_keys),
@@ -926,28 +962,49 @@ def open_cmd(
 
 @app.command(help=_("Stop background services."))
 def stop(
-    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name)."), autocompletion=completion.instance_keys),
-    all_: bool = typer.Option(False, "--all", "-a", help=_("Stop all.")),
+    key: Optional[str] = typer.Argument(
+        None, help=_("Instance (or part of the service name), or proxy."), autocompletion=completion.instance_or_proxy_keys
+    ),
+    all_: bool = typer.Option(False, "--all", "-a", help=_("Stop all, the proxy included.")),
 ) -> None:
     running = [i for i in instances.load().values() if i.alive()]
+    running_proxy = proxy.running_proxy()
+    stop_proxy = False
     if all_:
-        targets = running
+        targets, stop_proxy = running, bool(running_proxy)
+    elif key and proxy.is_key(key):
+        if not running_proxy:
+            fail(_("The proxy is not running."))
+        targets, stop_proxy = [], True
     elif key:
         targets = [pick_instance(key)]
-    elif len(running) <= 1:
+    elif not running_proxy and len(running) <= 1:
         targets = [pick_instance(None, only_alive=True)]
+    elif not running:
+        targets, stop_proxy = [], True
     else:
         prompts.require_tty()
-        targets = questionary.checkbox(
+        chosen = questionary.checkbox(
             _("Which instances do you want to stop? (space to select)"),
-            choices=[questionary.Choice(i.key, i) for i in running],
+            choices=[
+                *[questionary.Choice(i.key, i) for i in running],
+                *([questionary.Choice(proxy.display_key(running_proxy), proxy.KEY)] if running_proxy else []),
+            ],
         ).unsafe_ask()
-    if not targets:
+        targets = [c for c in chosen if c != proxy.KEY]
+        stop_proxy = proxy.KEY in chosen
+    if not targets and not stop_proxy:
         console.print(_("Nothing to stop."))
     for inst in targets:
         with console.status(_("Stopping {key}...", key=inst.key)):
             actions.stop_service(inst)
         console.print("[green]✓[/] " + _("{key} stopped.", key=inst.key))
+    if stop_proxy:
+        key = proxy.display_key(running_proxy)
+        with console.status(_("Stopping {key}...", key=key)):
+            restored = actions.stop_proxy(running_proxy)
+        console.print("[green]✓[/] " + _("{key} stopped.", key=key))
+        print_restored(restored)
 
 
 @app.command(help=_("Restart a background service (same port; same user and DB by default)."))
@@ -1498,32 +1555,16 @@ def current_repo_root(cfg: Config) -> Path:
 
 
 def load_repo_routes(root: Path, env: str) -> list[routes.Route]:
-    if not routes.terraform_dir(root, env).is_dir():
-        fail(_("No Terraform for '{env}' in {path}.", env=env, path=routes.terraform_dir(root, env)))
     with console.status(_("Reading the API routes from Terraform...")):
-        return routes.load_routes(root, env)
+        return settle(lambda: actions.proxy_routes(root, env))
 
 
 def resolve_remote(cfg: Config, root: Path, remote: Optional[str], no_remote: bool) -> Optional[str]:
-    if no_remote:
-        return None
-    alias = repos.alias_of(cfg, root)
-    repo = cfg.repos.get(alias) if alias else None
-    if remote:
-        remote = remote.rstrip("/")
-        if repo and repo.remote != remote:
-            repo.remote = remote
-            cfg.save()
-        return remote
-    if repo and repo.remote:
-        return repo.remote
-    detected = repos.remote_from_frontend(root)
-    if detected and repo:
-        repo.remote = detected
-        cfg.save()
+    url, detected = actions.proxy_remote(cfg, root, remote, no_remote)
+    if detected:
         console.print(_("[dim]Remote API taken from frontend/.env and saved for '{alias}': {url}[/]",
-                        alias=alias, url=detected))
-    return detected
+                        alias=repos.alias_of(cfg, root), url=url))
+    return url
 
 
 def log_request(method: str, path: str, status: int, target: str, seconds: float) -> None:
@@ -1537,16 +1578,36 @@ def log_request(method: str, path: str, status: int, target: str, seconds: float
 
 def proxy_port(port: int) -> int:
     """``port`` if it is free; otherwise the next free one, offered in a terminal (the menu cannot pass --port)."""
-    taken = instances.running_ports()
-    if port not in taken and runner.port_is_free("0.0.0.0", port):
-        return port
-    free = runner.next_free_port("0.0.0.0", port + 1, taken)
-    if not interactive_terminal():
-        fail(_("Port {port} is in use (the next free one is {free}). Use --port.", port=port, free=free))
-    if not questionary.confirm(_("Port {port} is in use. Use {free} instead?", port=port, free=free),
-                               default=True).unsafe_ask():
-        raise typer.Exit(1)
-    return free
+    try:
+        return actions.free_port(actions.PROXY_HOST, port)
+    except actions.PortBusy as busy:
+        if not interactive_terminal():
+            fail(_("Port {port} is in use (the next free one is {free}). Use --port.", port=busy.port, free=busy.free))
+        if not questionary.confirm(_("Port {port} is in use. Use {free} instead?", port=busy.port, free=busy.free),
+                                   default=True).unsafe_ask():
+            raise typer.Exit(1)
+        return busy.free
+
+
+def plan_proxy(cfg: Config, root: Path, repo_routes: list[routes.Route], port: int, env: str,
+               remote: Optional[str], as_user: Optional[str], frontend: Optional[bool]) -> actions.ProxyLaunch:
+    """Plan the proxy, answering in the terminal what it asks (a busy port, pointing the frontend to it)."""
+    port = proxy_port(port)
+    while True:
+        try:
+            return settle(lambda: actions.plan_proxy(
+                cfg, root, repo_routes, port=port, env=env, remote=remote, user_name=as_user, frontend=frontend,
+            ))
+        except actions.PointFrontend:
+            frontend = interactive_terminal() and questionary.confirm(
+                _("Point the frontend to the proxy? (writes VITE_APP_API_URL in frontend/.env.local, undone when it stops)"),
+                default=True,
+            ).unsafe_ask()
+
+
+def print_restored(restored: Optional[str]) -> None:
+    if restored:
+        console.print("[green]✓[/] " + _("{path} restored; restart yarn dev to apply it.", path=restored))
 
 
 @proxy_app.callback()
@@ -1564,51 +1625,58 @@ def proxy_main(
     frontend: Optional[bool] = typer.Option(
         None, "--frontend-env/--no-frontend-env", help=_("Point frontend/.env.local to the proxy (asked if omitted).")
     ),
+    background: Optional[bool] = typer.Option(
+        None, "--background/--foreground", "-b/-f",
+        help=_("Background (pdms ps, logs proxy, stop proxy) or foreground (asked if omitted)."),
+    ),
 ) -> None:
     if ctx is not None and ctx.invoked_subcommand is not None:
         return
-    if running := proxy.running_proxy():
-        fail(_("The proxy is already running on port {port} (pid {pid}).", port=running["port"], pid=running["pid"]))
-    if restored := proxy.restore_frontend_change():  # the previous proxy did not stop cleanly
+    if restored := settle(actions.clear_proxy_leftovers):  # the previous proxy did not stop cleanly
         console.print("[green]✓[/] " + _("{path} restored (left over by the previous proxy).", path=restored))
     cfg = Config.load()
     root = current_repo_root(cfg)
     repo_routes = load_repo_routes(root, env)
     target_remote = resolve_remote(cfg, root, remote, no_remote)
-    user = cfg.users[pick(cfg.users, _("user"), as_user)] if as_user else None
-    port = proxy_port(port)
+    if as_user:
+        as_user = pick(cfg.users, _("user"), as_user)
+    if background is None:
+        background = interactive_terminal() and prompts.ask_proxy_background()
+    plan = plan_proxy(cfg, root, repo_routes, port, env, target_remote, as_user, frontend)
 
-    proxy_url = f"http://localhost:{port}"
-    if (root / "frontend").is_dir() and not repos.frontend_uses(root, proxy_url):
-        if frontend is None and interactive_terminal():
-            frontend = questionary.confirm(
-                _("Point the frontend to the proxy? (writes VITE_APP_API_URL in frontend/.env.local, undone when it stops)"),
-                default=True,
-            ).unsafe_ask()
-        if frontend and (change := repos.point_frontend_to(root, proxy_url)):
-            proxy.remember_frontend_change(change)
-            console.print("[green]✓[/] " + _("{path} points to the proxy until it stops; restart yarn dev to apply it.",
-                                             path=change["path"]))
-
+    if changed := actions.point_frontend(plan):
+        console.print("[green]✓[/] " + _("{path} points to the proxy until it stops; restart yarn dev to apply it.",
+                                         path=changed))
     summary = Table.grid(padding=(0, 2))
-    summary.add_row(f"[bold]{_('Proxy')}[/]", proxy_url)
-    summary.add_row(f"[bold]Docs[/]", f"{proxy_url}/docs")
+    summary.add_row(f"[bold]{_('Proxy')}[/]", plan.url)
+    summary.add_row(f"[bold]Docs[/]", f"{plan.url}/docs")
     summary.add_row(f"[bold]Repo[/]", f"{repos.alias_of(cfg, root) or root.name} ({env}, {len(repo_routes)} {_('routes')})")
     summary.add_row(f"[bold]{_('Remote')}[/]", target_remote or _("none (only local services)"))
-    summary.add_row(f"[bold]{_('Acting as')}[/]", f"{as_user} ({user.roles})" if user else _("each service's own profile"))
+    summary.add_row(f"[bold]{_('Acting as')}[/]", f"{as_user} ({plan.user.roles})" if plan.user else _("each service's own profile"))
     console.print(summary)
-    console.rule(_("Requests · Ctrl+C to stop"))
 
-    gateway = proxy.Gateway(
-        routes=repo_routes, backend=(root / "backend"), remote=target_remote, impersonate=user, log=log_request
-    )
+    if background:
+        started = actions.start_proxy(plan)
+        with console.status(_("Starting the proxy...")):
+            state = actions.wait_for_proxy(started)
+        if state == "stopped":
+            print_restored(actions.stop_proxy())
+            console.print(instances.tail(str(started.log), 30), markup=False, highlight=False)
+            fail(_("The proxy exited while starting. Full log: {log}", log=started.log))
+        if state == "ok":
+            console.print("[green]✓[/] " + _("The proxy is responding at {url} (pid {pid})", url=plan.url, pid=started.pid))
+        else:
+            console.print(f"[yellow]{_('⚠ The proxy is not responding yet; check its log.')}[/]")
+        console.print(_("  Requests: [bold]pdms logs proxy[/]   Stop: [bold]pdms stop proxy[/]"))
+        return
+
+    console.rule(_("Requests · Ctrl+C to stop"))
     try:
-        proxy.serve(gateway, "0.0.0.0", port, {"repo": str(root), "remote": target_remote or "", "as": as_user or ""})
+        actions.serve_proxy(plan, log_request)
     except KeyboardInterrupt:
         console.print(f"\n[dim]{_('Proxy stopped.')}[/]")
     finally:
-        if restored := proxy.restore_frontend_change():
-            console.print("[green]✓[/] " + _("{path} restored; restart yarn dev to apply it.", path=restored))
+        print_restored(proxy.restore_frontend_change())
 
 
 @proxy_app.command("routes", help=_("Show which service handles each route and where the proxy would send it."))
@@ -2498,7 +2566,7 @@ def main_menu(first_run: bool = False) -> None:
             return
         actions = {
             "run": do_run, "ps": instances_menu, "stack": stack_menu,
-            "proxy": lambda: proxy_main(None, 8000, None, None, False, "dev", None),
+            "proxy": lambda: proxy_main(None, 8000, None, None, False, "dev", None, None),
             "events": events_menu, "db": db_menu, "user": user_menu,
             "defaults": settings_menu,
         }
