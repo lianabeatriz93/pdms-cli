@@ -161,20 +161,16 @@ def running_ports() -> set[int]:
     return {i.port for i in load().values() if i.port and i.alive()}
 
 
-def start(
-    service: Path, cmd: list[str], env: dict[str, str], *, host: str, port: int, user: str, db: str, reload: bool,
-    deps: dict[str, str] | None = None, events: str = "aws", queue: str = "",
-) -> Instance:
-    key = make_key(service, port)
-    log = log_path(key)
+def spawn(cmd: list[str], cwd: Path, env: dict[str, str], log: Path) -> subprocess.Popen:
+    """Start ``cmd`` detached, writing stdout+stderr to ``log`` (the previous run's log is kept as ``<log>.1``)."""
     log.parent.mkdir(parents=True, exist_ok=True)
     rotate_log(log)
     with open(log, "w", encoding="utf-8", errors="replace") as fh:
         fh.write(f"# pdms {datetime.now():%Y-%m-%d %H:%M:%S} · {' '.join(cmd)}\n")
         fh.flush()
-        proc = subprocess.Popen(
+        return subprocess.Popen(
             cmd,
-            cwd=service,
+            cwd=cwd,
             # Logs are files read as UTF-8; without this, Windows would write them in cp1252 and a service
             # printing a non-cp1252 character would crash.
             env={"PYTHONIOENCODING": "utf-8", **env, "PYTHONUNBUFFERED": "1"},
@@ -183,6 +179,15 @@ def start(
             stderr=subprocess.STDOUT,
             **detach_options(),
         )
+
+
+def start(
+    service: Path, cmd: list[str], env: dict[str, str], *, host: str, port: int, user: str, db: str, reload: bool,
+    deps: dict[str, str] | None = None, events: str = "aws", queue: str = "",
+) -> Instance:
+    key = make_key(service, port)
+    log = log_path(key)
+    proc = spawn(cmd, service, env, log)
     instance = Instance(
         key=key, pid=proc.pid, service=str(service), host=host, port=port, user=user, db=db,
         reload=reload, log=str(log), started_at=datetime.now().isoformat(timespec="seconds"),

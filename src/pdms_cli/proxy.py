@@ -8,9 +8,12 @@ on local services through the ``X-Dev-*`` headers, and serves a Swagger UI with 
 
 from __future__ import annotations
 
+import argparse
 import http.client
 import json
 import os
+import signal
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -21,9 +24,9 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 from . import instances, repos
-from .config import DevUser
+from .config import Config, DevUser
 from .i18n import _
-from .routes import Route, match
+from .routes import Route, load_routes, match
 
 HOP_BY_HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding",
@@ -34,10 +37,16 @@ CORS_RESPONSE_HEADERS = {
     "access-control-allow-headers", "access-control-expose-headers", "access-control-max-age",
 }
 DOCS_PREFIX = "/_pdms/openapi/"
+KEY = "proxy"  # how pdms ps, stop and logs call it (shown as proxy@<port>)
 
 
 def state_path() -> Path:
     return instances.state_dir() / "proxy.json"
+
+
+def log_path() -> Path:
+    """Where the proxy started with ``--background`` writes its requests."""
+    return instances.log_path(KEY)
 
 
 def frontend_change_path() -> Path:
@@ -71,6 +80,30 @@ def running_proxy() -> dict | None:
         return data if instances.process_alive(int(data["pid"]), float(data.get("created", 0))) else None
     except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError):
         return None
+
+
+def display_key(running: dict) -> str:
+    return f"{KEY}@{running['port']}"
+
+
+def is_key(key: str) -> bool:
+    return key == KEY or key.startswith(f"{KEY}@")
+
+
+def forget(pid: int) -> None:
+    """Remove the state file if it still belongs to ``pid``."""
+    try:
+        if json.loads(state_path().read_text(encoding="utf-8")).get("pid") == pid:
+            state_path().unlink()
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+
+def stop(running: dict, timeout: float = 10) -> None:
+    """Stop the proxy process (a background one or another terminal's) and forget it."""
+    pid = int(running["pid"])
+    instances.kill_tree(pid, float(running.get("created", 0)), timeout)
+    forget(pid)
 
 
 def dev_headers(user: DevUser) -> dict[str, str]:
@@ -311,9 +344,24 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
+def format_request(method: str, path: str, status: int, target: str, seconds: float) -> str:
+    """One line of the background proxy's log (the terminal shows the same, in colour)."""
+    return f"{datetime.now():%H:%M:%S} {method:<6} {path} {status} → {target}  {seconds * 1000:.0f}ms"
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request: object, client_address: object) -> None:
+        if not isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError)):  # a client that went away
+            super().handle_error(request, client_address)
+
+
 def serve(gateway: Gateway, host: str, port: int, info: dict) -> None:
-    server = ThreadingHTTPServer((host, port), make_handler(gateway))
-    server.daemon_threads = True
+    server = Server((host, port), make_handler(gateway))
+    if threading.current_thread() is threading.main_thread():
+        # pdms stop terminates it: clean up (state file, frontend/.env.local) as with Ctrl+C.
+        signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
     state_path().parent.mkdir(parents=True, exist_ok=True)
     state_path().write_text(json.dumps({
         "pid": os.getpid(), "created": instances.creation_time(os.getpid()), "port": port,
@@ -323,8 +371,42 @@ def serve(gateway: Gateway, host: str, port: int, info: dict) -> None:
         server.serve_forever()
     finally:
         server.server_close()
-        try:
-            if json.loads(state_path().read_text(encoding="utf-8")).get("pid") == os.getpid():
-                state_path().unlink()
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
+        forget(os.getpid())
+
+
+def background_command(root: Path, *, port: int, env: str, remote: str | None, user_name: str | None) -> list[str]:
+    """How ``pdms proxy --background`` runs the proxy: this module, in a process of its own (see :func:`main`)."""
+    cmd = [sys.executable, "-m", "pdms_cli.proxy", "--repo", str(root), "--port", str(port), "--env", env]
+    if remote:
+        cmd += ["--remote", remote]
+    if user_name:
+        cmd += ["--as", user_name]
+    return cmd
+
+
+def main(argv: list[str] | None = None) -> None:
+    """The background proxy: serves until stopped, logging each request to stdout (its log file)."""
+    parser = argparse.ArgumentParser(prog="pdms_cli.proxy")
+    parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--env", default="dev")
+    parser.add_argument("--remote", default="")
+    parser.add_argument("--as", dest="user_name", default="")
+    args = parser.parse_args(argv)
+    user = Config.load().users.get(args.user_name) if args.user_name else None
+    repo_routes = load_routes(args.repo, args.env)
+    print(f"# proxy :{args.port} · {args.repo} ({args.env}, {len(repo_routes)} routes) · "
+          f"remote {args.remote or '-'} · as {args.user_name or '-'}", flush=True)
+    gateway = Gateway(
+        routes=repo_routes, backend=args.repo / "backend", remote=args.remote or None, impersonate=user,
+        log=lambda *request: print(format_request(*request), flush=True),
+    )
+    # frontend/.env.local is put back by whoever stops it (pdms stop), or by the next proxy if it died.
+    serve(gateway, "0.0.0.0", args.port, {
+        "repo": str(args.repo), "remote": args.remote, "as": args.user_name, "log": str(log_path()),
+        "background": True,
+    })
+
+
+if __name__ == "__main__":
+    main()

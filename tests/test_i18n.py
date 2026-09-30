@@ -65,9 +65,9 @@ def test_default_is_english_and_spanish_is_selectable(monkeypatch):
     monkeypatch.delenv("PDMS_LANG", raising=False)
     assert i18n.DEFAULT_LANGUAGE == "en"
     i18n.set_language("en")
-    assert i18n._("Stop all.") == "Stop all."
+    assert i18n._("Proxy stopped.") == "Proxy stopped."
     i18n.set_language("es")
-    assert i18n._("Stop all.") == "Parar todas."
+    assert i18n._("Proxy stopped.") == "Proxy parado."
     assert i18n._("{key} stopped.", key="svc@8080") == "svc@8080 parado."
     i18n.set_language("fr")  # unknown languages fall back to English
     assert i18n.current_language() == "en"

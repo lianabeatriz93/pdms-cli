@@ -77,6 +77,16 @@ def ask_background() -> bool:
     ).unsafe_ask()
 
 
+def ask_proxy_background() -> bool:
+    return questionary.select(
+        _("How should the proxy run?"),
+        choices=[
+            questionary.Choice(_("Foreground (in this terminal, with every request live)"), False),
+            questionary.Choice(_("Background (keeps running; requests with pdms logs proxy)"), True),
+        ],
+    ).unsafe_ask()
+
+
 def ask_database(current: Database | None = None) -> Database:
     c = current or Database(host="localhost")
     host = questionary.text(_("Host:"), default=c.host, validate=_not_empty).unsafe_ask()
