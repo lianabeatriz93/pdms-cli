@@ -1626,6 +1626,8 @@ def proxy_main(
         return
     if running := proxy.running_proxy():
         fail(_("The proxy is already running on port {port} (pid {pid}).", port=running["port"], pid=running["pid"]))
+    if restored := proxy.restore_frontend_change():  # the previous proxy did not stop cleanly
+        console.print("[green]✓[/] " + _("{path} restored (left over by the previous proxy).", path=restored))
     cfg = Config.load()
     root = current_repo_root(cfg)
     repo_routes = load_repo_routes(root, env)
@@ -1637,12 +1639,13 @@ def proxy_main(
     if (root / "frontend").is_dir() and not repos.frontend_uses(root, proxy_url):
         if frontend is None and interactive_terminal():
             frontend = questionary.confirm(
-                _("Point the frontend to the proxy? (writes VITE_APP_API_URL in frontend/.env.local, git-ignored)"),
+                _("Point the frontend to the proxy? (writes VITE_APP_API_URL in frontend/.env.local, undone when it stops)"),
                 default=True,
             ).unsafe_ask()
-        if frontend:
-            written = repos.point_frontend_to(root, proxy_url)
-            console.print("[green]✓[/] " + _("{path} updated; restart yarn dev to apply it.", path=written))
+        if frontend and (change := repos.point_frontend_to(root, proxy_url)):
+            proxy.remember_frontend_change(change)
+            console.print("[green]✓[/] " + _("{path} points to the proxy until it stops; restart yarn dev to apply it.",
+                                             path=change["path"]))
 
     summary = Table.grid(padding=(0, 2))
     summary.add_row(f"[bold]{_('Proxy')}[/]", proxy_url)
@@ -1660,6 +1663,9 @@ def proxy_main(
         proxy.serve(gateway, "0.0.0.0", port, {"repo": str(root), "remote": target_remote or "", "as": as_user or ""})
     except KeyboardInterrupt:
         console.print(f"\n[dim]{_('Proxy stopped.')}[/]")
+    finally:
+        if restored := proxy.restore_frontend_change():
+            console.print("[green]✓[/] " + _("{path} restored; restart yarn dev to apply it.", path=restored))
 
 
 @proxy_app.command("routes", help=_("Show which service handles each route and where the proxy would send it."))

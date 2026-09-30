@@ -303,3 +303,39 @@ def test_proxy_port_fails_without_a_terminal(monkeypatch) -> None:
     _busy_ports(monkeypatch, {8000}, tty=False)
     with pytest.raises(typer.Exit):
         cli.proxy_port(8000)
+
+
+def test_restore_frontend_removes_a_file_it_created(tmp_path):
+    (tmp_path / "frontend").mkdir()
+    change = repos.point_frontend_to(tmp_path, "http://localhost:8001")
+    assert not change["existed"] and repos.frontend_uses(tmp_path, "http://localhost:8001")
+    assert repos.restore_frontend(change)
+    assert not (tmp_path / "frontend" / ".env.local").exists()
+
+
+def test_restore_frontend_puts_back_the_previous_values(tmp_path):
+    (tmp_path / "frontend").mkdir()
+    env_local = tmp_path / "frontend" / ".env.local"
+    env_local.write_text('VITE_FEATURE_X=1\nVITE_APP_API_URL="https://old"\n')
+    change = repos.point_frontend_to(tmp_path, "http://localhost:8000")
+    assert repos.restore_frontend(change)
+    assert env_local.read_text().splitlines() == ["VITE_FEATURE_X=1", 'VITE_APP_API_URL="https://old"']
+
+
+def test_restore_frontend_keeps_values_edited_meanwhile(tmp_path):
+    (tmp_path / "frontend").mkdir()
+    env_local = tmp_path / "frontend" / ".env.local"
+    change = repos.point_frontend_to(tmp_path, "http://localhost:8000")
+    env_local.write_text("VITE_APP_API_URL=https://mine\nVITE_APP_API_URL_VERSION=api/v1\n")
+    assert repos.restore_frontend(change)
+    assert env_local.read_text().splitlines() == ["VITE_APP_API_URL=https://mine"]
+
+
+def test_frontend_change_is_undone_from_the_state_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    (tmp_path / "frontend").mkdir()
+    proxy.remember_frontend_change(repos.point_frontend_to(tmp_path, "http://localhost:8000"))
+    assert proxy.restore_frontend_change() == str(tmp_path / "frontend" / ".env.local")
+    assert not proxy.frontend_change_path().exists()
+    assert not (tmp_path / "frontend" / ".env.local").exists()
+    assert proxy.restore_frontend_change() is None  # nothing pending
