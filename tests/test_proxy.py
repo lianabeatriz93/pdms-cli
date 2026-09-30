@@ -366,7 +366,8 @@ def test_background_proxy_starts_answers_and_stops(tmp_path, monkeypatch):
         assert running["port"] == port and running["background"]
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/docs", timeout=5) as response:
             assert response.status == 200
-        assert started.log.read_text().splitlines()[1].startswith(f"# proxy :{port}")
+        lines = started.log.read_text().splitlines()
+        assert lines[1].startswith(f"# proxy :{port}") and lines[2].startswith(f"# listening on :{port}")
     finally:
         restored = actions.stop_proxy()
     assert restored == str(root / "frontend" / ".env.local")
