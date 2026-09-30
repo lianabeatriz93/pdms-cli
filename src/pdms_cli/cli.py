@@ -177,11 +177,7 @@ def label(service: Path, root: Path) -> str:
 
 
 def running_by_service() -> dict[str, list[int]]:
-    result: dict[str, list[int]] = {}
-    for inst in instances.load().values():
-        if inst.alive():
-            result.setdefault(inst.service, []).append(inst.port)
-    return result
+    return actions.running_by_service()
 
 
 def choose_service(candidates: list[Path], root: Path, message: Optional[str] = None) -> Path:
@@ -1066,8 +1062,7 @@ def stack_add() -> None:
     cfg = Config.load()
     prompts.require_tty()
     name = prompts.ask_name(_("stack"), cfg.stacks)
-    cfg.stacks[name] = ask_stack(cfg)
-    cfg.save()
+    settle(lambda: actions.save_stack(cfg, name, ask_stack(cfg)))
     console.print("[green]✓[/] " + _("Stack '{name}' saved. Start it with [bold]pdms up {name}[/].", name=name))
 
 
@@ -1075,8 +1070,8 @@ def stack_add() -> None:
 def stack_edit(name: Optional[str] = typer.Argument(None, autocompletion=completion.stacks)) -> None:
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
-    cfg.stacks[name] = ask_stack(cfg, cfg.stacks[name])
-    cfg.save()
+    stack = ask_stack(cfg, cfg.stacks[name])
+    settle(lambda: actions.save_stack(cfg, name, stack))
     console.print("[green]✓[/] " + _("Stack '{name}' updated.", name=name))
 
 
@@ -1085,21 +1080,17 @@ def stack_remove(name: Optional[str] = typer.Argument(None, autocompletion=compl
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
     if questionary.confirm(_("Delete stack '{name}'?", name=name), default=False).unsafe_ask():
-        del cfg.stacks[name]
-        cfg.save()
+        actions.remove_stack(cfg, name)
         console.print("[green]✓[/] " + _("'{name}' deleted.", name=name))
 
 
+def backend_root(cfg: Config) -> Path:
+    return services_root(cfg) or fail(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
+
+
 def stack_paths(cfg: Config, stack: Stack) -> list[Path]:
-    root = services_root(cfg) or fail(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
-    paths = []
-    for svc in stack.services:
-        path = root / svc
-        if not runner.is_service(path):
-            fail(_("'{svc}' is no longer a service in {root}. Edit the stack with [bold]pdms stack edit[/].",
-                   svc=svc, root=root))
-        paths.append(path)
-    return paths
+    root = backend_root(cfg)
+    return settle(lambda: actions.stack_paths(stack, root))
 
 
 @app.command(help=_("Start all services of a stack in the background, each on a free port."))
@@ -1116,54 +1107,32 @@ def up(
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
     stack = cfg.stacks[name]
-    paths = stack_paths(cfg, stack)
+    root = backend_root(cfg)
+    settle(lambda: actions.stack_paths(stack, root))  # a stale stack fails before asking for the user and DB
     user_name = pick(cfg.users, _("user"), user or stack.user or None, cfg.last_user)
     db_name = pick(cfg.dbs, _("database"), db or stack.db or None, cfg.last_db)
-    host = cfg.defaults.host
+    plan = settle(lambda: actions.plan_stack(cfg, name, root, user_name=user_name, db_name=db_name,
+                                             events_mode=events_mode))
 
-    running = running_by_service()
-    pending = [p for p in paths if str(p) not in running]
-    for path in paths:
-        if str(path) in running:
-            console.print(_("[dim]· {name} already running on :{ports}, skipping.[/]",
-                            name=path.name, ports=", :".join(map(str, running[str(path)]))))
-    if not pending:
+    for path, ports in plan.running.items():
+        console.print(_("[dim]· {name} already running on :{ports}, skipping.[/]",
+                        name=path.name, ports=", :".join(map(str, ports))))
+    if not plan.services or plan.events is None:
         console.print("[green]✓[/] " + _("The whole stack '{name}' is running.", name=name))
         return
+    warn_events(plan.events)
 
-    taken = set(instances.running_ports())
-    plan = []  # (path, port, consumer): consumers get no port
-    port = cfg.defaults.port
-    for path in pending:
-        consumer = actions.consumer_of(cfg, path)
-        if consumer:
-            plan.append((path, 0, consumer))
-            continue
-        port = runner.next_free_port(host, port, taken)
-        taken.add(port)
-        plan.append((path, port, None))
-    if any(c for _p, _port, c in plan):
-        events_mode = "local"  # consumers read from the local ElasticMQ
-
-    first = Profile(plan[0][0], user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], host, plan[0][1])
-    events_env, events_label, events_kind = events_for(cfg, plan[0][0], events_mode)
-    print_summary(cfg, first, {
-        _("Services"): "\n".join(f"{p.name} → " + (f"sqs ← {c[0].name}" if c else f":{port}") for p, port, c in plan),
-        _("Events"): events_label,
+    first = plan.services[0]
+    profile = Profile(first.service, user_name, first.user, db_name, first.db, first.host, first.port)
+    print_summary(cfg, profile, {
+        _("Services"): "\n".join(f"{s.service.name} → " + (f"sqs ← {s.queue}" if s.is_consumer else f":{s.port}")
+                                 for s in plan.services),
+        _("Events"): plan.events.label,
         _("Install"): install_label(cfg, install, each=True),
     }, show_service=False)
-    confirm_protected(cfg, first, yes)
+    confirm_protected(cfg, profile, yes)
 
-    started = []
-    for path, port, consumer in plan:
-        ensure_installed(cfg, path, install)
-        env = runner.build_env(cfg.defaults, cfg.users[user_name], cfg.dbs[db_name], events_env)
-        cmd = events.poller_command(runner.poetry(), consumer[0], consumer[1], cfg.defaults.events_port) if consumer \
-            else runner.uvicorn_command(host, port, cfg.defaults.reload)
-        started.append(instances.start(
-            path, cmd, env, host=host, port=port, user=user_name, db=db_name, reload=cfg.defaults.reload,
-            deps=actions.installed_parts(path), events=events_kind, queue=consumer[0].name if consumer else "",
-        ))
+    started = actions.start_stack(cfg, plan, install=lambda path: ensure_installed(cfg, path, install))
     failed = 0
     for inst in started:
         try:
@@ -1179,8 +1148,8 @@ def up(
 def down(name: Optional[str] = typer.Argument(None, help=_("Stack to stop."), autocompletion=completion.stacks)) -> None:
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
-    paths = {str(p) for p in stack_paths(cfg, cfg.stacks[name])}
-    targets = [i for i in instances.load().values() if i.service in paths and i.alive()]
+    root = backend_root(cfg)
+    targets = settle(lambda: actions.stack_instances(cfg, name, root))
     if not targets:
         console.print(_("Nothing from stack '{name}' is running.", name=name))
     for inst in targets:
