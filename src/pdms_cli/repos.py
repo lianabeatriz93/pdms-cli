@@ -118,23 +118,59 @@ def remote_from_frontend(root: Path) -> str | None:
     return url
 
 
-def point_frontend_to(root: Path, proxy_url: str) -> Path | None:
-    """Set VITE_APP_API_URL/VERSION in ``frontend/.env.local`` (git-ignored) to go through the proxy."""
+def _env_key(line: str) -> str | None:
+    return None if line.lstrip().startswith("#") or "=" not in line else line.split("=", 1)[0].strip()
+
+
+def point_frontend_to(root: Path, proxy_url: str) -> dict | None:
+    """Set VITE_APP_API_URL/VERSION in ``frontend/.env.local`` (git-ignored) to go through the proxy.
+
+    Returns what :func:`restore_frontend` needs to undo it: the file, whether it existed and the original line of
+    each key (None when the key was not set), or None when the repo has no frontend.
+    """
     frontend = root / "frontend"
     if not frontend.is_dir():
         return None
     path = frontend / ".env.local"
     wanted = {"VITE_APP_API_URL": proxy_url, "VITE_APP_API_URL_VERSION": "api/v1"}
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    done = set()
+    existed = path.exists()
+    lines = path.read_text(encoding="utf-8").splitlines() if existed else []
+    previous: dict[str, str | None] = dict.fromkeys(wanted)
     for i, line in enumerate(lines):
-        key = line.split("=", 1)[0].strip()
-        if key in wanted and not line.lstrip().startswith("#"):
+        key = _env_key(line)
+        if key in wanted and previous[key] is None:
+            previous[key] = line
             lines[i] = f"{key}={wanted[key]}"
-            done.add(key)
-    lines += [f"{key}={value}" for key, value in wanted.items() if key not in done]
+    lines += [f"{key}={value}" for key, value in wanted.items() if previous[key] is None]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return path
+    return {"path": str(path), "existed": existed, "proxy_url": proxy_url, "previous": previous}
+
+
+def restore_frontend(change: dict) -> bool:
+    """Undo :func:`point_frontend_to`; keys edited since then are left alone. True if the file was touched."""
+    path = Path(change["path"])
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return False
+    ours = {"VITE_APP_API_URL": change["proxy_url"], "VITE_APP_API_URL_VERSION": "api/v1"}
+    kept, touched = [], False
+    for line in lines:
+        key = _env_key(line)
+        if key in ours and line == f"{key}={ours[key]}":
+            touched = True
+            original = change["previous"].get(key)
+            if original is not None:
+                kept.append(original)
+            continue
+        kept.append(line)
+    if not touched:
+        return False
+    if not change["existed"] and not any(line.strip() for line in kept):
+        path.unlink()
+    else:
+        path.write_text("\n".join(kept) + "\n" if kept else "", encoding="utf-8")
+    return True
 
 
 def frontend_uses(root: Path, proxy_url: str) -> bool:

@@ -227,6 +227,8 @@ pdms proxy routes -f tp    # which service handles each route and where it would
   variables. They are only sent to local services, never to the remote API.
 - **Frontend:** `pdms proxy` offers to write `VITE_APP_API_URL=http://localhost:8000` and
   `VITE_APP_API_URL_VERSION=api/v1` into `frontend/.env.local` (git-ignored, other lines are kept). Restart `yarn dev`.
+  When the proxy stops, the file is put back as it was (if the proxy was killed, the next `pdms proxy` does it);
+  values edited by hand in the meantime are left alone.
 - **Docs:** `http://localhost:8000/docs` is a Swagger UI with a selector for every local service (live specs from
   their `/openapi.json`) plus an "All local services" view; "Try it out" goes through the proxy. Each service's own
   `http://localhost:<port>/docs` keeps working.

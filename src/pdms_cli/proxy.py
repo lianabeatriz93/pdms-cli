@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
-from . import instances
+from . import instances, repos
 from .config import DevUser
 from .i18n import _
 from .routes import Route, match
@@ -38,6 +38,30 @@ DOCS_PREFIX = "/_pdms/openapi/"
 
 def state_path() -> Path:
     return instances.state_dir() / "proxy.json"
+
+
+def frontend_change_path() -> Path:
+    """The change made to ``frontend/.env.local`` for the running proxy, to undo it even after a crash."""
+    return instances.state_dir() / "proxy-frontend.json"
+
+
+def remember_frontend_change(change: dict) -> None:
+    frontend_change_path().parent.mkdir(parents=True, exist_ok=True)
+    frontend_change_path().write_text(json.dumps(change), encoding="utf-8")
+
+
+def restore_frontend_change() -> str | None:
+    """Undo the recorded ``.env.local`` change, if any; returns the restored file."""
+    try:
+        change = json.loads(frontend_change_path().read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except json.JSONDecodeError:
+        frontend_change_path().unlink(missing_ok=True)
+        return None
+    restored = repos.restore_frontend(change)
+    frontend_change_path().unlink(missing_ok=True)
+    return change["path"] if restored else None
 
 
 def running_proxy() -> dict | None:

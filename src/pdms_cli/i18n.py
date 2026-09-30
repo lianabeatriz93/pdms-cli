@@ -485,9 +485,12 @@ ES: dict[str, str] = {
     "Terraform environment to read the routes from.": "Entorno de Terraform del que leer las rutas.",
     "Point frontend/.env.local to the proxy (asked if omitted).":
         "Apuntar frontend/.env.local al proxy (se pregunta si se omite).",
-    "Point the frontend to the proxy? (writes VITE_APP_API_URL in frontend/.env.local, git-ignored)":
-        "¿Apunto el frontend al proxy? (escribe VITE_APP_API_URL en frontend/.env.local, ignorado por git)",
-    "{path} updated; restart yarn dev to apply it.": "{path} actualizado; reinicia yarn dev para aplicarlo.",
+    "Point the frontend to the proxy? (writes VITE_APP_API_URL in frontend/.env.local, undone when it stops)":
+        "¿Apunto el frontend al proxy? (escribe VITE_APP_API_URL en frontend/.env.local; se deshace al pararlo)",
+    "{path} points to the proxy until it stops; restart yarn dev to apply it.":
+        "{path} apunta al proxy hasta que se pare; reinicia yarn dev para aplicarlo.",
+    "{path} restored; restart yarn dev to apply it.": "{path} restaurado; reinicia yarn dev para aplicarlo.",
+    "{path} restored (left over by the previous proxy).": "{path} restaurado (lo dejó el proxy anterior).",
     "The proxy is already running on port {port} (pid {pid}).": "El proxy ya está corriendo en el puerto {port} (pid {pid}).",
     "No Terraform for '{env}' in {path}.": "No hay Terraform para '{env}' en {path}.",
     "Reading the API routes from Terraform...": "Leyendo las rutas de la API desde Terraform...",
