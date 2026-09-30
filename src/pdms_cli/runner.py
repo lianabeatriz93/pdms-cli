@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import installer
 from .config import Database, Defaults, DevUser
 from .i18n import _
 
@@ -106,6 +107,11 @@ def ensure_poetry() -> None:
 def install(service: Path) -> None:
     for cmd in ([poetry(), "lock"], [poetry(), "install"]):
         subprocess.run(cmd, cwd=service, check=True)
+    copied = installer.copied_dependencies(service)
+    if copied:
+        # poetry keeps a copied path dependency whose version did not change, even if its code did
+        subprocess.run([poetry(), "run", "python", "-m", "pip", "install", "--quiet", "--no-deps", "--force-reinstall",
+                        *map(str, copied)], cwd=service, check=True)
 
 
 def uvicorn_command(host: str, port: int, reload: bool) -> list[str]:
