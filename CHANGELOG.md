@@ -1,3 +1,16 @@
+## v0.2.4 (2026-09-30)
+
+### Feat
+
+- **proxy**: put frontend/.env.local back as it was when the proxy stops
+- **stack**: pick the stack's services from the whole repo in one list
+
+### Fix
+
+- **proxy**: offer the next free port when the default one is in use
+- **cli**: pass every Typer parameter when calling commands directly
+- **install**: reinstall copied path dependencies after poetry install
+
 ## v0.2.3 (2026-09-29)
 
 ### Feat
