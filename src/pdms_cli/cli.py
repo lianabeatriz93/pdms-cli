@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
+from prompt_toolkit.keys import Keys
 import questionary
 import typer
 from rich.console import Console
@@ -1031,20 +1032,40 @@ def print_stacks(cfg: Config) -> None:
     console.print(table)
 
 
+def ask_stack_services(root: Path, candidates: list[Path], current: list[str]) -> list[str]:
+    """Every service of the repo in one list: the stack's first (checked), then the running ones, then the rest."""
+    running = running_by_service()
+    labels = {label(c, root): c for c in candidates}
+    busy = sorted(t for t, path in labels.items() if str(path) in running and t not in current)
+    rest = sorted(t for t in labels if t not in current and t not in busy)
+
+    def title(text: str) -> str:
+        if text not in busy:
+            return text
+        ports = [p for p in running[str(labels[text])] if p]  # SQS consumers have no port
+        return f"{text}  " + (_("(running on :{ports})", ports=", :".join(map(str, ports))) if ports
+                              else _("(running)"))
+
+    order = [*current, *busy, *rest]
+    question = questionary.checkbox(
+        _("Stack services ({count} in the repo):", count=len(labels)),
+        choices=[questionary.Choice(title(t), t, checked=t in current) for t in order],
+        instruction=_("(type to filter, ↑↓ to move, space to check or uncheck, Enter to save)"),
+        use_search_filter=True,
+        use_jk_keys=False,
+        validate=lambda picked: bool(picked) or _("A stack needs at least one service."),
+    )
+    # Tab (Ctrl+I) inverts and Ctrl+A checks every service of the repo, not only the filtered ones
+    for key in (Keys.ControlI, Keys.ControlA):
+        question.application.key_bindings.remove(key)
+    picked = set(question.unsafe_ask())
+    return [t for t in order if t in picked]
+
+
 def ask_stack(cfg: Config, current: Optional[Stack] = None) -> Stack:
     prompts.require_tty()
     root, candidates = list_services(cfg)
-    services = list(current.services) if current else []
-    if services:
-        services = questionary.checkbox(
-            _("Stack services (uncheck to remove):"),
-            choices=[questionary.Choice(s, s, checked=True) for s in services],
-        ).unsafe_ask()
-    while not services or questionary.confirm(
-        _("Add another service? (it has {count})", count=len(services)), default=not services
-    ).unsafe_ask():
-        remaining = [c for c in candidates if label(c, root) not in services]
-        services.append(label(choose_service(remaining, root, _("Service to add")), root))
+    services = ask_stack_services(root, candidates, list(current.services) if current else [])
     ask = _("(ask when starting)")
     user = questionary.select(
         _("Stack user:"), choices=[ask, *cfg.users], default=(current.user if current and current.user else ask)
