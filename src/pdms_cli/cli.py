@@ -1663,8 +1663,8 @@ def proxy_main(
             print_restored(actions.stop_proxy())
             console.print(instances.tail(str(started.log), 30), markup=False, highlight=False)
             fail(_("The proxy exited while starting. Full log: {log}", log=started.log))
-        if state == "ok":
-            console.print("[green]✓[/] " + _("The proxy is responding at {url} (pid {pid})", url=plan.url, pid=started.pid))
+        if state == "ok" and (running := proxy.running_proxy()):
+            console.print("[green]✓[/] " + _("The proxy is responding at {url} (pid {pid})", url=plan.url, pid=running["pid"]))
         else:
             console.print(f"[yellow]{_('⚠ The proxy is not responding yet; check its log.')}[/]")
         console.print(_("  Requests: [bold]pdms logs proxy[/]   Stop: [bold]pdms stop proxy[/]"))

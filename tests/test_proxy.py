@@ -363,7 +363,7 @@ def test_background_proxy_starts_answers_and_stops(tmp_path, monkeypatch):
     try:
         assert actions.wait_for_proxy(started) == "ok", instances.tail(str(started.log), 30)
         running = proxy.running_proxy()
-        assert running["pid"] == started.pid and running["background"]
+        assert running["port"] == port and running["background"]
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/docs", timeout=5) as response:
             assert response.status == 200
         assert started.log.read_text().splitlines()[1].startswith(f"# proxy :{port}")
@@ -371,5 +371,5 @@ def test_background_proxy_starts_answers_and_stops(tmp_path, monkeypatch):
         restored = actions.stop_proxy()
     assert restored == str(root / "frontend" / ".env.local")
     assert not (root / "frontend" / ".env.local").exists()
-    assert not instances.process_alive(started.pid) and proxy.running_proxy() is None
+    assert not instances.process_alive(int(running["pid"]), running["created"]) and proxy.running_proxy() is None
     assert not proxy.state_path().exists()

@@ -473,6 +473,8 @@ def serve_proxy(plan: ProxyLaunch, log: Callable[[str, str, int, str, float], No
 
 @dataclass
 class ProxyStarted:
+    # The process pdms started. On Windows (venv python.exe) and with macOS framework builds it is a launcher that
+    # runs the real interpreter as its child, so the proxy's own pid is the one in its state file, not this one.
     pid: int
     port: int
     log: Path
@@ -490,7 +492,7 @@ def start_proxy(plan: ProxyLaunch) -> ProxyStarted:
 def proxy_state(started: ProxyStarted) -> str:
     """``ok`` once the background proxy answers, ``starting`` before, ``stopped`` if it exited."""
     running = proxy.running_proxy()
-    if running and running["pid"] == started.pid:
+    if running and running["port"] == started.port:
         return "ok" if instances.responds("127.0.0.1", started.port) else "starting"
     return "starting" if instances.process_alive(started.pid) else "stopped"
 
