@@ -387,7 +387,7 @@ def events_for(cfg: Config, service: Path, mode: Optional[str]) -> tuple[dict[st
             _("The local ElasticMQ is not running. Start it now?"), default=True
         ).unsafe_ask():
             fail(_("--events local needs the local ElasticMQ: pdms events up"))
-        events_up("dev")
+        events_up("dev", True)
     root = repos.find_repo_root(service) or repos.active_root(cfg)
     event_map = events.load_event_map(root) if root else events.EventMap()
     if not event_map.broker_queue:
@@ -1675,7 +1675,7 @@ def load_events(env: str = "dev") -> tuple[Path, events.EventMap]:
 @events_app.callback()
 def events_main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:
-        events_status()
+        events_status(False)
 
 
 @events_app.command("map", help=_("Show every event type, the queue the broker sends it to and its consumer."))
@@ -2443,7 +2443,7 @@ def instances_menu() -> None:
 def stack_menu() -> None:
     prompts.require_tty()
     _menu(_("Stacks:"), {
-        _("Start stack"): lambda: up(None, None, None, None, False),
+        _("Start stack"): lambda: up(None, None, None, None, False, None),
         _("Stop stack"): lambda: down(None),
         _("List"): stack_list,
         _("Create"): stack_add,
