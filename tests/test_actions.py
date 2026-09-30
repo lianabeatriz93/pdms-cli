@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from pdms_cli import actions, events
-from pdms_cli.config import Config, Database, DevUser
+from pdms_cli.config import Config, Database, DevUser, Stack
 from pdms_cli.instances import Instance
 
 
@@ -125,3 +125,79 @@ def test_restart_keeps_port_user_and_database(cfg, ports, http_service, monkeypa
     started = actions.restart_service(cfg, _instance(tmp_path, events="local"), db_name="shared", confirmed=True)
     assert order == ["stop", "start"]
     assert (started.port, started.user, started.db, started.events) == (8081, "supervisor", "shared", "local")
+
+
+# --------------------------------------------------------------------------- stacks
+
+
+@pytest.fixture
+def backend(tmp_path, monkeypatch) -> Path:
+    """A backend with four services; ``broker/sqs`` is an SQS consumer."""
+    for name in ("lead/a", "lead/b", "lead/c", "broker/sqs"):
+        (tmp_path / name).mkdir(parents=True)
+    monkeypatch.setattr(actions.runner, "is_service", lambda path: path.is_dir())
+    queue, handler = events.Queue("broker-sqs-queue.fifo"), events.Consumer("broker/sqs", "main.handler")
+    monkeypatch.setattr(actions, "consumer_of",
+                        lambda cfg, service: (queue, handler) if service.name == "sqs" else None)
+    return tmp_path
+
+
+def _live(monkeypatch, *items: tuple[Path, int]) -> None:
+    live = [Instance(key=f"{p.name}@{port}", pid=1, service=str(p), host="0.0.0.0", port=port, user="supervisor",
+                     db="local", reload=True, log="x.log", started_at="") for p, port in items]
+    monkeypatch.setattr(actions.instances, "load", lambda: {i.key: i for i in live})
+    monkeypatch.setattr(Instance, "alive", lambda self: True)
+
+
+def test_plan_stack_skips_running_services_and_gives_each_a_free_port(cfg, ports, backend, monkeypatch) -> None:
+    cfg.stacks["prospecting"] = Stack(services=["lead/a", "lead/b", "lead/c"])
+    _live(monkeypatch, (backend / "lead/b", 8080))
+    ports["taken"].add(8080)
+    ports["busy"].add(8081)  # DynamoDB or anything else outside pdms
+    monkeypatch.setattr(actions.events, "running", lambda port: False)
+    plan = actions.plan_stack(cfg, "prospecting", backend, user_name="supervisor", db_name="local")
+    assert plan.running == {backend / "lead/b": [8080]}
+    assert [(s.service.name, s.port) for s in plan.services] == [("a", 8082), ("c", 8083)]
+    assert plan.events is not None and plan.events.kind == "aws"
+
+
+def test_plan_stack_with_a_consumer_publishes_locally(cfg, ports, backend, monkeypatch) -> None:
+    cfg.stacks["broker"] = Stack(services=["broker/sqs", "lead/a"])
+    _live(monkeypatch)
+    monkeypatch.setattr(actions.events, "running", lambda port: False)
+    with pytest.raises(actions.LocalEventsDown):
+        actions.plan_stack(cfg, "broker", backend, user_name="supervisor", db_name="local")
+    monkeypatch.setattr(actions.events, "running", lambda port: True)
+    plan = actions.plan_stack(cfg, "broker", backend, user_name="supervisor", db_name="local")
+    assert [(s.service.name, s.port, s.events.kind) for s in plan.services] == [("sqs", 0, "local"),
+                                                                               ("a", 8080, "local")]
+
+
+def test_plan_stack_when_everything_runs_and_when_the_stack_is_stale(cfg, ports, backend, monkeypatch) -> None:
+    cfg.stacks["one"] = Stack(services=["lead/a"])
+    _live(monkeypatch, (backend / "lead/a", 8080))
+    plan = actions.plan_stack(cfg, "one", backend, user_name="supervisor", db_name="local")
+    assert (plan.services, plan.events) == ([], None)
+    cfg.stacks["stale"] = Stack(services=["lead/gone"])
+    with pytest.raises(actions.ActionError) as error:
+        actions.plan_stack(cfg, "stale", backend, user_name="supervisor", db_name="local")
+    assert "lead/gone" in error.value.message
+
+
+def test_stack_instances_lists_only_its_live_services(cfg, backend, monkeypatch) -> None:
+    cfg.stacks["prospecting"] = Stack(services=["lead/a", "lead/b"])
+    _live(monkeypatch, (backend / "lead/a", 8080), (backend / "lead/c", 8081))
+    assert [i.key for i in actions.stack_instances(cfg, "prospecting", backend)] == ["a@8080"]
+
+
+def test_save_and_remove_stack_validate_first(cfg) -> None:
+    with pytest.raises(actions.ActionError):
+        actions.save_stack(cfg, "empty", Stack())
+    with pytest.raises(actions.ActionError):
+        actions.save_stack(cfg, "bad", Stack(services=["lead/a"], user="nobody"))
+    actions.save_stack(cfg, "ok", Stack(services=["lead/a"], user="agent", db="local"))
+    assert cfg.stacks["ok"].user == "agent"
+    actions.remove_stack(cfg, "ok")
+    assert "ok" not in cfg.stacks
+    with pytest.raises(actions.ActionError):
+        actions.remove_stack(cfg, "ok")
