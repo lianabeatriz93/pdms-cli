@@ -280,9 +280,12 @@ ES: dict[str, str] = {
     # ------------------------------------------------------------------ stacks
     "No stacks.": "No hay stacks.",
     "Create one with [bold]pdms stack add[/].": "Crea uno con [bold]pdms stack add[/].",
-    "Stack services (uncheck to remove):": "Servicios del stack (desmarca para quitar):",
-    "Add another service? (it has {count})": "¿Añadir otro servicio? (tiene {count})",
-    "Service to add": "Servicio a añadir",
+    "Stack services ({count} in the repo):": "Servicios del stack ({count} en el repo):",
+    "(type to filter, ↑↓ to move, space to check or uncheck, Enter to save)":
+        "(escribe para filtrar, ↑↓ para moverte, espacio para marcar o desmarcar, Enter para guardar)",
+    "(running on :{ports})": "(en ejecución en :{ports})",
+    "(running)": "(en ejecución)",
+    "A stack needs at least one service.": "Un stack necesita al menos un servicio.",
     "(ask when starting)": "(preguntar al levantar)",
     "Stack user:": "Usuario del stack:",
     "Stack database:": "Base de datos del stack:",
