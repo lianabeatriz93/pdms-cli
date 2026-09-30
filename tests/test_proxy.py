@@ -260,3 +260,46 @@ def test_point_frontend_keeps_other_local_settings(tmp_path):
         "VITE_FEATURE_X=1", "VITE_APP_API_URL=http://localhost:8000", "VITE_APP_API_URL_VERSION=api/v1",
     ]
     assert repos.frontend_uses(tmp_path, "http://localhost:8000")
+
+
+class _Answer:
+    def __init__(self, value):
+        self.value = value
+
+    def unsafe_ask(self):
+        return self.value
+
+
+def _busy_ports(monkeypatch, busy: set[int], tty: bool) -> None:
+    from pdms_cli import cli
+
+    monkeypatch.setattr(cli.instances, "running_ports", lambda: set())
+    monkeypatch.setattr(cli.runner, "port_is_free", lambda host, port: port not in busy)
+    monkeypatch.setattr(cli, "interactive_terminal", lambda: tty)
+
+
+def test_proxy_port_keeps_a_free_port(monkeypatch) -> None:
+    from pdms_cli import cli
+
+    _busy_ports(monkeypatch, set(), tty=False)
+    assert cli.proxy_port(8000) == 8000
+
+
+def test_proxy_port_offers_the_next_free_one_in_a_terminal(monkeypatch) -> None:
+    from pdms_cli import cli
+
+    _busy_ports(monkeypatch, {8000, 8001}, tty=True)
+    asked = []
+    monkeypatch.setattr(cli.questionary, "confirm", lambda message, **kw: asked.append(message) or _Answer(True))
+    assert cli.proxy_port(8000) == 8002
+    assert asked and "8002" in asked[0]
+
+
+def test_proxy_port_fails_without_a_terminal(monkeypatch) -> None:
+    import typer
+
+    from pdms_cli import cli
+
+    _busy_ports(monkeypatch, {8000}, tty=False)
+    with pytest.raises(typer.Exit):
+        cli.proxy_port(8000)

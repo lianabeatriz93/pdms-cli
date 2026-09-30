@@ -1571,6 +1571,20 @@ def log_request(method: str, path: str, status: int, target: str, seconds: float
     ), soft_wrap=True)
 
 
+def proxy_port(port: int) -> int:
+    """``port`` if it is free; otherwise the next free one, offered in a terminal (the menu cannot pass --port)."""
+    taken = instances.running_ports()
+    if port not in taken and runner.port_is_free("0.0.0.0", port):
+        return port
+    free = runner.next_free_port("0.0.0.0", port + 1, taken)
+    if not interactive_terminal():
+        fail(_("Port {port} is in use (the next free one is {free}). Use --port.", port=port, free=free))
+    if not questionary.confirm(_("Port {port} is in use. Use {free} instead?", port=port, free=free),
+                               default=True).unsafe_ask():
+        raise typer.Exit(1)
+    return free
+
+
 @proxy_app.callback()
 def proxy_main(
     ctx: typer.Context,
@@ -1596,9 +1610,7 @@ def proxy_main(
     repo_routes = load_repo_routes(root, env)
     target_remote = resolve_remote(cfg, root, remote, no_remote)
     user = cfg.users[pick(cfg.users, _("user"), as_user)] if as_user else None
-    if not runner.port_is_free("0.0.0.0", port):
-        fail(_("Port {port} is in use (the next free one is {free}). Use --port.",
-               port=port, free=runner.next_free_port("0.0.0.0", port + 1)))
+    port = proxy_port(port)
 
     proxy_url = f"http://localhost:{port}"
     if (root / "frontend").is_dir() and not repos.frontend_uses(root, proxy_url):
