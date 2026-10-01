@@ -850,7 +850,8 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
 @app.command(help=_("Show the console of background services (Ctrl+C to exit)."))
 def logs(
     keys: Optional[list[str]] = typer.Argument(
-        None, help=_("Instances (or parts of the service name), or proxy."), autocompletion=completion.instance_or_proxy_keys
+        None, help=_("Instances (or parts of the service name), proxy, or sns (what was published to SNS locally)."),
+        autocompletion=completion.log_keys,
     ),
     all_: bool = typer.Option(False, "--all", "-a", help=_("All running instances, including ones started later.")),
     stack: Optional[str] = typer.Option(None, "--stack", "-s", help=_("All instances of a stack."), autocompletion=completion.stacks),
@@ -864,6 +865,8 @@ def logs(
 ) -> None:
     if keys and proxy.is_key(keys[0]):
         return proxy_logs(follow, lines, previous)
+    if keys and keys[0] == events.SNS_KEY:
+        return sns_logs(follow, lines, previous)
     if previous:
         inst = pick_instance(keys[0] if keys else None, message=_("Which instance do you want to see the logs of?"))
         old = instances.previous_log_path(inst.log)
@@ -919,6 +922,22 @@ def logs(
     names = ", ".join(i.key for i in targets) or _("(waiting for instances)")
     console.rule(_("{names} · Ctrl+C to exit", names=names))
     logview.follow(console, targets, lines, discover)
+
+
+def sns_logs(follow: bool, lines: Optional[int], previous: bool) -> None:
+    """What the services published to SNS locally (see pdms events peek pdms-sns)."""
+    log = events.sns_log_path()
+    if previous:
+        log = instances.previous_log_path(log)
+    if not follow or previous:
+        if not log.exists():
+            fail(_("Nothing was published to the local SNS yet."))
+        console.print(instances.tail(str(log), lines or 100), markup=False, highlight=False, end="")
+        return
+    console.rule(_("{names} · Ctrl+C to exit", names=_("local SNS")))
+    sns = instances.Instance(key=events.SNS_KEY, pid=0, service="", host="", port=0, user="", db="", reload=False,
+                             log=str(log), started_at="")
+    logview.follow(console, [sns], lines or 100, None)
 
 
 def proxy_logs(follow: bool, lines: Optional[int], previous: bool) -> None:

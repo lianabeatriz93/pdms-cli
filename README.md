@@ -246,7 +246,8 @@ pdms ui --no-browser -p 9000
 ```
 
 A page with the background services, the proxy and the local events, updated live from the same files the CLI
-uses, so both can be used at the same time. From the services screen you can follow a service's logs live (also the
+uses, so both can be used at the same time. From the services screen (which also has a row for the local SNS, see
+[SNS](#sns-one-local-topic-for-everything)) you can follow a service's logs live (also the
 previous run's and the install's), open its Swagger docs, stop it, forget the stopped ones, and restart it with the
 same or another user and database: it asks before a protected database and installs only if something changed, like
 `pdms restart`. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
@@ -340,12 +341,17 @@ with all of this.
 
 Some consumers publish onwards to SNS topics that other systems subscribe to (`account-publish-ev` and the
 `credential-*-publish-ev` ones). With local events nothing of that reaches AWS: whatever any service publishes, to
-any topic, is kept in one local queue, `pdms-sns`, and the service gets the same answer AWS would give.
+any topic, is kept in one local queue, `pdms-sns`, and in a readable log, and the service gets the same answer AWS
+would give.
 
 ```bash
-pdms events peek pdms-sns     # what was published: topic, message, attributes, group id, service and time
+pdms logs sns                 # live: time, service → topic, group id and attributes, then the message
+pdms events peek pdms-sns     # the same messages as JSON, without consuming them
 pdms events purge pdms-sns
 ```
+
+`pdms ui` shows it as an `sns` row in Services (with when something was last published) whose **Logs** follow that
+log live, like any service; `pdms events status` always lists it.
 
 Each service also gets its topics' ARNs from its Lambda's Terraform (`SNS_ACCOUNT_PUBLISH_ARN =
 aws_sns_topic.sns_account_topic.arn` becomes `arn:aws:sns:us-east-1:000000000000:sns-account-publish.fifo`), so

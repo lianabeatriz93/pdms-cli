@@ -32,13 +32,14 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from .instances import state_dir
+from .instances import log_path, state_dir
 from .routes import terraform_dir
 
 CACHE_VERSION = 2
 ACCOUNT_ID = "000000000000"
 REGION = "us-east-1"
 SNS_QUEUE = "pdms-sns"  # every SNS publish of every topic, locally
+SNS_KEY = "sns"  # its readable log: pdms logs sns, the sns row of pdms ui
 BROKER_SERVICE = "broker/broker-sqs-event"
 BROKER_URL_VARIABLE = "SQS_EVENT_BROKER_URL"
 EVENT_SETTINGS = Path("backend/common/event/event/settings.py")
@@ -308,8 +309,13 @@ def local_env(event_map: EventMap, port: int) -> dict[str, str]:
         env[BROKER_URL_VARIABLE] = queue_url(event_map.broker_queue, port)
     env["PDMS_SQS_ENDPOINT"] = endpoint(port)
     env["PDMS_SNS_QUEUE_URL"] = queue_url(SNS_QUEUE, port)
+    env["PDMS_SNS_LOG"] = str(sns_log_path())
     env["PYTHONPATH"] = str(PATCH_DIR)  # its sitecustomize.py redirects the SQS and SNS clients (see sqs_patch/)
     return env
+
+
+def sns_log_path() -> Path:
+    return log_path(SNS_KEY)
 
 
 def topic_arn(name: str) -> str:

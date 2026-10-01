@@ -70,7 +70,7 @@ function rowActions(item, job) {
   const cell = el("td", { class: "row-actions" });
   const busy = job && !job.error;
   cell.append(button("Logs", () => openLogs(item.key, job && job.installed && busy ? "install" : "current")));
-  if (busy) return cell;
+  if (busy || item.isSns) return cell;
   const alive = item.status !== "stopped";
   if (alive && !item.queue && !item.isProxy) {
     cell.append(el("a", {
@@ -101,9 +101,16 @@ function statusCell(item, job) {
   return cell;
 }
 
+function lastPublish(item) {
+  return item.last_publish ? `last ${new Date(item.last_publish).toLocaleTimeString()}` : "nothing yet";
+}
+
 function row(item) {
   const job = state.jobs[item.key];
   const running = item.status !== "stopped" && item.started_at && !(job && !job.error);
+  const uptimeCell = item.isSns
+    ? el("td", { class: "num muted" }, lastPublish(item))
+    : el("td", running ? { class: "num", "data-started": item.started_at } : { class: "num" }, running ? uptime(item.started_at) : "");
   return el("tr", item.key === logs.key ? { class: "picked" } : {},
     el("td", { class: "mono" }, item.key),
     statusCell(item, job),
@@ -111,7 +118,7 @@ function row(item) {
     el("td", {}, item.repo || "-"),
     el("td", {}, item.user || "-"),
     el("td", {}, item.db || "-"),
-    el("td", running ? { class: "num", "data-started": item.started_at } : { class: "num" }, running ? uptime(item.started_at) : ""),
+    uptimeCell,
     rowActions(item, job),
   );
 }
@@ -123,6 +130,12 @@ function serviceItems() {
   if (state.proxy) {
     items.push({
       ...state.proxy, isProxy: true, user: state.proxy.as, db: "", url: `http://localhost:${state.proxy.port}`, detail: "",
+    });
+  }
+  if (state.sns) {
+    items.push({
+      ...state.sns, isSns: true, url: `sns → ${state.sns.queue}`, repo: "", user: "", db: "",
+      detail: state.sns.status === "stopped" ? "the local ElasticMQ is not running: pdms events up" : "",
     });
   }
   // A restart forgets the instance for a moment: keep its row while the job runs.
@@ -193,10 +206,10 @@ function clearLog() {
 }
 
 function paintLogTabs() {
-  const isProxy = logs.key.startsWith("proxy");
+  const noInstall = logs.key.startsWith("proxy") || logs.key === "sns";
   for (const tab of $("logs-tabs").children) {
     tab.setAttribute("aria-selected", String(tab.dataset.which === logs.which));
-    tab.hidden = tab.dataset.which === "install" && isProxy;
+    tab.hidden = tab.dataset.which === "install" && noInstall;
   }
   const job = state && state.jobs[logs.key];
   $("logs-note").textContent = job && !job.error ? PHASES[job.phase] || job.phase : "";
