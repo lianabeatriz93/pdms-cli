@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from pdms_cli import actions, instances
+from pdms_cli import actions, instances, proxy, routes
 from pdms_cli.config import Config, Database, DevUser, Repo, Stack
 from pdms_cli.instances import Health, Instance
 from pdms_cli.ui import jobs as ui_jobs
@@ -479,3 +479,119 @@ def test_the_local_sns_is_a_row_with_its_log(ui, machine, monkeypatch) -> None:
     monkeypatch.setattr(ui_state.events, "is_up", lambda port: False)
     log.unlink()
     assert ui_state.build_state(machine)["sns"] == {"key": "sns", "queue": "pdms-sns", "status": "stopped", "last_publish": ""}
+
+
+# --------------------------------------------------------------------------- proxy
+
+
+@pytest.fixture
+def proxy_repo(repo, machine, monkeypatch):
+    """The repo with a frontend, a dev Terraform environment and two routes, one of them served by ``svc@8081``."""
+    root = repo.parent
+    (root / "frontend").mkdir()
+    (root / "frontend" / ".env").write_text("VITE_APP_API_URL=https://api.example.com/dev\n", encoding="utf-8")
+    for env in ("dev", "qa"):
+        (root / "infra" / "infra_auto" / "environments" / env).mkdir(parents=True)
+    registry = instances.load()
+    registry["svc@8081"].service = str(repo / "lead/lead-list")
+    instances.save(registry)
+    monkeypatch.setattr(actions.routes, "load_routes", lambda root, env: [
+        routes.Route("GET", "/api/v1/leads", "lead/lead-list"), routes.Route("GET", "/api/v1/me", "user/user-me"),
+    ])
+    monkeypatch.setattr(actions, "free_port", lambda host, port: port)
+    return root
+
+
+def test_proxy_options_and_routes(ui, proxy_repo) -> None:
+    port, _hub, _states, _jobs = ui
+    _response, raw, _conn = request(port, "/api/proxy/options", cookie(port))
+    assert json.loads(raw) == {"port": 8000, "env": "dev", "envs": ["dev", "qa"],
+                               "remote": "https://api.example.com/dev", "frontend": True}
+    _response, raw, _conn = request(port, "/api/proxy/routes", cookie(port))
+    assert json.loads(raw) == {"env": "dev", "remote": "https://api.example.com/dev", "routes": [
+        {"method": "GET", "path": "/api/v1/leads", "service": "lead/lead-list", "target": "local", "key": "svc@8081",
+         "note": ""},
+        {"method": "GET", "path": "/api/v1/me", "service": "user/user-me", "target": "remote", "key": "", "note": ""},
+    ]}
+    assert request(port, "/api/proxy/routes?env=../../etc", cookie(port))[0].status == 400
+    response, raw, _conn = request(port, "/api/proxy/routes?env=prod", cookie(port))
+    assert response.status == 400 and "No Terraform for 'prod'" in json.loads(raw)["error"]
+
+
+def test_proxy_start_asks_first_and_runs_as_a_job(ui, proxy_repo, machine, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    started = []
+
+    def start_proxy(plan):
+        started.append(plan)
+        return actions.ProxyStarted(1, plan.port, proxy.log_path())
+
+    monkeypatch.setattr(actions, "start_proxy", start_proxy)
+    monkeypatch.setattr(actions, "wait_for_proxy", lambda started: "ok")
+
+    def busy(host, port):
+        raise actions.PortBusy(port, port + 1)
+
+    with monkeypatch.context() as m:
+        m.setattr(actions, "free_port", busy)
+        assert post(port, "/api/proxy/start", {"port": 8000}) == (
+            409, {"decision": "port_busy", "port": 8000, "free": 8001},
+        )
+    assert post(port, "/api/proxy/start", {"port": 8001}) == (
+        409, {"decision": "point_frontend", "url": "http://localhost:8001"},
+    )
+    for body in ({"port": "8001"}, {"port": 0}, {"port": True}, {"env": "../x"}, {"frontend": "yes"},
+                 {"user": "ghost", "frontend": False}):
+        assert post(port, "/api/proxy/start", body)[0] == 400, body
+    assert not started and not jobs.snapshot()
+
+    body = {"port": 8001, "env": "qa", "user": "boss", "frontend": True, "remote": "https://other.example.com/qa/"}
+    assert post(port, "/api/proxy/start", body) == (202, {"job": "proxy"})
+    wait_until(lambda: started and not jobs.snapshot())
+    plan = started[0]
+    assert (plan.port, plan.env, plan.user_name, plan.remote) == (8001, "qa", "boss", "https://other.example.com/qa")
+    assert machine.repos["pdms"].remote == "https://other.example.com/qa"  # saved for the repo, like pdms proxy
+    env_local = proxy_repo / "frontend" / ".env.local"
+    assert "VITE_APP_API_URL=http://localhost:8001" in env_local.read_text(encoding="utf-8")
+    assert proxy.frontend_change() == str(env_local)
+
+
+def test_a_proxy_that_dies_while_starting_says_why(ui, proxy_repo, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    stopped = []
+
+    def start_proxy(plan):
+        proxy.log_path().parent.mkdir(parents=True, exist_ok=True)
+        proxy.log_path().write_text("# proxy\nOSError: [Errno 98] Address already in use\n", encoding="utf-8")
+        return actions.ProxyStarted(1, plan.port, proxy.log_path())
+
+    monkeypatch.setattr(actions, "start_proxy", start_proxy)
+    monkeypatch.setattr(actions, "wait_for_proxy", lambda started: "stopped")
+    monkeypatch.setattr(actions, "stop_proxy", lambda: stopped.append(True))
+    assert post(port, "/api/proxy/start", {"frontend": False, "no_remote": True})[0] == 202
+    wait_until(lambda: jobs.snapshot().get("proxy", {}).get("error"))
+    assert jobs.snapshot()["proxy"]["error"] == "The proxy exited while starting: OSError: [Errno 98] Address already in use"
+    assert stopped == [True]
+    assert post(port, "/api/proxy/start", {"frontend": False})[0] == 202  # a failed start does not block the next
+
+
+def test_the_proxy_is_started_only_once(ui, proxy_repo, monkeypatch) -> None:
+    port, _hub, _states, _jobs = ui
+    monkeypatch.setattr(actions.proxy, "running_proxy", lambda: {"pid": 7, "port": 8000})
+    status, data = post(port, "/api/proxy/start", {"frontend": False})
+    assert status == 400 and data["error"] == "The proxy is already running on port 8000 (pid 7)."
+
+
+def test_the_state_shows_the_running_proxy(proxy_repo, machine, monkeypatch) -> None:
+    running = {"pid": 7, "port": 8001, "repo": str(proxy_repo), "env": "qa", "remote": "", "as": "boss",
+               "started_at": "2026-10-01T10:00:00", "background": True}
+    monkeypatch.setattr(ui_state.proxy, "running_proxy", lambda: running)
+    monkeypatch.setattr(ui_state.instances, "responds", lambda host, port: True)
+    monkeypatch.setattr(ui_state.instances, "health_all", lambda items: {i.key: Health("ok") for i in items})
+    monkeypatch.setattr(ui_state.events, "is_up", lambda port: False)
+    proxy.remember_frontend_change({"path": "/repo/frontend/.env.local", "proxy_url": "x", "previous": {}})
+    assert ui_state.build_state(machine)["proxy"] == {
+        "key": "proxy@8001", "pid": 7, "port": 8001, "repo": str(proxy_repo), "repo_alias": "pdms", "env": "qa",
+        "remote": "", "as": "boss", "frontend": "/repo/frontend/.env.local", "started_at": "2026-10-01T10:00:00",
+        "background": True, "status": "ok",
+    }

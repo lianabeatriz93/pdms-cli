@@ -16,7 +16,7 @@
 <nav class="side">
   <a href="#services" data-view="services">Services <span id="count"></span></a>
   <a href="#stacks" data-view="stacks">Stacks <span id="stack-count"></span></a>
-  <a class="soon" aria-disabled="true">Proxy</a>
+  <a href="#proxy" data-view="proxy">Proxy <span id="proxy-on"></span></a>
   <a class="soon" aria-disabled="true">Events</a>
 </nav>
 <main class="main">
@@ -57,6 +57,56 @@
   <div class="cards" id="stacks"></div>
   <p class="empty card" id="stacks-empty" hidden>No stacks yet. A stack starts several services at once, each on a free port.</p>
 </section>
+
+<section class="view" id="view-proxy" hidden>
+  <div class="bar">
+    <h1>Proxy</h1><span class="muted" id="proxy-summary"></span>
+    <div class="bar-actions push">
+      <a class="btn" id="proxy-docs" target="_blank" rel="noopener noreferrer" hidden>Open /docs</a>
+      <button class="btn bad" id="proxy-stop" type="button" hidden>Stop proxy</button>
+      <button class="btn primary" id="proxy-start" type="button" hidden>Start proxy</button>
+    </div>
+  </div>
+  <div class="card proxy-info" id="proxy-info"></div>
+
+  <div class="tabs" id="proxy-tabs" role="tablist">
+    <button type="button" role="tab" data-tab="requests">Requests</button>
+    <button type="button" role="tab" data-tab="routes">Routes</button>
+  </div>
+
+  <div class="panel" id="proxy-requests">
+    <div class="bar">
+      <input type="search" id="req-filter" placeholder="Filter by path, service or status" aria-label="Filter requests" autocomplete="off">
+      <label class="inline"><input type="checkbox" id="req-errors"> Errors only</label>
+      <span class="muted" id="req-count"></span>
+      <button class="btn ghost push" id="req-clear" type="button">Clear</button>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>Went to</th><th class="num">Took</th></tr></thead>
+        <tbody id="req-rows"></tbody>
+      </table>
+      <p class="empty" id="req-empty"></p>
+    </div>
+    <p class="muted note">Click a request served locally to open that service's log at its line.</p>
+  </div>
+
+  <div class="panel" id="proxy-routes" hidden>
+    <div class="bar">
+      <input type="search" id="route-filter" placeholder="Filter by path or service" aria-label="Filter routes" autocomplete="off">
+      <label class="inline"><input type="checkbox" id="route-local"> Local only</label>
+      <span class="muted" id="route-count"></span>
+      <button class="btn ghost push" id="route-refresh" type="button">Refresh</button>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Method</th><th>Path</th><th>Service</th><th>Goes to</th></tr></thead>
+        <tbody id="route-rows"></tbody>
+      </table>
+      <p class="empty" id="route-empty" hidden></p>
+    </div>
+  </div>
+</section>
   <p class="muted note">The CLI keeps working alongside: both read and change the same state.</p>
 </main>
 
@@ -77,6 +127,25 @@
     <div class="actions">
       <button class="btn ghost" type="button" id="restart-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="restart-go">Restart</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="proxy-dialog">
+  <form method="dialog" id="proxy-form">
+    <h2>Start the proxy</h2>
+    <p class="muted">One port for every service: local instances of the current repo answer, the rest goes to the remote API. It runs in the background, like <code>pdms proxy -b</code>.</p>
+    <label>Port <input type="number" id="proxy-port" min="1" max="65535" required></label>
+    <label>Terraform environment <select id="proxy-env"></select></label>
+    <label>Remote API <input id="proxy-remote" autocomplete="off" placeholder="https://….execute-api.us-east-1.amazonaws.com/dev"></label>
+    <label class="inline"><input type="checkbox" id="proxy-no-remote"> Only local services (never the remote API)</label>
+    <label>Act as <select id="proxy-as"></select></label>
+    <label class="inline" id="proxy-frontend-label"><input type="checkbox" id="proxy-frontend" checked> <span>Point <code>frontend/.env.local</code> to the proxy (undone when it stops)</span></label>
+    <p class="warn" id="proxy-warn" hidden></p>
+    <p class="error" id="proxy-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="proxy-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="proxy-go">Start</button>
     </div>
   </form>
 </dialog>
