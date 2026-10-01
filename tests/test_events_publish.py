@@ -74,3 +74,110 @@ def test_events_mode_decision(tmp_path, monkeypatch, mode, running, expected):
     env, _label, kind = cli.events_for(cfg, tmp_path, None)
     assert kind == expected
     assert ("SQS_EVENT_BROKER_URL" in env) == (expected == "local")
+
+
+# --------------------------------------------------------------------------- SNS
+
+SNS_PROBE = """
+import json, botocore.session
+from botocore.exceptions import ClientError
+sns = botocore.session.get_session().create_client("sns", region_name="us-east-1")
+out = {"endpoint": sns.meta.endpoint_url}
+arn = "arn:aws:sns:us-east-1:000000000000:sns-account-publish.fifo"
+try:
+    out["publish"] = sns.publish(
+        TopicArn=arn, Message='{"lead_id": 7}', MessageGroupId="7", Subject="terms",
+        MessageAttributes={"type": {"DataType": "String", "StringValue": "term-cond"},
+                           "raw": {"DataType": "Binary", "BinaryValue": b"ok"}},
+    )
+    out["empty"] = sns.publish(TopicArn="", Message="no topic")
+    out["batch"] = sns.publish_batch(TopicArn=arn, PublishBatchRequestEntries=[
+        {"Id": "a", "Message": "one", "MessageGroupId": "g"}, {"Id": "b", "Message": "two", "MessageGroupId": "g"}])
+except ClientError as error:
+    out["error"] = error.response["Error"]
+print(json.dumps(out))
+"""
+
+
+class FakeElasticMQ:
+    """Records the query-API calls; answers the first SendMessage as if the queue did not exist yet."""
+
+    def __init__(self) -> None:
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from urllib.parse import parse_qs
+
+        self.calls: list[tuple[str, dict]] = []
+        fake = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):  # noqa: N802
+                fields = {k: v[0] for k, v in parse_qs(self.rfile.read(int(self.headers["Content-Length"])).decode()).items()}
+                fake.calls.append((self.path, fields))
+                missing = fields["Action"] == "SendMessage" and not any(f["Action"] == "CreateQueue" for _p, f in fake.calls)
+                self.send_response(400 if missing else 200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        import threading
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+
+def sns_probe(env: dict[str, str]) -> dict:
+    clean = {k: v for k, v in os.environ.items() if not k.startswith(("AWS_", "PDMS_", "PYTHONPATH"))}
+    result = subprocess.run([sys.executable, "-c", SNS_PROBE], env={**clean, **env}, capture_output=True, text=True,
+                            cwd=str(events.PATCH_DIR))
+    assert result.returncode == 0, result.stderr
+    return {**json.loads(result.stdout), "stderr": result.stderr}
+
+
+def test_every_sns_publish_lands_in_the_one_local_queue():
+    elasticmq = FakeElasticMQ()
+    queue = f"http://127.0.0.1:{elasticmq.port}/000000000000/{events.SNS_QUEUE}"
+    out = sns_probe({"PYTHONPATH": str(events.PATCH_DIR), "PDMS_SQS_ENDPOINT": f"http://127.0.0.1:{elasticmq.port}",
+                     "PDMS_SNS_QUEUE_URL": queue})
+    elasticmq.server.shutdown()
+    assert "error" not in out, out
+    assert out["endpoint"] == f"http://127.0.0.1:{elasticmq.port}"  # never the real AWS
+    assert out["publish"]["MessageId"] and out["publish"]["SequenceNumber"]  # a FIFO topic answers like AWS
+    assert [entry["Id"] for entry in out["batch"]["Successful"]] == ["a", "b"] and out["batch"]["Failed"] == []
+
+    actions = [fields["Action"] for _path, fields in elasticmq.calls]
+    assert actions == ["SendMessage", "CreateQueue", "SendMessage", "SendMessage", "SendMessage", "SendMessage"]
+    assert elasticmq.calls[1] == ("/", {"Action": "CreateQueue", "Version": "2012-11-05", "QueueName": "pdms-sns"})
+    kept = [json.loads(fields["MessageBody"]) for _path, fields in elasticmq.calls[2:]]
+    assert {k: kept[0][k] for k in ("Topic", "TopicArn", "Message", "Subject", "MessageGroupId", "Service")} == {
+        "Topic": "sns-account-publish.fifo", "TopicArn": "arn:aws:sns:us-east-1:000000000000:sns-account-publish.fifo",
+        "Message": '{"lead_id": 7}', "Subject": "terms", "MessageGroupId": "7", "Service": "sqs_patch",
+    }
+    assert kept[0]["MessageAttributes"] == {"type": {"DataType": "String", "StringValue": "term-cond"},
+                                            "raw": {"DataType": "Binary", "BinaryValue": "b2s="}}
+    assert kept[1]["Topic"] == "(no TopicArn)" and kept[1]["Message"] == "no topic"
+    assert [k["Message"] for k in kept[2:]] == ["one", "two"]
+
+
+def test_sns_fails_like_aws_when_the_local_queue_is_unreachable():
+    out = sns_probe({"PYTHONPATH": str(events.PATCH_DIR), "PDMS_SQS_ENDPOINT": "http://127.0.0.1:9",
+                     "PDMS_SNS_QUEUE_URL": "http://127.0.0.1:9/000000000000/pdms-sns"})
+    assert out["error"]["Code"] == "ServiceUnavailable" and "pdms local SNS" in out["error"]["Message"]
+    assert "[pdms] could not keep the SNS message" in out["stderr"]
+
+
+def test_sns_is_untouched_without_local_events():
+    out = sns_probe({"PYTHONPATH": str(events.PATCH_DIR), "AWS_ACCESS_KEY_ID": "real", "AWS_SECRET_ACCESS_KEY": "x"})
+    assert "amazonaws.com" in out["endpoint"]
+
+
+def test_local_env_names_the_sns_queue_and_each_services_topics():
+    event_map = events.EventMap(topic_variables={
+        "credential/credential-term-cond-publish-ev": {"SNS_CONTRACT_TERM_AND_COND_PUBLISH_ARN": "sns-account-publish.fifo"},
+    })
+    assert events.local_env(event_map, 9324)["PDMS_SNS_QUEUE_URL"] == "http://localhost:9324/000000000000/pdms-sns"
+    assert events.topic_env(event_map, "credential/credential-term-cond-publish-ev") == {
+        "SNS_CONTRACT_TERM_AND_COND_PUBLISH_ARN": "arn:aws:sns:us-east-1:000000000000:sns-account-publish.fifo",
+    }
+    assert events.topic_env(event_map, "lead/lead-tp-list") == {}

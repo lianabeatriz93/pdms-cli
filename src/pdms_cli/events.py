@@ -9,6 +9,9 @@ Where things come from (nothing has to be registered by hand):
 * **Routing** — the broker publishes each event to the queue of its ``type``: ``EVENT_ROUTE_DEST`` and the
   ``EventType`` enum in ``backend/common/event`` (parsed, not imported) plus the broker Lambda's environment in
   Terraform (``SQS_EMAIL_NOTIFY = …aws_sqs_queue.email_notify.name``).
+* **SNS topics** — each Lambda's environment variables that name an ``aws_sns_topic`` (``SNS_…_ARN =
+  aws_sns_topic.sns_account_topic.arn``). Locally there is one SNS for all of them: what any service publishes ends
+  up in the ``pdms-sns`` queue (see ``sqs_patch/sitecustomize.py``).
 
 The map is cached until one of those files changes.
 """
@@ -32,8 +35,10 @@ from pathlib import Path
 from .instances import state_dir
 from .routes import terraform_dir
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 ACCOUNT_ID = "000000000000"
+REGION = "us-east-1"
+SNS_QUEUE = "pdms-sns"  # every SNS publish of every topic, locally
 BROKER_SERVICE = "broker/broker-sqs-event"
 BROKER_URL_VARIABLE = "SQS_EVENT_BROKER_URL"
 EVENT_SETTINGS = Path("backend/common/event/event/settings.py")
@@ -44,6 +49,7 @@ IMAGE = "softwaremill/elasticmq-native:latest"
 
 VAR = re.compile(r"var\.([A-Za-z0-9_]+)")
 QUEUE_REF = re.compile(r"aws_sqs_queue\.([A-Za-z0-9_]+)\.(?:name|arn|url|id)")
+TOPIC_REF = re.compile(r"aws_sns_topic\.([A-Za-z0-9_]+)\.(?:name|arn|id)")
 MODULE_REF = re.compile(r"module\.([A-Za-z0-9_-]+)(?:\[\d+\])?\.")
 
 
@@ -69,6 +75,8 @@ class EventMap:
     broker_queue: str = ""
     # Broker environment variable -> queue name (what the broker needs to route locally).
     broker_destinations: dict[str, str] = field(default_factory=dict)
+    # Service (relative to the backend folder) -> its environment variable -> the SNS topic name it names.
+    topic_variables: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def consumer_of_type(self, event_type: str) -> Consumer | None:
         queue = self.routes.get(event_type)
@@ -98,14 +106,14 @@ def _resolve(value: object, variables: dict[str, str]) -> str:
     return text
 
 
-def _parse_tf_file(path: str) -> tuple[dict, dict, list, dict]:
+def _parse_tf_file(path: str) -> tuple[dict, dict, list, dict, dict]:
     import hcl2
 
-    variables, queues, mappings, modules = {}, {}, [], {}
+    variables, queues, mappings, modules, topics = {}, {}, [], {}, {}
     try:
         data = hcl2.loads(Path(path).read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 - a broken file only loses its own definitions
-        return variables, queues, mappings, modules
+        return variables, queues, mappings, modules, topics
     for block in data.get("variable", []):
         for name, body in block.items():
             if "default" in body:
@@ -116,15 +124,17 @@ def _parse_tf_file(path: str) -> tuple[dict, dict, list, dict]:
                 kind, name = _unquote(kind), _unquote(name)
                 if kind == "aws_sqs_queue":
                     queues[name] = body
+                elif kind == "aws_sns_topic":
+                    topics[name] = body
                 elif kind == "aws_lambda_event_source_mapping":
                     mappings.append(body)
     for block in data.get("module", []):
         for name, body in block.items():
             modules[_unquote(name)] = (path, body)
-    return variables, queues, mappings, modules
+    return variables, queues, mappings, modules, topics
 
 
-def _terraform_blocks(directory: Path) -> tuple[dict, dict, list, dict]:
+def _terraform_blocks(directory: Path) -> tuple[dict, dict, list, dict, dict]:
     files = [str(p) for p in sorted(directory.glob("*.tf"))]
     if len(files) < 40:
         parsed = [_parse_tf_file(f) for f in files]
@@ -134,13 +144,14 @@ def _terraform_blocks(directory: Path) -> tuple[dict, dict, list, dict]:
                 parsed = list(pool.map(_parse_tf_file, files, chunksize=8))
         except Exception:  # noqa: BLE001 - worker processes not available: parse here
             parsed = [_parse_tf_file(f) for f in files]
-    variables, queues, mappings, modules = {}, {}, [], {}
-    for file_variables, file_queues, file_mappings, file_modules in parsed:
+    variables, queues, mappings, modules, topics = {}, {}, [], {}, {}
+    for file_variables, file_queues, file_mappings, file_modules, file_topics in parsed:
         variables.update(file_variables)
         queues.update(file_queues)
         mappings.extend(file_mappings)
         modules.update({name: (Path(path), body) for name, (path, body) in file_modules.items()})
-    return variables, queues, mappings, modules
+        topics.update(file_topics)
+    return variables, queues, mappings, modules, topics
 
 
 def _event_routes(root: Path) -> dict[str, str]:
@@ -185,7 +196,9 @@ def _local_conf_queues(root: Path) -> dict[str, Queue]:
 
 def discover(root: Path, env: str = "dev") -> EventMap:
     directory = terraform_dir(root, env)
-    variables, raw_queues, mappings, modules = _terraform_blocks(directory) if directory.is_dir() else ({}, {}, [], {})
+    variables, raw_queues, mappings, modules, raw_topics = (
+        _terraform_blocks(directory) if directory.is_dir() else ({}, {}, [], {}, {})
+    )
     event_map = EventMap()
     resource_names = {}
     for resource, body in raw_queues.items():
@@ -223,6 +236,19 @@ def discover(root: Path, env: str = "dev") -> EventMap:
                 if ref and ref.group(1) in resource_names:
                     event_map.broker_destinations[_unquote(key)] = resource_names[ref.group(1)]
 
+    topic_names = {resource: _resolve(body.get("name", resource), variables) for resource, body in raw_topics.items()}
+    for path, body in modules.values():
+        if "lambda_path" not in body:
+            continue
+        try:
+            service = (path.parent / _unquote(body["lambda_path"])).resolve().relative_to(backend).as_posix()
+        except ValueError:
+            continue
+        for key, value in (body.get("environment_variables") or {}).items():
+            ref = TOPIC_REF.search(str(value))
+            if ref and ref.group(1) in topic_names:
+                event_map.topic_variables.setdefault(service, {})[_unquote(key)] = topic_names[ref.group(1)]
+
     for event_type, variable in _event_routes(root).items():
         if variable in event_map.broker_destinations:
             event_map.routes[event_type] = event_map.broker_destinations[variable]
@@ -256,6 +282,7 @@ def load_event_map(root: Path, env: str = "dev") -> EventMap:
                 queues={k: Queue(**v) for k, v in m["queues"].items()},
                 consumers={k: Consumer(**v) for k, v in m["consumers"].items()},
                 routes=m["routes"], broker_queue=m["broker_queue"], broker_destinations=m["broker_destinations"],
+                topic_variables=m["topic_variables"],
             )
     except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
         pass
@@ -280,8 +307,18 @@ def local_env(event_map: EventMap, port: int) -> dict[str, str]:
     if event_map.broker_queue:
         env[BROKER_URL_VARIABLE] = queue_url(event_map.broker_queue, port)
     env["PDMS_SQS_ENDPOINT"] = endpoint(port)
-    env["PYTHONPATH"] = str(PATCH_DIR)  # its sitecustomize.py redirects the SQS clients (see sqs_patch/)
+    env["PDMS_SNS_QUEUE_URL"] = queue_url(SNS_QUEUE, port)
+    env["PYTHONPATH"] = str(PATCH_DIR)  # its sitecustomize.py redirects the SQS and SNS clients (see sqs_patch/)
     return env
+
+
+def topic_arn(name: str) -> str:
+    return f"arn:aws:sns:{REGION}:{ACCOUNT_ID}:{name}"
+
+
+def topic_env(event_map: EventMap, service: str) -> dict[str, str]:
+    """The SNS topic ARNs the service's Lambda gets from Terraform, as local ARNs (they show in ``pdms-sns``)."""
+    return {name: topic_arn(topic) for name, topic in event_map.topic_variables.get(service, {}).items()}
 
 
 def poller_command(poetry: str, queue: Queue, consumer: Consumer, port: int) -> list[str]:
@@ -371,7 +408,7 @@ def container_state() -> dict | None:
 
 def start(queues: dict[str, Queue], port: int) -> str:
     """Start (or recreate, if the queues changed) the ElasticMQ container. Returns created | restarted | unchanged."""
-    conf = elasticmq_conf(queues, port)
+    conf = elasticmq_conf({**queues, SNS_QUEUE: Queue(SNS_QUEUE, fifo=False, source="pdms")}, port)
     conf_hash = hashlib.sha1(conf.encode()).hexdigest()
     state = container_state()
     if state and state["running"] and state["conf_hash"] == conf_hash and state["port"] == port:
