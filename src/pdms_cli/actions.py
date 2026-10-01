@@ -133,8 +133,8 @@ def events_setup(cfg: Config, service: Path, mode: str | None) -> EventsSetup:
     return EventsSetup(events.local_env(event_map, port), label, "local", warning)
 
 
-def consumer_of(cfg: Config, service: Path) -> tuple[events.Queue, events.Consumer] | None:
-    """The queue and handler when ``service`` is an SQS consumer (event Lambda) of its repo."""
+def repo_event_map(cfg: Config, service: Path) -> tuple[events.EventMap, str] | None:
+    """The event map of the service's repo and the service's path in it (``lead/lead-tp-list``)."""
     root = repos.find_repo_root(service) or repos.active_root(cfg)
     if not root:
         return None
@@ -142,7 +142,15 @@ def consumer_of(cfg: Config, service: Path) -> tuple[events.Queue, events.Consum
         relative = service.resolve().relative_to((root / "backend").resolve()).as_posix()
     except ValueError:
         return None
-    event_map = events.load_event_map(root)
+    return events.load_event_map(root), relative
+
+
+def consumer_of(cfg: Config, service: Path) -> tuple[events.Queue, events.Consumer] | None:
+    """The queue and handler when ``service`` is an SQS consumer (event Lambda) of its repo."""
+    found_map = repo_event_map(cfg, service)
+    if not found_map:
+        return None
+    event_map, relative = found_map
     found = event_map.queue_of_service(relative)
     if not found:
         return None
@@ -244,7 +252,10 @@ def installed_parts(service: Path) -> dict[str, str] | None:
 
 
 def service_env(cfg: Config, launch: ServiceLaunch) -> dict[str, str]:
-    return runner.build_env(cfg.defaults, launch.user, launch.db, launch.events.env)
+    extra = dict(launch.events.env)
+    if launch.events.kind == "local" and (found := repo_event_map(cfg, launch.service)):
+        extra.update(events.topic_env(*found))  # its own topics; the rest of the setup may be a whole stack's
+    return runner.build_env(cfg.defaults, launch.user, launch.db, extra)
 
 
 def start_service(

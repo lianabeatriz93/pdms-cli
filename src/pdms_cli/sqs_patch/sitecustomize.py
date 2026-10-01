@@ -4,9 +4,115 @@ It sends every SQS client created through botocore to the local ElasticMQ given 
 dummy credentials, without touching the service code or other AWS clients (S3 & co. keep their normal endpoint).
 PDMS services pin botocore 1.29, which predates ``AWS_ENDPOINT_URL_SQS``, hence the patch. Being a
 ``sitecustomize``, it also applies in every process uvicorn ``--reload`` spawns.
+
+SNS has no local server: with ``PDMS_SNS_QUEUE_URL`` every ``Publish`` and ``PublishBatch`` of any topic is kept as
+one message in that local queue (``pdms events peek pdms-sns``) and answered like AWS would, so nothing leaves the
+machine. Other SNS calls go to ElasticMQ, which rejects them, instead of the real AWS.
 """
 
+import base64
+import datetime
+import json
 import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+
+CAPTURED = "pdms_sns_params"
+
+
+def _plain(value):
+    """Message attributes as JSON (a ``BinaryValue`` becomes base64)."""
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    if isinstance(value, (bytes, bytearray)):
+        return base64.b64encode(bytes(value)).decode()
+    return value
+
+
+def _sqs(queue_url, action, **fields):
+    data = urllib.parse.urlencode({"Action": action, "Version": "2012-11-05", **fields}).encode()
+    with urllib.request.urlopen(urllib.request.Request(queue_url, data=data), timeout=5) as response:  # nosec B310
+        return response.read()
+
+
+def keep(queue_url, notification):
+    """Send ``notification`` to the local SNS queue, creating the queue if ElasticMQ started without it."""
+    body = json.dumps(notification, sort_keys=True)
+    try:
+        _sqs(queue_url, "SendMessage", MessageBody=body)
+    except urllib.error.HTTPError as error:
+        if error.code != 400:
+            raise
+        endpoint, name = queue_url.rsplit("/", 2)[0], queue_url.rsplit("/", 1)[1]
+        _sqs(endpoint, "CreateQueue", QueueName=name)
+        _sqs(queue_url, "SendMessage", MessageBody=body)
+
+
+def notification(params, entry=None):
+    """What a ``Publish`` (or one ``PublishBatch`` entry) carried, with where and when it was published."""
+    source = entry or params
+    arn = params.get("TopicArn") or params.get("TargetArn") or params.get("PhoneNumber") or ""
+    return {
+        "TopicArn": arn,
+        "Topic": arn.rsplit(":", 1)[-1] if arn else "(no TopicArn)",
+        "Message": source.get("Message", ""),
+        "Subject": source.get("Subject", ""),
+        "MessageAttributes": _plain(source.get("MessageAttributes", {})),
+        "MessageGroupId": source.get("MessageGroupId", ""),
+        "MessageDeduplicationId": source.get("MessageDeduplicationId", ""),
+        "Service": os.path.basename(os.getcwd()),
+        "Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def _capture_params(params, context, **kwargs):
+    context[CAPTURED] = dict(params)
+
+
+def _publish_locally(queue_url):
+    from botocore.awsrequest import AWSResponse
+
+    def handler(model, context, **kwargs):
+        params = context.get(CAPTURED, {})
+        is_fifo = (params.get("TopicArn") or "").endswith(".fifo")
+
+        def answer(entry=None):
+            keep(queue_url, notification(params, entry))
+            message = {"MessageId": str(uuid.uuid4())}
+            if is_fifo:
+                message["SequenceNumber"] = str(uuid.uuid4().int)[:20]
+            return message
+
+        try:
+            if model.name == "PublishBatch":
+                entries = params.get("PublishBatchRequestEntries", [])
+                parsed = {"Successful": [{"Id": e.get("Id"), **answer(e)} for e in entries], "Failed": []}
+            else:
+                parsed = answer()
+        except Exception as error:  # noqa: BLE001 - say why in the service's log, then fail like AWS would
+            print(f"[pdms] could not keep the SNS message in {queue_url}: {error}", file=sys.stderr, flush=True)
+            return AWSResponse(queue_url, 503, {}, None), {
+                "Error": {"Code": "ServiceUnavailable", "Message": f"pdms local SNS: {error}"},
+                "ResponseMetadata": {"HTTPStatusCode": 503},
+            }
+        parsed["ResponseMetadata"] = {"HTTPStatusCode": 200, "RequestId": str(uuid.uuid4())}
+        return AWSResponse(queue_url, 200, {}, None), parsed
+
+    return handler
+
+
+def _local_credentials(kwargs, endpoint):
+    if not kwargs.get("endpoint_url"):
+        kwargs["endpoint_url"] = endpoint
+    kwargs.setdefault("region_name", os.environ.get("AWS_REGION") or "us-east-1")
+    kwargs["aws_access_key_id"] = "local"
+    kwargs["aws_secret_access_key"] = "local"  # nosec B105 - local ElasticMQ, not a real credential
+    kwargs.pop("aws_session_token", None)
 
 
 def _patch() -> None:
@@ -21,15 +127,17 @@ def _patch() -> None:
     if getattr(original, "_pdms_patched", False):
         return
 
+    sns_queue = os.environ.get("PDMS_SNS_QUEUE_URL")
+
     def create_client(self, service_name, *args, **kwargs):
-        if service_name == "sqs":
-            if not kwargs.get("endpoint_url"):
-                kwargs["endpoint_url"] = endpoint
-            kwargs.setdefault("region_name", os.environ.get("AWS_REGION") or "us-east-1")
-            kwargs["aws_access_key_id"] = "local"
-            kwargs["aws_secret_access_key"] = "local"  # nosec B105 - local ElasticMQ, not a real credential
-            kwargs.pop("aws_session_token", None)
-        return original(self, service_name, *args, **kwargs)
+        if service_name == "sqs" or (service_name == "sns" and sns_queue):
+            _local_credentials(kwargs, endpoint)
+        client = original(self, service_name, *args, **kwargs)
+        if service_name == "sns" and sns_queue:
+            for operation in ("Publish", "PublishBatch"):
+                client.meta.events.register(f"before-parameter-build.sns.{operation}", _capture_params)
+                client.meta.events.register(f"before-call.sns.{operation}", _publish_locally(sns_queue))
+        return client
 
     create_client._pdms_patched = True
     botocore.session.Session.create_client = create_client

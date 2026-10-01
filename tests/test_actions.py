@@ -257,3 +257,20 @@ def test_clear_proxy_leftovers_fails_while_a_proxy_runs(repo, monkeypatch) -> No
     monkeypatch.setattr(actions.proxy, "running_proxy", lambda: {"pid": 1, "port": 8000})
     with pytest.raises(actions.ActionError):
         actions.clear_proxy_leftovers()
+
+
+def test_local_events_give_each_service_its_own_sns_topics(cfg, monkeypatch):
+    event_map = events.EventMap(topic_variables={"lead/account-publish-ev": {"SNS_ACCOUNT_PUBLISH_ARN": "sns-account-publish.fifo"}})
+    monkeypatch.setattr(actions, "repo_event_map", lambda cfg, service: (event_map, f"lead/{service.name}"))
+
+    def env(service: str, kind: str) -> dict[str, str]:
+        launch = actions.ServiceLaunch(
+            Path(service), "agent", cfg.users["agent"], "local", cfg.dbs["local"], "0.0.0.0", 8081, False,
+            actions.EventsSetup({"PDMS_SNS_QUEUE_URL": "q"} if kind == "local" else {}, "", kind), [],
+        )
+        return actions.service_env(cfg, launch)
+
+    assert env("account-publish-ev", "local")["SNS_ACCOUNT_PUBLISH_ARN"] == \
+        "arn:aws:sns:us-east-1:000000000000:sns-account-publish.fifo"
+    assert "SNS_ACCOUNT_PUBLISH_ARN" not in env("lead-tp-list", "local")
+    assert "SNS_ACCOUNT_PUBLISH_ARN" not in env("account-publish-ev", "aws")  # AWS mode keeps the real topic

@@ -336,6 +336,22 @@ nothing is consuming the target queue. `peek` counts as a receive in SQS, but th
 attempts, so peeking does not make a failing message be dropped sooner. The interactive menu has an **Events** entry
 with all of this.
 
+### SNS: one local topic for everything
+
+Some consumers publish onwards to SNS topics that other systems subscribe to (`account-publish-ev` and the
+`credential-*-publish-ev` ones). With local events nothing of that reaches AWS: whatever any service publishes, to
+any topic, is kept in one local queue, `pdms-sns`, and the service gets the same answer AWS would give.
+
+```bash
+pdms events peek pdms-sns     # what was published: topic, message, attributes, group id, service and time
+pdms events purge pdms-sns
+```
+
+Each service also gets its topics' ARNs from its Lambda's Terraform (`SNS_ACCOUNT_PUBLISH_ARN =
+aws_sns_topic.sns_account_topic.arn` becomes `arn:aws:sns:us-east-1:000000000000:sns-account-publish.fifo`), so
+`peek` shows which topic each message was for; a publish without a topic still lands there as `(no TopicArn)`.
+SNS calls other than publishing go to the local ElasticMQ, which rejects them, instead of the real AWS.
+
 ## Stacks: several services at once
 
 ```bash
