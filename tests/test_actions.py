@@ -269,6 +269,18 @@ def test_save_user_needs_its_id_and_username(cfg) -> None:
     assert cfg.users["agent"] == DevUser("u2", "a@x.com", roles="TPR.Agent")
 
 
+def test_save_user_only_takes_the_repo_roles_and_the_ones_it_had(cfg) -> None:
+    roles = ["TPR.Agent", "TPR.Supervisor"]
+    with pytest.raises(actions.InvalidValue) as invalid:
+        actions.save_user(cfg, "new", DevUser("u3", "n@x.com", roles="TPR.Agent,Boss"), new=True, roles=roles)
+    assert invalid.value.field == "roles"
+    cfg.users["agent"].roles = "Legacy"
+    actions.save_user(cfg, "agent", DevUser("u2", "a@x.com", roles=" Legacy , TPR.Agent,TPR.Agent"), roles=roles)
+    assert cfg.users["agent"].roles == "Legacy,TPR.Agent"
+    actions.save_user(cfg, "free", DevUser("u4", "f@x.com", roles="Anything"), new=True)  # no list: as given
+    assert cfg.users["free"].roles == "Anything"
+
+
 def test_read_db_users_reports_the_driver_error(cfg, monkeypatch) -> None:
     def fetch(db, **kwargs):
         raise OSError("timeout")

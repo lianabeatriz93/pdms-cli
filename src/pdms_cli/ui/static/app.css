@@ -252,8 +252,24 @@ td.wrap-detail .st { white-space: nowrap; }
 .env-row { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
 .settings-form .env-row input { width: min(14rem, 100%); font-family: var(--mono); font-size: .8rem; }
 .env-rows .btn { justify-self: start; }
+.role-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0 .8rem; }
+.role-list label.inline { font-family: var(--mono); font-size: .8rem; }
+.role-list .tag { font-family: system-ui, sans-serif; margin-left: .2rem; }
+.role-list:empty::before { content: "This repo defines no roles."; color: var(--muted); font-size: .82rem; }
+#export-sections, #import-sections { display: flex; flex-wrap: wrap; gap: 0 1.2rem; }
+#import-dialog, #users-dialog { width: min(44rem, calc(100vw - 32px)); }
+.import-plan { margin-bottom: .7rem; }
+.import-plan td { white-space: normal; overflow-wrap: anywhere; font-size: .8rem; }
+#import-conflicts { max-height: 25vh; border: 1px solid var(--line); border-radius: 6px; margin-bottom: .7rem; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 .7rem; }
+.search-row { border: 0; padding: 0 0 .7rem; }
+.search-row label.inline { margin: 0; white-space: nowrap; }
+#users-found label.pick { align-items: baseline; }
+#users-found .who { min-width: 0; overflow-wrap: anywhere; }
+#users-found .roles { font-family: var(--mono); font-size: .72rem; color: var(--muted); }
 
 @media (max-width: 640px) {
+  .row3 { grid-template-columns: 1fr; }
   .setting { grid-template-columns: 1fr; }
   .row2, #user-dialog .row2 { grid-template-columns: 1fr; }
   body { grid-template: auto auto 1fr / 1fr; }

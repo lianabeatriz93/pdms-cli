@@ -108,14 +108,24 @@ def ask_database(current: Database | None = None) -> Database:
     )
 
 
-def ask_user(current: DevUser | None = None) -> DevUser:
+def ask_roles(current: str, roles: list[str]) -> str:
+    """The roles of the repo to tick; the user's own unknown roles show too, so editing does not drop them."""
+    mine = actions.split_roles(current)
+    choices = [questionary.Choice(role, role, checked=role in mine) for role in roles]
+    choices += [questionary.Choice(_("{role} (not a role of this repo)", role=role), role, checked=True)
+                for role in mine if role not in roles]
+    return ",".join(questionary.checkbox(_("DEV_ROLES (space to select):"), choices=choices).unsafe_ask())
+
+
+def ask_user(current: DevUser | None = None, roles: list[str] | None = None) -> DevUser:
     c = current or DevUser(user_id="", username="")
     return DevUser(
         user_id=questionary.text("DEV_USER_ID (uuid):", default=c.user_id, validate=_not_empty).unsafe_ask().strip(),
         username=questionary.text("DEV_USERNAME (email):", default=c.username, validate=_not_empty).unsafe_ask().strip(),
         first_name=questionary.text("DEV_FIRST_NAME:", default=c.first_name).unsafe_ask().strip(),
         last_name=questionary.text("DEV_LAST_NAME:", default=c.last_name).unsafe_ask().strip(),
-        roles=questionary.text(_("DEV_ROLES (comma separated):"), default=c.roles).unsafe_ask().strip(),
+        roles=ask_roles(c.roles, roles) if roles is not None else
+        questionary.text(_("DEV_ROLES (comma separated):"), default=c.roles).unsafe_ask().strip(),
     )
 
 

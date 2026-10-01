@@ -11,9 +11,10 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields
+from datetime import datetime
 from pathlib import Path
 
-from .. import actions, events, i18n, instances, proxy, repos, routes, runner
+from .. import actions, events, i18n, instances, proxy, repos, routes, runner, transfer, userimport
 from ..config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack, config_path
 from ..i18n import _
 
@@ -522,6 +523,8 @@ def settings(cfg: Config) -> dict:
         ],
         "users": [{"name": name, **asdict(user), "stacks": used_by("user", name)} for name, user in cfg.users.items()],
         "defaults": asdict(cfg.defaults),
+        "roles": actions.known_roles(cfg),
+        "sections": list(transfer.SECTIONS),
         "choices": {"language": i18n.LANGUAGES, "logging_level": list(LOG_LEVELS), "events": list(EVENTS_MODES)},
     }
 
@@ -580,7 +583,8 @@ def user_from(body: dict) -> DevUser:
 
 
 def save_user(name: str, body: dict, new: bool) -> str:
-    return actions.save_user(Config.load(), name, user_from(body), new=new)
+    cfg = Config.load()
+    return actions.save_user(cfg, name, user_from(body), new=new, roles=actions.known_roles(cfg))
 
 
 def remove_user(name: str) -> list[str]:
@@ -613,3 +617,111 @@ def save_defaults(body: dict) -> None:
     cfg = Config.load()
     actions.save_defaults(cfg, defaults_from(body, cfg.defaults))
     i18n.set_language(cfg.defaults.language)
+
+
+def _bool(body: dict, key: str) -> bool:
+    value = body.get(key, False)
+    if not isinstance(value, bool):
+        raise actions.ActionError(f"{key} must be true or false")
+    return value
+
+
+def _sections(body: dict) -> list[str]:
+    sections = body.get("sections")
+    if not isinstance(sections, list) or not all(isinstance(section, str) for section in sections):
+        raise actions.ActionError("sections must be a list of section names")
+    return sections
+
+
+def export_config(body: dict) -> dict:
+    """The file of ``pdms config export`` for the page to download."""
+    text = actions.export_config(Config.load(), _sections(body), _bool(body, "secrets"))
+    return {"filename": f"pdms-config-{datetime.now():%Y-%m-%d}.toml", "text": text}
+
+
+def _plans(current: Config, doc: transfer.Document, sections: list[str]) -> list[dict]:
+    return [asdict(plan) for plan in transfer.plan_import(current, doc.config, sections)]
+
+
+def plan_import(body: dict) -> dict:
+    """What importing the file ``text`` would do to each of its sections (``pdms config import``'s table)."""
+    doc = actions.read_export(_text(body, "text"))
+    if not doc.sections:
+        raise actions.ActionError(_("Nothing to import."))
+    meta = {key: doc.meta.get(key) for key in ("exported_at", "cli_version", "secrets")}
+    return {"meta": meta, "sections": doc.sections, "plans": _plans(Config.load(), doc, doc.sections),
+            "first_setup": actions.first_setup()}
+
+
+def apply_import(body: dict) -> dict:
+    """Import the chosen sections of ``text``: new entries always, the ``overwrite`` ones (``[section, name]``) over
+    the user's own, or exactly the file's content with ``replace``. Keeps a copy of the previous configuration."""
+    doc = actions.read_export(_text(body, "text"))
+    sections = [section for section in _sections(body) if section in doc.sections]
+    if not sections:
+        raise actions.ActionError(_("Nothing to import."))
+    overwrite = body.get("overwrite", [])
+    if not isinstance(overwrite, list) or not all(
+        isinstance(pair, list) and len(pair) == 2 and all(isinstance(part, str) for part in pair) for pair in overwrite
+    ):
+        raise actions.ActionError("overwrite must be a list of [section, name] pairs")
+    current = Config.load()
+    chosen = {tuple(pair) for pair in overwrite}
+    if actions.first_setup():
+        chosen = {(plan["section"], name) for plan in _plans(current, doc, sections) for name in plan["changed"]}
+    result = transfer.apply_import(current, doc.config, sections, chosen, replace=_bool(body, "replace"))
+    if result.to_dict() == current.to_dict():
+        return {"changed": False, "backup": None, "no_password": []}
+    backup = actions.import_config(result)
+    i18n.set_language(result.defaults.language)
+    return {"changed": True, "backup": str(backup) if backup else None,
+            "no_password": [name for name, db in result.dbs.items() if not db.password]}
+
+
+def _limit(body: dict) -> int:
+    limit = body.get("limit", 200)
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 1000:
+        raise actions.ActionError("limit must be a number between 1 and 1000")
+    return limit
+
+
+def db_users(body: dict) -> dict:
+    """The users of a database's ``pdms_user`` table, with the ``DEV_ROLES`` each would get (``pdms user import``)."""
+    cfg = Config.load()
+    mapping, source = userimport.role_mapping(repos.active_root(cfg))
+    limit = _limit(body)
+    found = actions.read_db_users(
+        cfg, _text(body, "db"), mapping, search=_text(body, "search").strip(),
+        role=userimport.internal_role(_text(body, "role"), mapping), inactive=_bool(body, "inactive"), limit=limit,
+    )
+    known = {user.user_id: name for name, user in cfg.users.items()}
+    return {
+        "source": "built-in" if source == "built-in" else "repo", "limited": len(found) == limit,
+        "users": [
+            {**asdict(user), "dev_roles": user.dev_roles(mapping), "unknown_roles": user.unknown_roles(mapping),
+             "imported_as": known.get(user.user_id, "")}
+            for user in found
+        ],
+    }
+
+
+def import_db_users(body: dict) -> dict:
+    """Add the picked users (as :func:`db_users` listed them), updating the ones already imported."""
+    picked = body.get("users")
+    if not isinstance(picked, list) or not all(isinstance(user, dict) for user in picked):
+        raise actions.ActionError("users must be a list of users")
+    users = []
+    for user in picked:
+        roles = user.get("roles", [])
+        if not isinstance(roles, list) or not all(isinstance(role, str) for role in roles):
+            raise actions.ActionError("roles must be a list of role names")
+        users.append(userimport.DbUser(
+            user_id=_text(user, "user_id"), username=_text(user, "username"), first_name=_text(user, "first_name"),
+            last_name=_text(user, "last_name"), roles=roles, is_active=user.get("is_active") is True,
+        ))
+    if not users or not all(user.user_id and user.username for user in users):
+        raise actions.ActionError(_("Nothing selected."))
+    cfg = Config.load()
+    mapping, _source = userimport.role_mapping(repos.active_root(cfg))
+    added, updated = actions.import_users(cfg, users, mapping)
+    return {"added": added, "updated": updated}
