@@ -89,6 +89,7 @@ the **current repo**: its backend is where services are listed, stacks are resol
 pdms repo list                       # ● marks the current one; also shows how many instances run from each
 pdms repo add ~/Code/Alivi/pdms_v2   # alias defaults to the folder name
 pdms repo use pdms_v2
+pdms repo edit pdms_v2 --migrations ~/Code/Alivi/pdms-db-migrations-v2 --remote https://<id>.execute-api.us-east-1.amazonaws.com/dev
 pdms repo remove pdms                # only forgets it; nothing is deleted from disk
 ```
 
@@ -466,7 +467,7 @@ do it later).
 | `pdms setup` | Guided setup: import a shared configuration, then configure what is missing |
 | `pdms run` / `pdms debug` / `pdms env` | Run a service / create a VS Code debug configuration / print a profile's variables |
 | `pdms services` | List the services of the current repo |
-| `pdms repo` | Repos menu (`list`, `add`, `use`, `remove`) |
+| `pdms repo` | Repos menu (`list`, `add`, `use`, `edit`, `remove`) |
 | `pdms test` / `pdms migrate` | Run a service's tests / Flyway `info`, `validate` (and `migrate` locally) |
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |

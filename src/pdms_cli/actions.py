@@ -1,4 +1,4 @@
-"""What pdms does with services, stacks, the proxy, the local events and the configuration (databases, users,
+"""What pdms does with services, stacks, the proxy, the local events and the configuration (repos, databases, users,
 defaults), without prompting or printing: shared by the CLI and ``pdms ui``.
 
 An action never asks. When it needs a decision it raises a :class:`Decision` (a busy port, a protected database,
@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO
 
-from . import events, installer, instances, proxy, repos, routes, runner, transfer, userimport
+from . import events, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
 from .config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -637,6 +637,112 @@ def stop_proxy(running: dict | None = None) -> str | None:
     if running:
         proxy.stop(running)
     return proxy.restore_frontend_change()
+
+
+# --------------------------------------------------------------------------- repos
+
+
+def repo_root(path: str | Path) -> Path:
+    """The PDMS checkout ``path`` is in (it may be a folder inside it); :class:`InvalidValue` otherwise."""
+    text = str(path).strip()
+    root = repos.find_repo_root(Path(text).expanduser()) if text else None
+    if root is None:
+        raise InvalidValue("path", _("{path} is not inside a PDMS repo (no backend/snakesdk folder).", path=text or "''"))
+    return root
+
+
+def add_repo(cfg: Config, path: str | Path, alias: str = "") -> str:
+    """Register the PDMS checkout ``path`` is in; returns its alias. The first repo becomes the current one."""
+    root = repo_root(path)
+    if existing := repos.alias_of(cfg, root):
+        raise InvalidValue("path", _("{path} is already registered as '{alias}'.", path=root, alias=existing))
+    alias = check_alias(alias, cfg.repos) if alias.strip() else repos.suggest_alias(cfg, root)
+    alias = repos.register(cfg, root, alias)
+    cfg.save()
+    return alias
+
+
+def migrations_repo(path: str) -> str:
+    """The Flyway checkout ``path`` is in, as saved for a repo ("" for none); :class:`InvalidValue` otherwise."""
+    if not path.strip():
+        return ""
+    found = migrations.find_upwards(Path(path.strip()).expanduser())
+    if found is None:
+        raise InvalidValue("migrations", _("{path} is not a Flyway migrations repo (flyway.toml + migrations/).",
+                                           path=path.strip()))
+    return str(found)
+
+
+def remote_api(url: str) -> str:
+    """``url`` without the trailing slash, if it can be the proxy's remote API ("" for none)."""
+    url = url.strip().rstrip("/")
+    if url and not re.fullmatch(r"https?://[^\s/]+(/\S*)?", url):
+        raise InvalidValue("remote", _("Must be a URL starting with http:// or https://"))
+    return url
+
+
+def edit_repo(
+    cfg: Config, alias: str, *, new_alias: str | None = None, migrations_path: str | None = None,
+    remote: str | None = None,
+) -> str:
+    """Change the alias, the migrations repo or the proxy's remote API of a repo (``None`` keeps it); returns its alias.
+
+    Every value is checked before anything changes."""
+    alias = require(cfg.repos, _("repo"), alias)
+    repo = cfg.repos[alias]
+    renamed = alias
+    if new_alias is not None and new_alias.strip() != alias:
+        renamed = check_alias(new_alias, cfg.repos)
+    saved_migrations = repo.migrations if migrations_path is None else migrations_repo(migrations_path)
+    saved_remote = repo.remote if remote is None else remote_api(remote)
+    repo.migrations, repo.remote = saved_migrations, saved_remote
+    if renamed != alias:
+        cfg.repos = {renamed if name == alias else name: item for name, item in cfg.repos.items()}
+        if cfg.current_repo == alias:
+            cfg.current_repo = renamed
+    cfg.save()
+    return renamed
+
+
+@dataclass
+class RepoSwitch:
+    """What was left behind when the current repo changed: the front end offers to keep, stop or move them."""
+
+    old: str
+    # Live instances of services from the old repo, with the same service in the new one (None: not there).
+    running: list[tuple[instances.Instance, Path | None]]
+    # The proxy is running for the old repo: it keeps routing there until it is restarted.
+    proxy: bool
+
+
+def use_repo(cfg: Config, alias: str) -> RepoSwitch:
+    """Make ``alias`` the current repo."""
+    alias = require(cfg.repos, _("repo"), alias)
+    old = cfg.current_repo
+    cfg.current_repo = alias
+    cfg.save()
+    repos.use_for_this_command(None)
+    if not old or old == alias or old not in cfg.repos:
+        return RepoSwitch(old, [], False)
+    old_root, new_root = cfg.repos[old].root, cfg.repos[alias].root
+    running = [
+        (inst, repos.translate(Path(inst.service), old_root, new_root))
+        for inst in instances.load().values() if inst.alive() and repos.repo_of(cfg, inst.service) == old
+    ]
+    serving = proxy.running_proxy()
+    on_old = bool(serving and serving.get("repo") and repos.repo_of(cfg, serving["repo"]) == old)
+    return RepoSwitch(old, running, on_old)
+
+
+def remove_repo(cfg: Config, alias: str) -> str:
+    """Forget a repo (nothing is deleted from disk); returns the current repo afterwards ("" if none is left)."""
+    alias = require(cfg.repos, _("repo"), alias)
+    root = str(cfg.repos.pop(alias).root)
+    cfg.ignored_repos = [r for r in cfg.ignored_repos if r != root]
+    if cfg.current_repo == alias:
+        cfg.current_repo = next(iter(cfg.repos), "")
+    cfg.save()
+    return cfg.current_repo
 
 
 # --------------------------------------------------------------------------- databases, users and defaults

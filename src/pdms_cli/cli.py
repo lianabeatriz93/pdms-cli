@@ -1408,23 +1408,21 @@ def interactive_terminal() -> bool:
 
 
 def switch_repo(cfg: Config, alias: str) -> None:
-    old = cfg.current_repo
-    cfg.current_repo = alias
-    cfg.save()
-    repos.use_for_this_command(None)
+    switch = settle(lambda: actions.use_repo(cfg, alias))
     console.print("[green]✓[/] " + _("Current repo: {alias} ({path})", alias=alias, path=cfg.repos[alias].root))
-    if old and old != alias and old in cfg.repos:
-        handle_instances_of(cfg, old, alias)
+    handle_instances_of(switch, alias)
+    if switch.proxy:
+        console.print(_("[dim]The proxy still routes to '{old}': restart it (pdms proxy) to use '{new}'.[/]",
+                        old=switch.old, new=alias))
 
 
-def handle_instances_of(cfg: Config, old: str, new: str) -> None:
+def handle_instances_of(switch: actions.RepoSwitch, new: str) -> None:
     """Offer to keep, stop or move to the new repo the instances still running from the old one."""
-    running = [i for i in instances.load().values() if i.alive() and repos.repo_of(cfg, i.service) == old]
-    if not running or not interactive_terminal():
+    if not switch.running or not interactive_terminal():
         return
     choice = questionary.select(
         _("{count} instances are running from '{old}': {keys}. What should I do with them?",
-          count=len(running), old=old, keys=", ".join(i.key for i in running)),
+          count=len(switch.running), old=switch.old, keys=", ".join(i.key for i, _target in switch.running)),
         choices=[
             questionary.Choice(_("Keep them running (they coexist, each on its port)"), "keep"),
             questionary.Choice(_("Stop them"), "stop"),
@@ -1433,9 +1431,7 @@ def handle_instances_of(cfg: Config, old: str, new: str) -> None:
     ).unsafe_ask()
     if choice == "keep":
         return
-    old_root, new_root = cfg.repos[old].root, cfg.repos[new].root
-    for inst in running:
-        target = repos.translate(Path(inst.service), old_root, new_root) if choice == "move" else None
+    for inst, target in switch.running:
         if choice == "move" and target is None:
             console.print("[yellow]" + _("⚠ {key}: the service does not exist in '{new}'; left running.",
                                          key=inst.key, new=new) + "[/]")
@@ -1443,7 +1439,7 @@ def handle_instances_of(cfg: Config, old: str, new: str) -> None:
         with console.status(_("Stopping {key}...", key=inst.key)):
             actions.stop_service(inst)
         console.print("[green]✓[/] " + _("{key} stopped.", key=inst.key))
-        if target is not None:
+        if choice == "move":
             try:
                 do_run(user=inst.user, db=inst.db, port=inst.port, host=inst.host, reload=inst.reload,
                        yes=True, path=target, background=True)
@@ -1516,19 +1512,21 @@ def repo_add(
     alias: Optional[str] = typer.Option(None, "--alias", "-a", help=_("Name for the repo.")),
 ) -> None:
     cfg = Config.load()
-    root = repos.find_repo_root((path or Path.cwd()).expanduser())
-    if root is None:
-        fail(_("{path} is not inside a PDMS repo (no backend/snakesdk folder).", path=path or Path.cwd()))
+    where = (path or Path.cwd()).expanduser()
+    try:
+        root = actions.repo_root(where)
+    except actions.InvalidValue as invalid:
+        fail(invalid.reason)
     if existing := repos.alias_of(cfg, root):
         console.print(_("{path} is already registered as '{alias}'.", path=root, alias=existing))
         return
     if alias is None and interactive_terminal():
-        alias = questionary.text(_("Alias ({kind}):", kind=_("repo")), default=repos.suggest_alias(cfg, root),
-                                 validate=lambda v: bool(v.strip()) and v.strip() not in cfg.repos
-                                 or _("That name already exists")).unsafe_ask().strip()
+        alias = prompts.ask_name(_("repo"), cfg.repos, repos.suggest_alias(cfg, root))
     was_empty = not cfg.repos
-    alias = repos.register(cfg, root, alias)
-    cfg.save()
+    try:
+        alias = actions.add_repo(cfg, root, alias or "")
+    except actions.InvalidValue as invalid:
+        fail(invalid.reason)
     console.print("[green]✓[/] " + _("Repo '{alias}' registered ({path}).", alias=alias, path=root))
     if not was_empty and interactive_terminal() and questionary.confirm(
         _("Make it the current repo?"), default=True
@@ -1546,17 +1544,51 @@ def repo_use(alias: Optional[str] = typer.Argument(None, autocompletion=completi
     switch_repo(cfg, alias)
 
 
+@repo_app.command("edit", help=_("Change the name, the migrations repo or the proxy's remote API of a repo."))
+def repo_edit(
+    alias: Optional[str] = typer.Argument(None, autocompletion=completion.repos),
+    name: Optional[str] = typer.Option(None, "--alias", "-a", help=_("New name for the repo.")),
+    migrations_path: Optional[str] = typer.Option(
+        None, "--migrations", help=_("Flyway migrations checkout (pdms-db-migrations); '' to forget it.")),
+    remote: Optional[str] = typer.Option(None, "--remote", help=_("Remote API for the proxy; '' to forget it.")),
+) -> None:
+    cfg = Config.load()
+    alias = pick(cfg.repos, _("repo"), alias, cfg.current_repo)
+    repo = cfg.repos[alias]
+    if name is None and migrations_path is None and remote is None:
+        prompts.require_tty()
+
+        def ask(message: str, default: str, check: Callable[[str], object]) -> str:
+            def validate(value: str) -> bool | str:
+                try:
+                    check(value)
+                except actions.InvalidValue as invalid:
+                    return invalid.reason
+                return True
+
+            return questionary.text(message, default=default, validate=validate).unsafe_ask().strip()
+
+        others = [other for other in cfg.repos if other != alias]
+        name = ask(_("Alias ({kind}):", kind=_("repo")), alias, lambda value: actions.check_alias(value, others))
+        migrations_path = ask(_("Migrations repo (empty = look next to the repo):"), repo.migrations,
+                              actions.migrations_repo)
+        remote = ask(_("Remote API for the proxy (empty = from frontend/.env):"), repo.remote, actions.remote_api)
+    try:
+        alias = actions.edit_repo(cfg, alias, new_alias=name, migrations_path=migrations_path, remote=remote)
+    except actions.InvalidValue as invalid:
+        fail(invalid.reason)
+    except actions.ActionError as error:
+        fail(error.message)
+    console.print("[green]✓[/] " + _("'{name}' saved.", name=alias))
+
+
 @repo_app.command("remove", help=_("Forget a registered repo (nothing is deleted from disk)."))
 def repo_remove(alias: Optional[str] = typer.Argument(None, autocompletion=completion.repos)) -> None:
     cfg = Config.load()
     alias = pick(cfg.repos, _("repo"), alias)
     if interactive_terminal() and not questionary.confirm(_("Delete '{name}'?", name=alias), default=False).unsafe_ask():
         return
-    root = str(cfg.repos.pop(alias).root)
-    cfg.ignored_repos = [r for r in cfg.ignored_repos if r != root]
-    if cfg.current_repo == alias:
-        cfg.current_repo = next(iter(cfg.repos), "")
-    cfg.save()
+    settle(lambda: actions.remove_repo(cfg, alias))
     console.print("[green]✓[/] " + _("'{name}' deleted.", name=alias))
 
 
@@ -2548,6 +2580,7 @@ def repo_menu() -> None:
         _("List"): repo_list,
         _("Add"): lambda: repo_add(None, None),
         _("Choose the current one"): lambda: repo_use(None),
+        _("Edit"): lambda: repo_edit(None, None, None, None),
         _("Delete"): lambda: repo_remove(None),
     })
 
