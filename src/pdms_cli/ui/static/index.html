@@ -14,12 +14,13 @@
   <div class="ctx" id="ctx"></div>
 </header>
 <nav class="side">
-  <a class="on" href="#services">Services <span id="count"></span></a>
-  <a class="soon" aria-disabled="true">Stacks</a>
+  <a href="#services" data-view="services">Services <span id="count"></span></a>
+  <a href="#stacks" data-view="stacks">Stacks <span id="stack-count"></span></a>
   <a class="soon" aria-disabled="true">Proxy</a>
   <a class="soon" aria-disabled="true">Events</a>
 </nav>
 <main class="main">
+<section class="view" id="view-services">
   <div class="bar">
     <h1>Services</h1><span class="muted" id="summary"></span>
     <button class="btn ghost push" id="clean" type="button" hidden>Forget stopped</button>
@@ -46,13 +47,23 @@
     </div>
     <pre class="logs-text" id="logs-text" tabindex="0"></pre>
   </section>
+</section>
+
+<section class="view" id="view-stacks" hidden>
+  <div class="bar">
+    <h1>Stacks</h1><span class="muted" id="stack-summary"></span>
+    <button class="btn primary push" id="stack-new" type="button">New stack</button>
+  </div>
+  <div class="cards" id="stacks"></div>
+  <p class="empty card" id="stacks-empty" hidden>No stacks yet. A stack starts several services at once, each on a free port.</p>
+</section>
   <p class="muted note">The CLI keeps working alongside: both read and change the same state.</p>
 </main>
 
 <dialog id="restart">
   <form method="dialog" id="restart-form">
-    <h2>Restart <span class="mono" id="restart-key"></span></h2>
-    <p class="muted">Same port. Change the user or the database if you need to.</p>
+    <h2><span id="restart-title">Restart</span> <span class="mono" id="restart-key"></span></h2>
+    <p class="muted" id="restart-hint"></p>
     <label>User <select id="restart-user"></select></label>
     <label>Database <select id="restart-db"></select></label>
     <fieldset>
@@ -66,6 +77,38 @@
     <div class="actions">
       <button class="btn ghost" type="button" id="restart-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="restart-go">Restart</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="editor">
+  <form method="dialog" id="editor-form">
+    <h2 id="editor-title">New stack</h2>
+    <label id="editor-name-label">Name <input id="editor-name" autocomplete="off" pattern="[A-Za-z0-9_\-]+" required></label>
+    <div class="picker">
+      <div class="picker-bar">
+        <input type="search" id="editor-filter" placeholder="Filter services" aria-label="Filter services" autocomplete="off">
+        <span class="muted" id="editor-count"></span>
+      </div>
+      <div class="picker-list" id="editor-services" role="group" aria-label="Services"></div>
+    </div>
+    <label>User <select id="editor-user"></select></label>
+    <label>Database <select id="editor-db"></select></label>
+    <p class="error" id="editor-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="editor-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="editor-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="confirm">
+  <form method="dialog">
+    <h2 id="confirm-title"></h2>
+    <p id="confirm-text"></p>
+    <div class="actions">
+      <button class="btn ghost" value="no">Cancel</button>
+      <button class="btn primary bad-fill" value="yes" id="confirm-yes">Delete</button>
     </div>
   </form>
 </dialog>

@@ -13,8 +13,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .. import actions, events, instances, proxy
-from ..config import Config
+from .. import actions, events, instances, proxy, repos, runner
+from ..config import Config, Stack
 from ..i18n import _
 
 
@@ -26,11 +26,12 @@ def install_log(key: str) -> Path:
 @dataclass
 class Job:
     key: str
-    action: str  # stop | restart
-    phase: str  # stopping | installing | starting
+    action: str  # stop | restart | up | down
+    phase: str  # stopping | installing | starting, with the service for a stack ("installing lead-tp-list")
     started: float
     error: str = ""
     installed: bool = False  # the install log belongs to this job
+    log_key: str = ""  # the instance whose install log it wrote last (a stack installs several)
 
     @property
     def running(self) -> bool:
@@ -124,18 +125,104 @@ class Jobs:
 
         def work(job: Job) -> None:
             def install_step(service: Path) -> None:
-                if not actions.needs_install(cfg, service, install):
-                    return
-                log = install_log(job.key)
-                log.parent.mkdir(parents=True, exist_ok=True)
-                self.phase(job, "installing", installed=True)
-                with open(log, "w", encoding="utf-8", errors="replace") as output:
-                    actions.install_service(service, output)
+                self.install(cfg, job, service, inst.key, install)
                 self.phase(job, "starting")
 
             actions.restart_service(cfg, inst, user_name=user, db_name=db, confirmed=True, install=install_step)
 
         return self.run(inst.key, "restart", "stopping", work)
+
+    def install(self, cfg: Config, job: Job, service: Path, key: str, install: bool | None, label: str = "") -> None:
+        """Install ``service`` if needed, writing the output to the install log of instance ``key``."""
+        if not actions.needs_install(cfg, service, install):
+            return
+        log = install_log(key)
+        log.parent.mkdir(parents=True, exist_ok=True)
+        self.phase(job, f"installing {label}".strip(), installed=True, log_key=key)
+        with open(log, "w", encoding="utf-8", errors="replace") as output:
+            actions.install_service(service, output)
+
+    # ------------------------------------------------------------------ stacks
+
+    def up(
+        self, name: str, *, user: str | None = None, db: str | None = None, install: bool | None = None,
+        confirmed: bool = False,
+    ) -> Job | None:
+        """Start what is not running of the stack, like ``pdms up``; None when all of it already runs."""
+        cfg = Config.load()
+        stack = cfg.stacks[actions.require(cfg.stacks, _("stack"), name)]
+        root = backend(cfg)
+        actions.stack_paths(stack, root)  # a stale stack fails before anything else
+        user, db = user or stack.user or cfg.last_user, db or stack.db or cfg.last_db
+        plan = actions.plan_stack(cfg, name, root, user_name=user, db_name=db)
+        if not plan.services:
+            return None
+        actions.check_database(cfg, db, confirmed)
+        actions.remember_profile(cfg, user, db)
+
+        def work(job: Job) -> None:
+            for launch in plan.services:
+                key = instances.make_key(launch.service, launch.port)
+                self.install(cfg, job, launch.service, key, install, launch.service.name)
+                self.phase(job, f"starting {launch.service.name}")
+                actions.start_service(cfg, launch)
+
+        return self.run(stack_key(name), "up", "starting", work)
+
+    def down(self, name: str) -> Job | None:
+        """Stop the stack's running services, like ``pdms down``; None when nothing of it runs."""
+        cfg = Config.load()
+        targets = actions.stack_instances(cfg, name, backend(cfg))
+        if not targets:
+            return None
+
+        def work(job: Job) -> None:
+            for inst in targets:
+                self.phase(job, f"stopping {inst.name}")
+                actions.stop_service(inst)
+
+        return self.run(stack_key(name), "down", "stopping", work)
+
+
+def stack_key(name: str) -> str:
+    return f"stack:{name}"
+
+
+def backend(cfg: Config) -> Path:
+    root = repos.active_backend(cfg)
+    if root is None or not root.is_dir():
+        raise actions.ActionError(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
+    return root.resolve()
+
+
+def repo_services(cfg: Config) -> tuple[Path, list[str]]:
+    """The backend folder and every service in it, as the stacks write them (``lead/lead-tp-list``)."""
+    root = backend(cfg)
+    return root, [path.relative_to(root).as_posix() for path in runner.find_services_below(root)]
+
+
+def save_stack(name: str, services: list[str], user: str, db: str, new: bool) -> None:
+    """Create (``new``) or replace a stack; the services must exist in the current repo."""
+    cfg = Config.load()
+    name = name.strip()
+    if new:
+        if not name:
+            raise actions.ActionError(_("Required field"))
+        if name in cfg.stacks:
+            raise actions.ActionError(_("That name already exists"))
+        if not all(c.isalnum() or c in "-_" for c in name):
+            raise actions.ActionError(_("Use only letters, numbers, '-' or '_'"))
+    else:
+        actions.require(cfg.stacks, _("stack"), name)
+    _root, known = repo_services(cfg)
+    unknown = [svc for svc in services if svc not in known]
+    if unknown:
+        raise actions.ActionError(_("Not services of the current repo: {names}", names=", ".join(unknown)))
+    actions.save_stack(cfg, name, Stack(services=list(dict.fromkeys(services)), user=user, db=db))
+
+
+def remove_stack(name: str) -> None:
+    actions.remove_stack(Config.load(), name)
 
 
 def find(key: str) -> instances.Instance:

@@ -15,6 +15,21 @@ def instance_state(cfg: Config, inst: instances.Instance, health: instances.Heal
     }
 
 
+def stacks_state(cfg: Config, live: dict[str, list[str]]) -> list[dict]:
+    """Each stack with its services and the keys of their running instances (``live``: service path → keys)."""
+    backend = repos.active_backend(cfg)
+    root = backend.resolve() if backend and backend.is_dir() else None
+    return [
+        {
+            "name": name, "user": stack.user, "db": stack.db,
+            "services": [
+                {"path": svc, "running": live.get(str(root / svc), []) if root else []} for svc in stack.services
+            ],
+        }
+        for name, stack in cfg.stacks.items()
+    ]
+
+
 def proxy_state() -> dict | None:
     running = proxy.running_proxy()
     if not running:
@@ -33,6 +48,10 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) 
     items = list(instances.load().values())
     healths = instances.health_all(items)
     root = repos.active_root(cfg)
+    live: dict[str, list[str]] = {}
+    for inst in items:
+        if healths[inst.key].state != "stopped":
+            live.setdefault(inst.service, []).append(inst.key)
     return {
         "version": __version__,
         "repo": {"alias": cfg.current_repo, "root": str(root)} if root else None,
@@ -41,6 +60,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) 
         "users": list(cfg.users),
         "dbs": [{"name": name, "protected": db.protected} for name, db in cfg.dbs.items()],
         "instances": [instance_state(cfg, inst, healths[inst.key]) for inst in items],
+        "stacks": stacks_state(cfg, live),
         "proxy": proxy_state(),
         "events": {"port": cfg.defaults.events_port, "up": events.is_up(cfg.defaults.events_port)},
         "jobs": jobs or {},
