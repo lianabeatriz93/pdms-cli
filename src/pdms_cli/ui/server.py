@@ -8,7 +8,10 @@ when the browser sends ``Origin``, come from this server's own page.
 The state stays in the CLI's files: a hub thread rebuilds it every couple of seconds while someone is watching and
 pushes it as server-sent events when it changes. Actions are JSON POSTs, which must also come from this server's page
 (``Origin``); they answer 202 and the job shows in the state, 409 with a ``decision`` when the user has to answer
-first, or 400 with an ``error``.
+first, or 400 with an ``error`` (and the ``field`` it is about, for a form).
+
+Database passwords never go in the state nor in ``/api/config``: the page asks for one, with a POST, only when the
+user clicks to see it.
 """
 
 from __future__ import annotations
@@ -297,6 +300,8 @@ def make_handler(
                 self.stream()
             elif url.path == "/api/services":
                 self.services()
+            elif url.path == "/api/config":
+                self.reply_json(200, ui_jobs.settings(Config.load()))
             elif url.path in ("/api/proxy/options", "/api/proxy/routes"):
                 self.proxy_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
             elif url.path in ("/api/events/queues", "/api/events/map", "/api/events/peek", "/api/events/template"):
@@ -421,7 +426,14 @@ def make_handler(
                 return 202, {"job": jobs.start_proxy(**proxy_options(body)).key}
             if path == "/api/run":
                 return 202, {"job": jobs.start(**run_options(body)).key}
+            if path == "/api/defaults/save":
+                ui_jobs.save_defaults(body)
+                return 200, {}
+            if path == "/api/dbs/test":
+                return 200, {"version": ui_jobs.connect_db(body)}
             parts = path.split("/")
+            if len(parts) == 5 and parts[:2] == ["", "api"] and parts[2] in ("dbs", "users"):
+                return self.act_on_setting(parts[2], unquote(parts[3]), parts[4], body)
             if len(parts) != 5 or parts[:2] != ["", "api"] or parts[2] not in ("instances", "stacks"):
                 return 404, {"error": "not found"}
             if parts[2] == "stacks":
@@ -457,6 +469,17 @@ def make_handler(
             if verb == "dismiss":
                 jobs.dismiss(ui_jobs.stack_key(name))
                 return 200, {}
+            return 404, {"error": "not found"}
+
+        def act_on_setting(self, kind: str, name: str, verb: str, body: dict) -> tuple[int, dict]:
+            """Save or remove a database or a user; ``password`` hands back a database's password (the eye)."""
+            if verb == "save":
+                save = ui_jobs.save_db if kind == "dbs" else ui_jobs.save_user
+                return 200, {"name": save(name, body, new=body.get("new") is True)}
+            if verb == "remove":
+                return 200, {"stacks": (ui_jobs.remove_db if kind == "dbs" else ui_jobs.remove_user)(name)}
+            if verb == "password" and kind == "dbs":
+                return 200, {"password": ui_jobs.db_password(name)}
             return 404, {"error": "not found"}
 
         # ------------------------------------------------------------------ logs

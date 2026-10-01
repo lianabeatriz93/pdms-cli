@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pdms</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/app.js" defer></script>
 </head>
 <body>
 <header class="titlebar">
-  <span class="brand">pdms</span>
+  <span class="brand"><img src="/static/icon.svg" alt="" width="20" height="20"> pdms</span>
   <span class="live" id="live" title="Connecting…"></span>
   <div class="ctx" id="ctx"></div>
 </header>
@@ -18,6 +19,7 @@
   <a href="#stacks" data-view="stacks">Stacks <span id="stack-count"></span></a>
   <a href="#proxy" data-view="proxy">Proxy <span id="proxy-on"></span></a>
   <a href="#events" data-view="events">Events <span id="events-on"></span></a>
+  <a href="#settings" data-view="settings" class="side-end">Settings</a>
 </nav>
 <main class="main">
 <section class="view" id="view-services">
@@ -194,6 +196,66 @@
     <p class="muted note">With local events, whatever a service publishes to SNS, to any topic, stays here (queue <code>pdms-sns</code>, <code>pdms logs sns</code>) instead of reaching AWS.</p>
   </div>
 </section>
+
+<section class="view" id="view-settings" hidden>
+  <div class="bar">
+    <h1>Settings</h1><span class="muted" id="settings-summary"></span>
+    <span class="muted mono push" id="settings-path"></span>
+  </div>
+
+  <div class="tabs view-tabs" id="settings-tabs" role="tablist">
+    <button type="button" role="tab" data-tab="dbs">Databases</button>
+    <button type="button" role="tab" data-tab="users">Users</button>
+    <button type="button" role="tab" data-tab="defaults">Defaults</button>
+  </div>
+
+  <div class="panel" id="settings-dbs">
+    <div class="bar">
+      <input type="search" id="db-filter" placeholder="Filter by name, host, database or user" aria-label="Filter databases" autocomplete="off">
+      <label class="inline"><input type="checkbox" id="db-protected"> Protected only</label>
+      <span class="muted" id="db-count"></span>
+      <button class="btn primary push" id="db-new" type="button">New database</button>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Name</th><th>Host</th><th class="num">Port</th><th>Database</th><th>User</th><th>Password</th><th>Connection</th><th></th></tr></thead>
+        <tbody id="db-rows"></tbody>
+      </table>
+      <p class="empty" id="db-empty" hidden></p>
+    </div>
+    <p class="muted note">Protected databases (shared or remote ones) ask for confirmation before a service starts on them.</p>
+  </div>
+
+  <div class="panel" id="settings-users" hidden>
+    <div class="bar">
+      <input type="search" id="user-filter" placeholder="Filter by name, email, full name or role" aria-label="Filter users" autocomplete="off">
+      <span class="muted" id="user-count"></span>
+      <button class="btn primary push" id="user-new" type="button">New user</button>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Name</th><th>DEV_USERNAME</th><th>Full name</th><th>DEV_ROLES</th><th>DEV_USER_ID</th><th></th></tr></thead>
+        <tbody id="user-rows"></tbody>
+      </table>
+      <p class="empty" id="user-empty" hidden></p>
+    </div>
+    <p class="muted note">Services run as one of these users (the <code>DEV_*</code> variables). <code>pdms user import</code> brings them from the <code>pdms_user</code> table of a database.</p>
+  </div>
+
+  <div class="panel" id="settings-defaults" hidden>
+    <div class="bar">
+      <input type="search" id="defaults-filter" placeholder="Filter settings" aria-label="Filter settings" autocomplete="off">
+      <span class="muted" id="defaults-count"></span>
+      <div class="bar-actions push">
+        <button class="btn ghost" id="defaults-discard" type="button" disabled>Discard changes</button>
+        <button class="btn primary" id="defaults-save" type="button" disabled>Save</button>
+      </div>
+    </div>
+    <form class="card settings-form" id="defaults-form" autocomplete="off"></form>
+    <p class="error" id="defaults-error" hidden></p>
+    <p class="empty card" id="defaults-none" hidden>No setting matches the filter.</p>
+  </div>
+</section>
   <p class="muted note">The CLI keeps working alongside: both read and change the same state.</p>
 </main>
 
@@ -282,6 +344,53 @@
     <div class="actions">
       <button class="btn ghost" type="button" id="editor-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="editor-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="db-dialog">
+  <form method="dialog" id="db-form" autocomplete="off">
+    <h2 id="db-title">New database</h2>
+    <label id="db-name-label">Name <input id="db-name" pattern="[A-Za-z0-9_\-]+" required></label>
+    <div class="row2">
+      <label>Host <input id="db-host" required></label>
+      <label>Port <input type="number" id="db-port" min="1" max="65535" required></label>
+    </div>
+    <label>Database name <input id="db-database" required></label>
+    <label>User <input id="db-user" required></label>
+    <label>Password
+      <span class="secret">
+        <input type="password" id="db-password" autocomplete="new-password">
+        <button class="btn ghost eye" type="button" id="db-eye" aria-label="Show the password" aria-pressed="false"></button>
+      </span>
+    </label>
+    <label class="inline"><input type="checkbox" id="db-protected-box"> Shared or remote: ask for confirmation before starting on it</label>
+    <p class="muted" id="db-tested" hidden></p>
+    <p class="error" id="db-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="db-test">Test connection</button>
+      <span class="push"></span>
+      <button class="btn ghost" type="button" id="db-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="db-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="user-dialog">
+  <form method="dialog" id="user-form" autocomplete="off">
+    <h2 id="user-title">New user</h2>
+    <label id="user-name-label">Name <input id="user-name" pattern="[A-Za-z0-9_\-]+" required></label>
+    <label>DEV_USERNAME (email) <input id="user-username" required></label>
+    <div class="row2">
+      <label>DEV_FIRST_NAME <input id="user-first_name"></label>
+      <label>DEV_LAST_NAME <input id="user-last_name"></label>
+    </div>
+    <label>DEV_ROLES (comma separated) <input id="user-roles" placeholder="TPR.Supervisor,TPR.Agent"></label>
+    <label>DEV_USER_ID (uuid) <input id="user-user_id" class="mono" required></label>
+    <p class="error" id="user-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="user-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="user-save">Save</button>
     </div>
   </form>
 </dialog>
