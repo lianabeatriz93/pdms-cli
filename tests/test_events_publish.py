@@ -208,3 +208,20 @@ def test_pdms_logs_sns_shows_what_was_published(tmp_path, monkeypatch):
     with cli.console.capture() as captured:
         cli.logs(["sns"], False, None, False, 5, False)
     assert "lead → sns-account-publish.fifo" in captured.get() and "  hi" in captured.get()
+
+
+def test_sns_log_opens_json_sent_as_a_string(tmp_path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("pdms_sitecustomize", events.PATCH_DIR / "sitecustomize.py")
+    patch = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(patch)  # without PDMS_SQS_ENDPOINT it patches nothing
+    data = json.dumps({"account": {"name": "Ñandú"}, "items": [json.dumps({"id": 1}), "[not json"], "n": "7"})
+    log = tmp_path / "sns.log"
+    patch.write_log(str(log), {"Timestamp": "t", "Service": "s", "Topic": "topic", "MessageGroupId": None,
+                               "Subject": None, "MessageAttributes": {},
+                               "Message": json.dumps({"event": "UPDATED", "data": data})})
+    body = "\n".join(line[2:] for line in log.read_text(encoding="utf-8").splitlines()[1:])
+    assert json.loads(body) == {"event": "UPDATED", "data": {"account": {"name": "Ñandú"},
+                                                             "items": [{"id": 1}, "[not json"], "n": "7"}}
+    assert '      "name": "Ñandú"' in body  # pretty-printed at every depth
