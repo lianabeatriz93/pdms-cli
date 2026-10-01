@@ -25,12 +25,18 @@
     <h1>Services</h1><span class="muted" id="summary"></span>
     <button class="btn ghost push" id="clean" type="button" hidden>Forget stopped</button>
   </div>
+  <div class="bar filter">
+    <input type="search" id="svc-filter" placeholder="Filter by instance, status, repo, user or DB" aria-label="Filter services" autocomplete="off">
+    <label class="inline"><input type="checkbox" id="svc-problems"> Problems only</label>
+    <span class="muted" id="svc-count"></span>
+  </div>
   <div class="tbl">
     <table>
       <thead><tr><th>Instance</th><th>Status</th><th>URL</th><th>Repo</th><th>User</th><th>DB</th><th>Uptime</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <p class="empty" id="empty" hidden>No background services. Start one with <code>pdms run -b</code> or <code>pdms up</code>.</p>
+    <p class="empty" id="svc-none" hidden>No service matches the filter.</p>
   </div>
 
   <section class="logs" id="logs" hidden>
@@ -54,8 +60,14 @@
     <h1>Stacks</h1><span class="muted" id="stack-summary"></span>
     <button class="btn primary push" id="stack-new" type="button">New stack</button>
   </div>
+  <div class="bar filter">
+    <input type="search" id="stack-filter" placeholder="Filter by stack, service, user or DB" aria-label="Filter stacks" autocomplete="off">
+    <label class="inline"><input type="checkbox" id="stack-running"> Running only</label>
+    <span class="muted" id="stack-shown"></span>
+  </div>
   <div class="cards" id="stacks"></div>
   <p class="empty card" id="stacks-empty" hidden>No stacks yet. A stack starts several services at once, each on a free port.</p>
+  <p class="empty card" id="stacks-none" hidden>No stack matches the filter.</p>
 </section>
 
 <section class="view" id="view-proxy" hidden>
