@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
+import pytest
 import tomlkit
 
 from typer.testing import CliRunner
@@ -126,3 +127,45 @@ def test_a_failed_install_says_how_to_do_it_by_hand(monkeypatch) -> None:
     result = CliRunner().invoke(cli.app, ["ui", "--window"])
     assert result.exit_code == 1
     assert "exit code 2" in result.output and "uv tool install -e '.[desktop]' --force" in result.output
+
+
+def test_the_window_icon_fits_each_system(monkeypatch) -> None:
+    static = Path(ui_window.__file__).parent / "static"
+    for platform, name in (("win32", "icon.ico"), ("darwin", "icon.png"), ("linux", "icon.png")):
+        monkeypatch.setattr(ui_window.sys, "platform", platform)
+        assert ui_window.icon_name() == name and (static / name).stat().st_size > 1000
+
+
+def test_the_window_gets_its_icon(monkeypatch) -> None:
+    calls = {}
+    fake = SimpleNamespace(
+        settings={}, create_window=lambda *args, **kwargs: calls.setdefault("window", (args, kwargs)),
+        start=lambda **kwargs: calls.setdefault("start", kwargs),
+    )
+    monkeypatch.setitem(sys.modules, "webview", fake)
+    monkeypatch.setattr(ui_window, "missing_system_library", lambda: None)
+    ui_window.open_window("http://127.0.0.1:1/?token=x")
+    assert Path(calls["start"]["icon"]).name == ui_window.icon_name() and Path(calls["start"]["icon"]).is_file()
+    assert calls["window"][0] == ("pdms", "http://127.0.0.1:1/?token=x")
+
+
+@pytest.mark.parametrize("platform, env, found, missing", [
+    ("linux", {}, None, True),  # X11 without libxcb-cursor: Qt would abort
+    ("linux", {}, "libxcb-cursor.so.0", False),
+    ("linux", {"WAYLAND_DISPLAY": "wayland-0"}, None, False),  # Wayland does not need it
+    ("linux", {"WAYLAND_DISPLAY": "wayland-0", "QT_QPA_PLATFORM": "xcb"}, None, True),
+    ("darwin", {}, None, False),
+])
+def test_a_missing_qt_library_is_said_before_qt_aborts(monkeypatch, platform, env, found, missing) -> None:
+    monkeypatch.setattr(ui_window.sys, "platform", platform)
+    for name in ("WAYLAND_DISPLAY", "QT_QPA_PLATFORM"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(ui_window.ctypes.util, "find_library", lambda name: found)
+    message = ui_window.missing_system_library()
+    assert bool(message) is missing
+    if missing:
+        assert "sudo apt install libxcb-cursor0" in message
+        with pytest.raises(RuntimeError, match="libxcb-cursor"):
+            ui_window.open_window("http://127.0.0.1:1/")
