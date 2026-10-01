@@ -29,7 +29,7 @@ def _not_empty(value: str) -> bool | str:
     return bool(value.strip()) or _("Required field")
 
 
-def ask_name(kind: str, taken: Iterable[str]) -> str:
+def ask_name(kind: str, taken: Iterable[str], default: str = "") -> str:
     taken = set(taken)
 
     def validate(value: str) -> bool | str:
@@ -39,7 +39,7 @@ def ask_name(kind: str, taken: Iterable[str]) -> str:
             return invalid.reason
         return True
 
-    return questionary.text(_("Alias ({kind}):", kind=kind), validate=validate).unsafe_ask().strip()
+    return questionary.text(_("Alias ({kind}):", kind=kind), default=default, validate=validate).unsafe_ask().strip()
 
 
 def select_name(message: str, names: list[str], default: str = "") -> str:

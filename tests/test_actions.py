@@ -449,3 +449,95 @@ def test_start_events_checks_docker_and_the_port(cfg, ports, monkeypatch) -> Non
     monkeypatch.setattr(actions.events, "start", broken)
     with pytest.raises(actions.ActionError, match="Could not start ElasticMQ: pull access denied"):
         actions.start_events(cfg, event_map().queues)
+
+
+# --------------------------------------------------------------------------- repos
+
+
+def make_repo(root: Path, services=("lead/lead-tp-list",)) -> Path:
+    (root / "backend" / "snakesdk").mkdir(parents=True)
+    for rel in services:
+        (root / "backend" / rel).mkdir(parents=True)
+        (root / "backend" / rel / "pyproject.toml").write_text("")
+        (root / "backend" / rel / "main.py").write_text("")
+    return root
+
+
+def make_migrations(root: Path) -> Path:
+    (root / "migrations").mkdir(parents=True)
+    (root / "flyway.toml").write_text("")
+    return root
+
+
+def test_add_repo_finds_the_checkout_and_checks_the_name(cfg, tmp_path) -> None:
+    pdms = make_repo(tmp_path / "pdms")
+    with pytest.raises(actions.InvalidValue) as invalid:
+        actions.add_repo(cfg, tmp_path)
+    assert invalid.value.field == "path"
+    assert actions.add_repo(cfg, pdms / "backend" / "lead") == "pdms"
+    assert (cfg.repos["pdms"].root, cfg.current_repo) == (pdms.resolve(), "pdms")  # the first one becomes current
+    with pytest.raises(actions.InvalidValue, match="already registered as 'pdms'"):
+        actions.add_repo(cfg, pdms)
+    v2 = make_repo(tmp_path / "pdms_v2")
+    for name in ("pdms", "a b"):
+        with pytest.raises(actions.InvalidValue) as invalid:
+            actions.add_repo(cfg, v2, name)
+        assert invalid.value.field == "name"
+    assert actions.add_repo(cfg, v2, " v2 ") == "v2"
+    assert cfg.current_repo == "pdms"
+
+
+def test_edit_repo_checks_everything_before_changing_anything(cfg, tmp_path) -> None:
+    actions.add_repo(cfg, make_repo(tmp_path / "pdms"))
+    actions.add_repo(cfg, make_repo(tmp_path / "pdms_v2"))
+    flyway = make_migrations(tmp_path / "pdms-db-migrations")
+    for change, field in [({"new_alias": "pdms_v2"}, "name"), ({"migrations_path": str(tmp_path)}, "migrations"),
+                          ({"remote": "api.example.com"}, "remote")]:
+        with pytest.raises(actions.InvalidValue) as invalid:
+            actions.edit_repo(cfg, "pdms", **{"new_alias": "main", "remote": "https://ok.example.com", **change})
+        assert invalid.value.field == field
+        assert (list(cfg.repos), cfg.repos["pdms"].remote) == (["pdms", "pdms_v2"], "")
+    assert actions.edit_repo(cfg, "pdms", new_alias="main", migrations_path=str(flyway / "migrations"),
+                             remote=" https://x.execute-api.us-east-1.amazonaws.com/dev/ ") == "main"
+    assert list(cfg.repos) == ["main", "pdms_v2"] and cfg.current_repo == "main"
+    assert cfg.repos["main"].migrations == str(flyway.resolve())
+    assert cfg.repos["main"].remote == "https://x.execute-api.us-east-1.amazonaws.com/dev"
+    actions.edit_repo(cfg, "main", migrations_path="", remote="")  # empty forgets them
+    assert (cfg.repos["main"].migrations, cfg.repos["main"].remote) == ("", "")
+    with pytest.raises(actions.ActionError):
+        actions.edit_repo(cfg, "pdms", remote="")
+
+
+def test_use_repo_reports_what_still_runs_from_the_old_one(cfg, tmp_path, monkeypatch) -> None:
+    old = make_repo(tmp_path / "pdms", ("lead/lead-tp-list", "lead/only-old"))
+    new = make_repo(tmp_path / "pdms_v2")
+    actions.add_repo(cfg, old)
+    actions.add_repo(cfg, new)
+
+    def inst(key: str, service: Path) -> Instance:
+        return Instance(key, 1, str(service), "0.0.0.0", 8001, "supervisor", "local", False, "", "")
+
+    running = [inst("lead-tp-list", old / "backend" / "lead" / "lead-tp-list"),
+               inst("only-old", old / "backend" / "lead" / "only-old"),
+               inst("v2", new / "backend" / "lead" / "lead-tp-list")]
+    monkeypatch.setattr(actions.instances, "load", lambda: {i.key: i for i in running})
+    monkeypatch.setattr(Instance, "alive", lambda self: True)
+    monkeypatch.setattr(actions.proxy, "running_proxy", lambda: {"pid": 1, "port": 8000, "repo": str(old)})
+
+    switch = actions.use_repo(cfg, "pdms_v2")
+    assert cfg.current_repo == "pdms_v2" and switch.old == "pdms" and switch.proxy
+    assert [(i.key, target) for i, target in switch.running] == [
+        ("lead-tp-list", (new / "backend" / "lead" / "lead-tp-list").resolve()), ("only-old", None)]
+    assert actions.use_repo(cfg, "pdms_v2") == actions.RepoSwitch("pdms_v2", [], False)  # already current
+    with pytest.raises(actions.ActionError):
+        actions.use_repo(cfg, "nope")
+
+
+def test_remove_repo_hands_the_current_one_to_the_next(cfg, tmp_path) -> None:
+    actions.add_repo(cfg, make_repo(tmp_path / "pdms"))
+    actions.add_repo(cfg, make_repo(tmp_path / "pdms_v2"))
+    cfg.ignored_repos = [str(cfg.repos["pdms"].root), "/elsewhere"]
+    assert actions.remove_repo(cfg, "pdms_v2") == "pdms"
+    assert actions.remove_repo(cfg, "pdms") == ""
+    assert (cfg.repos, cfg.ignored_repos) == ({}, ["/elsewhere"])
+    assert (tmp_path / "pdms" / "backend").is_dir()  # nothing deleted from disk

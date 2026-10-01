@@ -486,6 +486,18 @@ ES: dict[str, str] = {
     "Use it only for this command": "Usarlo solo para este comando",
     "Don't ask again in this repo": "No volver a preguntar en este repo",
     "List the registered repos.": "Lista los repos registrados.",
+    "'{name}' saved.": "'{name}' guardado.",
+    "Change the name, the migrations repo or the proxy's remote API of a repo.":
+        "Cambia el nombre, el repo de migraciones o la API remota del proxy de un repo.",
+    "Flyway migrations checkout (pdms-db-migrations); '' to forget it.":
+        "Checkout de migraciones Flyway (pdms-db-migrations); '' para olvidarlo.",
+    "Migrations repo (empty = look next to the repo):": "Repo de migraciones (vacío = buscar junto al repo):",
+    "Must be a URL starting with http:// or https://": "Debe ser una URL que empiece con http:// o https://",
+    "New name for the repo.": "Nuevo nombre del repo.",
+    "Remote API for the proxy (empty = from frontend/.env):": "API remota del proxy (vacío = la de frontend/.env):",
+    "Remote API for the proxy; '' to forget it.": "API remota del proxy; '' para olvidarla.",
+    "[dim]The proxy still routes to '{old}': restart it (pdms proxy) to use '{new}'.[/]":
+        "[dim]El proxy sigue enrutando a '{old}': reinícialo (pdms proxy) para usar '{new}'.[/]",
     "No repos registered.": "No hay repos registrados.",
     "Use [bold]pdms repo add <path>[/].": "Usa [bold]pdms repo add <ruta>[/].",
     "Register a PDMS repo (defaults to the current folder).": "Registra un repo de PDMS (por defecto la carpeta actual).",
