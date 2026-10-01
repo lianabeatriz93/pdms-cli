@@ -1709,6 +1709,35 @@ def proxy_routes(
     console.print(_("{shown} of {total} routes.", shown=shown, total=len(repo_routes)))
 
 
+# --------------------------------------------------------------------------- ui
+
+
+@app.command("ui", help=_("Open the pdms web interface (local only; Ctrl+C to stop it)."))
+def ui_cmd(
+    port: int = typer.Option(8765, "--port", "-p", help=_("Port to listen on (the next free one if it is in use).")),
+    browser: bool = typer.Option(True, "--browser/--no-browser", help=_("Open it in the browser.")),
+) -> None:
+    from .ui import server as ui_server
+
+    try:
+        port = actions.free_port("127.0.0.1", port)
+    except actions.PortBusy as busy:
+        console.print(_("[dim]Port {port} is in use; using {free}.[/]", port=busy.port, free=busy.free))
+        port = busy.free
+    token = ui_server.new_token()
+    hub = ui_server.Hub()
+    server = ui_server.make_server("127.0.0.1", port, token, hub)
+    url = f"http://127.0.0.1:{port}/?token={token}"
+    console.print("[green]✓[/] " + _("pdms ui is running at {url}", url=url), highlight=False, soft_wrap=True)
+    console.print(_("[dim]Only this machine can open it, and only with this link. Ctrl+C to stop it.[/]"))
+    if browser and not webbrowser.open(url):
+        console.print(_("[yellow]Could not open a browser; open the URL manually.[/]"))
+    try:
+        ui_server.serve(server, hub)
+    except KeyboardInterrupt:
+        console.print(f"\n[dim]{_('pdms ui stopped.')}[/]")
+
+
 # --------------------------------------------------------------------------- events
 
 
