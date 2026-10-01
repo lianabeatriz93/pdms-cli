@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from .. import __version__, events, instances, proxy, repos
+from .. import __version__, events, i18n, instances, proxy, repos
 from ..config import Config
 
 
@@ -71,6 +71,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) 
     events_up = events.is_up(cfg.defaults.events_port)
     return {
         "version": __version__,
+        "language": i18n.configured(cfg.defaults.language),
         "repo": {"alias": cfg.current_repo, "root": str(root)} if root else None,
         "user": cfg.last_user,
         "db": cfg.last_db,

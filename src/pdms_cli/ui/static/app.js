@@ -1,9 +1,8 @@
 // pdms ui: paints /api/state, follows /api/stream and runs the actions. Text only goes in through textContent,
-// never as HTML.
+// never as HTML. Every text it shows is translated with the t and N_ functions of i18n.js.
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const PHASES = { stopping: "stopping…", installing: "installing…", starting: "starting…" };
 const MAX_LOG_LINES = 5000;
 let state = null;
 
@@ -24,6 +23,36 @@ function uptime(startedAt) {
   return hours ? `${hours}h${String(minutes).padStart(2, "0")}m` : `${minutes}m${String(seconds % 60).padStart(2, "0")}s`;
 }
 
+// A job's phase as the server sends it ("installing", "starting ElasticMQ", "stopping lead-tp-list"), translated.
+function phaseLabel(phase) {
+  const text = String(phase || "");
+  const cut = text.indexOf(" ");
+  const verb = cut < 0 ? text : text.slice(0, cut);
+  const what = cut < 0 ? "" : text.slice(cut + 1);
+  if (verb === "stopping") return what ? t("stopping {what}…", { what }) : t("stopping…");
+  if (verb === "installing") return what ? t("installing {what}…", { what }) : t("installing…");
+  if (verb === "starting") return what ? t("starting {what}…", { what }) : t("starting…");
+  return text;
+}
+
+// An instance's status (also its CSS class), translated.
+function statusLabel(status) {
+  if (status === "ok") return t("ok");
+  if (status === "starting") return t("starting");
+  if (status === "error") return t("error");
+  if (status === "stopped") return t("stopped");
+  return status;
+}
+
+// Why a job failed, by its action (start, stop, restart, up, down).
+function failedText(job) {
+  const error = job.error;
+  if (job.action === "start" || job.action === "up") return t("Start failed: {error}", { error });
+  if (job.action === "stop" || job.action === "down") return t("Stop failed: {error}", { error });
+  if (job.action === "restart") return t("Restart failed: {error}", { error });
+  return t("{action} failed: {error}", { action: job.action, error });
+}
+
 function toast(message, kind = "error") {
   const node = el("div", { class: `toast ${kind}`, role: "status" }, message);
   $("toasts").append(node);
@@ -42,10 +71,10 @@ async function post(path, body = {}) {
 async function act(path, body, done) {
   try {
     const { status, data } = await post(path, body);
-    if (status >= 400) toast(data.error || `pdms ui answered ${status}`);
+    if (status >= 400) toast(data.error || t("pdms ui answered {status}", { status }));
     else if (done) done(data);
   } catch {
-    toast("pdms ui is not reachable: is it still running?");
+    toast(t("pdms ui is not reachable: is it still running?"));
   }
 }
 
@@ -56,9 +85,9 @@ function chip(label, value) {
 }
 
 function paintContext() {
-  const chips = [chip("repo", state.repo && state.repo.alias), chip("user", state.user), chip("db", state.db)];
-  chips.push(chip("proxy", state.proxy ? `:${state.proxy.port}` : "off"));
-  chips.push(chip("events", state.events.up ? `:${state.events.port}` : "off"));
+  const chips = [chip(t("repo"), state.repo && state.repo.alias), chip(t("user"), state.user), chip(t("db"), state.db)];
+  chips.push(chip(t("proxy"), state.proxy ? `:${state.proxy.port}` : t("off")));
+  chips.push(chip(t("events"), state.events.up ? `:${state.events.port}` : t("off")));
   $("ctx").replaceChildren(...chips);
 }
 
@@ -69,19 +98,19 @@ function button(label, onclick, attrs = {}) {
 function rowActions(item, job) {
   const cell = el("td", { class: "row-actions" });
   const busy = job && !job.error;
-  cell.append(button("Logs", () => openLogs(item.key, job && job.installed && busy ? "install" : "current")));
+  cell.append(button(t("Logs"), () => openLogs(item.key, job && job.installed && busy ? "install" : "current")));
   if (busy || item.isSns) return cell;
   const alive = item.status !== "stopped";
   if (alive && !item.queue && !item.isProxy) {
     cell.append(el("a", {
       class: "btn small", href: `http://localhost:${item.port}/docs`, target: "_blank", rel: "noopener noreferrer",
-    }, "Docs"));
+    }, t("Docs")));
   }
-  if (!item.isProxy && !item.placeholder) cell.append(button("Restart", () => openRestart(item)));
+  if (!item.isProxy && !item.placeholder) cell.append(button(t("Restart"), () => openRestart(item)));
   if (alive) {
-    cell.append(button("Stop", () => act(`/api/instances/${encodeURIComponent(item.key)}/stop`), { class: "btn small bad" }));
+    cell.append(button(t("Stop"), () => act(`/api/instances/${encodeURIComponent(item.key)}/stop`), { class: "btn small bad" }));
   } else if (!item.placeholder) {
-    cell.append(button("Forget", () => act(`/api/instances/${encodeURIComponent(item.key)}/forget`)));
+    cell.append(button(t("Forget"), () => act(`/api/instances/${encodeURIComponent(item.key)}/forget`)));
   }
   return cell;
 }
@@ -89,20 +118,20 @@ function rowActions(item, job) {
 function statusCell(item, job) {
   const cell = el("td");
   if (job && !job.error) {
-    cell.append(el("span", { class: "st starting" }, PHASES[job.phase] || job.phase));
+    cell.append(el("span", { class: "st starting" }, phaseLabel(job.phase)));
     return cell;
   }
-  cell.append(el("span", { class: `st ${item.status}` }, item.status));
+  cell.append(el("span", { class: `st ${item.status}` }, statusLabel(item.status)));
   if (item.detail) cell.append(el("span", { class: "detail" }, item.detail));
   if (job && job.error) {
-    cell.append(el("span", { class: "detail" }, `${job.action} failed: ${job.error}`));
-    cell.append(button("Dismiss", () => act(`/api/instances/${encodeURIComponent(item.key)}/dismiss`), { class: "btn tiny" }));
+    cell.append(el("span", { class: "detail" }, failedText(job)));
+    cell.append(button(t("Dismiss"), () => act(`/api/instances/${encodeURIComponent(item.key)}/dismiss`), { class: "btn tiny" }));
   }
   return cell;
 }
 
 function lastPublish(item) {
-  return item.last_publish ? `last ${new Date(item.last_publish).toLocaleTimeString()}` : "nothing yet";
+  return item.last_publish ? t("last {time}", { time: new Date(item.last_publish).toLocaleTimeString() }) : t("nothing yet");
 }
 
 function row(item) {
@@ -135,7 +164,7 @@ function serviceItems() {
   if (state.sns) {
     items.push({
       ...state.sns, isSns: true, url: `sns → ${state.sns.queue}`, repo: "", user: "", db: "",
-      detail: state.sns.status === "stopped" ? "the local ElasticMQ is not running: pdms events up" : "",
+      detail: state.sns.status === "stopped" ? t("the local ElasticMQ is not running: pdms events up") : "",
     });
   }
   // A restart forgets the instance for a moment: keep its row while the job runs (stacks and events have their own).
@@ -155,7 +184,7 @@ function problem(item) {
 function serviceShown(item) {
   const text = $("svc-filter").value.trim().toLowerCase();
   if ($("svc-problems").checked && !problem(item)) return false;
-  return !text || [item.key, item.status, item.detail, item.url, item.repo, item.user, item.db]
+  return !text || [item.key, item.status, statusLabel(item.status), item.detail, item.url, item.repo, item.user, item.db]
     .join(" ").toLowerCase().includes(text);
 }
 
@@ -165,11 +194,11 @@ function paintServices() {
   $("rows").replaceChildren(...shown.map(row));
   $("empty").hidden = items.length > 0;
   $("svc-none").hidden = !items.length || shown.length > 0;
-  $("svc-count").textContent = items.length ? `${shown.length} of ${items.length}` : "";
+  $("svc-count").textContent = items.length ? t("{shown} of {total}", { shown: shown.length, total: items.length }) : "";
   const alive = state.instances.filter((i) => i.status !== "stopped");
   const failing = state.instances.filter((i) => i.status === "error" || i.status === "stopped");
   $("count").textContent = alive.length || "";
-  $("summary").textContent = `${alive.length} running · ${failing.length} failing`;
+  $("summary").textContent = [t("{n} running", { n: alive.length }), t("{n} failing", { n: failing.length })].join(" · ");
   $("clean").hidden = !state.instances.some((i) => i.status === "stopped");
 }
 
@@ -179,6 +208,7 @@ function tickUptimes() {
 
 function paint(next) {
   state = { jobs: {}, users: [], dbs: [], stacks: [], ...next };
+  const relabel = useLanguage(state.language);
   paintContext();
   paintServices();
   paintStacks();
@@ -189,14 +219,29 @@ function paint(next) {
   if (wasUp !== undefined && wasUp !== eventsView.up && currentView() === "events") showEventsTab(eventsView.tab);
   if (logs.key) paintLogTabs();
   syncSettings();
+  if (relabel) repaintTexts();
+}
+
+// The language changed: paint again what does not come from the state (the state's own parts were just painted).
+function repaintTexts() {
+  paintRequests();
+  paintRoutes();
+  paintQueues();
+  paintMap();
+  eventsView.topics = ""; // the topic list is only rebuilt when its signature changes
+  paintSns();
+  if (settingsView.data) {
+    paintSettings();
+    paintDefaults();
+  }
 }
 
 function connect() {
   const stream = new EventSource("/api/stream");
   stream.addEventListener("state", (event) => paint(JSON.parse(event.data)));
-  stream.onopen = () => { $("live").className = "live on"; $("live").title = "Live"; };
+  stream.onopen = () => { $("live").className = "live on"; $("live").title = t("Live"); };
   // EventSource reconnects by itself; the dot shows when pdms ui is not reachable.
-  stream.onerror = () => { $("live").className = "live off"; $("live").title = "Disconnected: is pdms ui still running?"; };
+  stream.onerror = () => { $("live").className = "live off"; $("live").title = t("Disconnected: is pdms ui still running?"); };
 }
 
 // ---------------------------------------------------------------------------- logs
@@ -257,7 +302,7 @@ function paintLogTabs() {
     tab.hidden = tab.dataset.which === "install" && noInstall;
   }
   const job = state && state.jobs[logs.key];
-  $("logs-note").textContent = job && !job.error ? PHASES[job.phase] || job.phase : logs.find ? `marked: ${logs.find.label}` : "";
+  $("logs-note").textContent = job && !job.error ? phaseLabel(job.phase) : logs.find ? t("marked: {request}", { request: logs.find.label }) : "";
 }
 
 function openLogs(key, which = "current", find = null) {
@@ -271,9 +316,9 @@ function openLogs(key, which = "current", find = null) {
   const stream = logs.stream = new EventSource(`/api/logs/stream?${query}`);
   stream.onopen = () => { clearLog(); logs.seek = Boolean(logs.find); }; // a reconnect starts again with the tail
   stream.addEventListener("lines", (event) => appendLog(JSON.parse(event.data)));
-  stream.addEventListener("reset", () => appendLog(["", "──── restarted ────", ""]));
+  stream.addEventListener("reset", () => appendLog(["", t("──── restarted ────"), ""]));
   stream.onerror = () => {
-    if (stream.readyState === EventSource.CLOSED) appendLog(["(no log here)"]);
+    if (stream.readyState === EventSource.CLOSED) appendLog([t("(no log here)")]);
   };
   if (state) paintServices();
   $("logs").scrollIntoView({ block: "nearest" });
@@ -288,7 +333,20 @@ function closeLogs() {
 
 // ---------------------------------------------------------------------------- restart and up
 
-const launch = { path: null, confirmed: false, after: null, run: false, service: "" };
+// go: what the dialog's button does, "restart" or "start" (its label comes from goLabel).
+const launch = { path: null, confirmed: false, after: null, run: false, service: "", go: "start" };
+
+function goLabel() {
+  return launch.go === "restart" ? t("Restart") : t("Start");
+}
+
+function goOnPort(port) {
+  return launch.go === "restart" ? t("Restart on {port}", { port }) : t("Start on {port}", { port });
+}
+
+function goOnProtected() {
+  return launch.go === "restart" ? t("Restart on the protected DB") : t("Start on the protected DB");
+}
 
 function options(select, names, current, label = (name) => name) {
   select.replaceChildren(...names.map((name) => el("option", name === current ? { value: name, selected: "" } : { value: name }, label(name))));
@@ -296,7 +354,7 @@ function options(select, names, current, label = (name) => name) {
 
 function dbLabel(name) {
   const db = state.dbs.find((item) => item.name === name);
-  return db && db.protected ? `${name} (protected)` : name;
+  return db && db.protected ? t("{name} (protected)", { name }) : name;
 }
 
 // The user, database and install of a restart or a stack's up, asking again before a protected database.
@@ -312,15 +370,16 @@ function openLaunch({ title, key, hint, user, db, path, go, after, broker = fals
   options($("restart-user"), state.users, user);
   options($("restart-db"), state.dbs.map((item) => item.name), db, dbLabel);
   $("restart-warn").hidden = $("restart-error").hidden = true;
-  $("restart-go").textContent = launch.go = go;
+  launch.go = go;
+  $("restart-go").textContent = goLabel();
   $("restart-form").install.value = "auto";
   $("restart").showModal();
 }
 
 function openRestart(item) {
   openLaunch({
-    title: "Restart", key: item.key, hint: "Same port. Change the user or the database if you need to.",
-    user: item.user, db: item.db, go: "Restart", path: `/api/instances/${encodeURIComponent(item.key)}/restart`,
+    title: t("Restart"), key: item.key, hint: t("Same port. Change the user or the database if you need to."),
+    user: item.user, db: item.db, go: "restart", path: `/api/instances/${encodeURIComponent(item.key)}/restart`,
     after: (install) => { if (logs.key === item.key) openLogs(item.key, install === false ? "current" : logs.which); },
   });
 }
@@ -339,7 +398,7 @@ function runningOn(root) {
 function runningNote(ports) {
   if (!ports) return "";
   const listening = ports.filter(Boolean);
-  return el("span", { class: "muted" }, listening.length ? `running on :${listening.join(", :")}` : "running");
+  return el("span", { class: "muted" }, listening.length ? t("running on :{ports}", { ports: listening.join(", :") }) : t("running"));
 }
 
 async function fetchServices() {
@@ -347,9 +406,9 @@ async function fetchServices() {
     const response = await fetch("/api/services");
     const found = await response.json();
     if (response.ok) return found;
-    toast(found.error || `pdms ui answered ${response.status}`);
+    toast(found.error || t("pdms ui answered {status}", { status: response.status }));
   } catch {
-    toast("pdms ui is not reachable: is it still running?");
+    toast(t("pdms ui is not reachable: is it still running?"));
   }
   return null;
 }
@@ -371,13 +430,17 @@ async function openRun() {
     });
     return el("label", { class: "pick", "data-svc": svc.toLowerCase() }, radio, el("span", { class: "mono" }, svc), runningNote(ports[svc]));
   }));
-  $("run-count").textContent = `${found.services.length} services`;
+  $("run-count").textContent = servicesCount(found.services.length);
   openLaunch({
-    title: "Start a service", key: "", hint: "In the background, like pdms run -b. It keeps running when pdms ui stops.",
-    user: state.user, db: state.db, go: "Start", path: "/api/run", run: true,
+    title: t("Start a service"), key: "", hint: t("In the background, like pdms run -b. It keeps running when pdms ui stops."),
+    user: state.user, db: state.db, go: "start", path: "/api/run", run: true,
     after: (_install, data) => openLogs(data.job),
   });
   $("run-filter").focus();
+}
+
+function servicesCount(n) {
+  return n === 1 ? t("{n} service", { n }) : t("{n} services", { n });
 }
 
 function filterRun() {
@@ -388,14 +451,14 @@ function filterRun() {
     if (!item.hidden) shown += 1;
   }
   const total = $("run-services").children.length;
-  $("run-count").textContent = text ? `${shown} of ${total}` : `${total} services`;
+  $("run-count").textContent = text ? t("{shown} of {total}", { shown, total }) : servicesCount(total);
 }
 
 function openUp(stack) {
   openLaunch({
-    title: "Start", key: stack.name, hint: "Starts the services that are not running yet, each on a free port.",
-    user: stack.user || state.user, db: stack.db || state.db, go: "Start", path: `/api/stacks/${encodeURIComponent(stack.name)}/up`,
-    after: (_install, data) => { if (!data.job) toast(`The whole stack '${stack.name}' is already running.`, "info"); },
+    title: t("Start"), key: stack.name, hint: t("Starts the services that are not running yet, each on a free port."),
+    user: stack.user || state.user, db: stack.db || state.db, go: "start", path: `/api/stacks/${encodeURIComponent(stack.name)}/up`,
+    after: (_install, data) => { if (!data.job) toast(t("The whole stack '{name}' is already running.", { name: stack.name }), "info"); },
   });
 }
 
@@ -408,7 +471,7 @@ async function submitLaunch(event) {
   if (launch.run) {
     const picked = $("run-services").querySelector("input:checked");
     if (!picked) {
-      $("restart-error").textContent = "Pick the service to start.";
+      $("restart-error").textContent = t("Pick the service to start.");
       $("restart-error").hidden = false;
       return;
     }
@@ -426,22 +489,22 @@ async function submitLaunch(event) {
     }
     if (status === 409 && data.decision === "port_busy") {
       $("run-port").value = data.free;
-      $("restart-warn").textContent = `Port ${data.port} is in use. Start on ${data.free} instead?`;
+      $("restart-warn").textContent = t("Port {port} is in use. Start on {free} instead?", { port: data.port, free: data.free });
       $("restart-warn").hidden = false;
-      $("restart-go").textContent = `${launch.go} on ${data.free}`;
+      $("restart-go").textContent = goOnPort(data.free);
       return;
     }
     if (status === 409 && data.decision === "protected_database") {
       launch.confirmed = true;
-      $("restart-warn").textContent = `'${data.name}' is a protected database. Use it anyway?`;
+      $("restart-warn").textContent = t("'{name}' is a protected database. Use it anyway?", { name: data.name });
       $("restart-warn").hidden = false;
-      $("restart-go").textContent = `${launch.go} on the protected DB`;
+      $("restart-go").textContent = goOnProtected();
       return;
     }
-    $("restart-error").textContent = data.error || `pdms ui answered ${status}`;
+    $("restart-error").textContent = data.error || t("pdms ui answered {status}", { status });
     $("restart-error").hidden = false;
   } catch {
-    $("restart-error").textContent = "pdms ui is not reachable: is it still running?";
+    $("restart-error").textContent = t("pdms ui is not reachable: is it still running?");
     $("restart-error").hidden = false;
   } finally {
     $("restart-go").disabled = false;
@@ -451,12 +514,15 @@ async function submitLaunch(event) {
 function resetConfirmation() {
   launch.confirmed = false;
   $("restart-warn").hidden = true;
-  $("restart-go").textContent = launch.go;
+  $("restart-go").textContent = goLabel();
 }
 
 // ---------------------------------------------------------------------------- stacks
 
-const ASK = "(ask when starting)";
+// What a stack without its own user or database shows.
+function ask() {
+  return t("(ask when starting)");
+}
 
 function stackPath(name) {
   return `/api/stacks/${encodeURIComponent(name)}`;
@@ -498,14 +564,14 @@ function stackCard(stack) {
   const total = stack.services.length;
   const up = stack.services.filter((svc) => svc.running.length).length;
   const status = busy
-    ? el("span", { class: "st starting" }, `${job.phase}…`)
+    ? el("span", { class: "st starting" }, phaseLabel(job.phase))
     : el("span", { class: `st ${up === total ? "ok" : up ? "starting" : "stopped"}` },
-      up === total ? "running" : up ? `${up} of ${total} running` : "stopped");
+      up === total ? t("running") : up ? t("{up} of {total} running", { up, total }) : t("stopped"));
 
   const list = el("div", { class: "stack-groups" }, ...stackGroups(stack.services).map(([domain, services]) => {
     const running = services.filter((svc) => svc.running.length).length;
     return el("section", { class: "stack-group" },
-      el("h3", {}, el("span", { class: "mono" }, domain || "(repo root)"),
+      el("h3", {}, el("span", { class: "mono" }, domain || t("(repo root)")),
         el("span", { class: "muted" }, `${running}/${services.length}`)),
       el("ul", { class: "stack-services" }, ...services.map((svc) => el("li", {
         title: svc.path, ...(text && svc.path.toLowerCase().includes(text) ? { class: "hit" } : {}),
@@ -513,7 +579,7 @@ function stackCard(stack) {
         el("span", { class: `dot ${svc.running.length ? "on" : ""}` }),
         el("span", { class: "mono name" }, svc.name),
         el("span", { class: "ports" }, ...svc.running.map((key) => button(key.slice(key.indexOf("@")), () => showLogs(key), {
-          class: "btn tiny link", title: `Logs of ${key}`,
+          class: "btn tiny link", title: t("Logs of {key}", { key }),
         }))),
       ))),
     );
@@ -522,19 +588,19 @@ function stackCard(stack) {
   const card = el("article", { class: "card stack" },
     el("header", {}, el("h2", { class: "mono" }, stack.name), status),
     list,
-    el("p", { class: "muted meta" }, `user ${stack.user || ASK} · db ${stack.db || ASK}`),
+    el("p", { class: "muted meta" }, t("user {user} · db {db}", { user: stack.user || ask(), db: stack.db || ask() })),
   );
   if (job && job.error) {
-    card.append(el("p", { class: "error" }, `${job.action} failed: ${job.error}`));
+    card.append(el("p", { class: "error" }, failedText(job)));
   }
   const footer = el("footer", {});
-  if (job && job.log_key) footer.append(button("Install log", () => showLogs(job.log_key, "install")));
-  if (job && job.error) footer.append(button("Dismiss", () => act(`${stackPath(stack.name)}/dismiss`)));
+  if (job && job.log_key) footer.append(button(t("Install log"), () => showLogs(job.log_key, "install")));
+  if (job && job.error) footer.append(button(t("Dismiss"), () => act(`${stackPath(stack.name)}/dismiss`)));
   if (!busy) {
-    if (up < total) footer.append(button("Start", () => openUp(stack), { class: "btn small primary" }));
-    if (up) footer.append(button("Stop", () => act(`${stackPath(stack.name)}/down`), { class: "btn small bad" }));
-    footer.append(button("Edit", () => openEditor(stack)));
-    footer.append(button("Delete", () => removeStack(stack), { class: "btn small ghost" }));
+    if (up < total) footer.append(button(t("Start"), () => openUp(stack), { class: "btn small primary" }));
+    if (up) footer.append(button(t("Stop"), () => act(`${stackPath(stack.name)}/down`), { class: "btn small bad" }));
+    footer.append(button(t("Edit"), () => openEditor(stack)));
+    footer.append(button(t("Delete"), () => removeStack(stack), { class: "btn small ghost" }));
   }
   card.append(footer);
   return card;
@@ -545,10 +611,13 @@ function paintStacks() {
   $("stacks").replaceChildren(...shown.map(stackCard));
   $("stacks-empty").hidden = state.stacks.length > 0;
   $("stacks-none").hidden = !state.stacks.length || shown.length > 0;
-  $("stack-shown").textContent = state.stacks.length ? `${shown.length} of ${state.stacks.length}` : "";
+  $("stack-shown").textContent = state.stacks.length ? t("{shown} of {total}", { shown: shown.length, total: state.stacks.length }) : "";
   const running = state.stacks.filter((stack) => stack.services.some((svc) => svc.running.length)).length;
   $("stack-count").textContent = state.stacks.length || "";
-  $("stack-summary").textContent = `${state.stacks.length} stacks · ${running} running`;
+  const stacks = state.stacks.length;
+  $("stack-summary").textContent = [
+    stacks === 1 ? t("{n} stack", { n: stacks }) : t("{n} stacks", { n: stacks }), t("{n} running", { n: running }),
+  ].join(" · ");
 }
 
 function confirmDialog(title, text, yes) {
@@ -563,8 +632,8 @@ function confirmDialog(title, text, yes) {
 }
 
 async function removeStack(stack) {
-  if (await confirmDialog(`Delete stack ${stack.name}?`, "Only the stack goes; its services keep running if they are.", "Delete")) {
-    act(`${stackPath(stack.name)}/remove`, {}, () => toast(`Stack '${stack.name}' deleted.`, "info"));
+  if (await confirmDialog(t("Delete stack {name}?", { name: stack.name }), t("Only the stack goes; its services keep running if they are."), t("Delete"))) {
+    act(`${stackPath(stack.name)}/remove`, {}, () => toast(t("Stack '{name}' deleted.", { name: stack.name }), "info"));
   }
 }
 
@@ -587,7 +656,7 @@ async function openEditor(stack = null) {
   editor.picked = new Set(current);
   editor.name = stack ? stack.name : null;
 
-  $("editor-title").textContent = stack ? `Edit ${stack.name}` : "New stack";
+  $("editor-title").textContent = stack ? t("Edit {name}", { name: stack.name }) : t("New stack");
   $("editor-name-label").hidden = Boolean(stack);
   $("editor-name").required = !stack;
   $("editor-name").value = "";
@@ -601,8 +670,8 @@ async function openEditor(stack = null) {
     });
     return el("label", { class: "pick", "data-svc": svc.toLowerCase() }, box, el("span", { class: "mono" }, svc), runningNote(ports[svc]));
   }));
-  options($("editor-user"), ["", ...state.users], stack ? stack.user : "", (name) => name || ASK);
-  options($("editor-db"), ["", ...state.dbs.map((item) => item.name)], stack ? stack.db : "", (name) => name ? dbLabel(name) : ASK);
+  options($("editor-user"), ["", ...state.users], stack ? stack.user : "", (name) => name || ask());
+  options($("editor-db"), ["", ...state.dbs.map((item) => item.name)], stack ? stack.db : "", (name) => name ? dbLabel(name) : ask());
   $("editor-error").hidden = true;
   editorCount();
   $("editor").showModal();
@@ -610,7 +679,7 @@ async function openEditor(stack = null) {
 }
 
 function editorCount() {
-  $("editor-count").textContent = `${editor.picked.size} of ${editor.order.length} selected`;
+  $("editor-count").textContent = t("{picked} of {total} selected", { picked: editor.picked.size, total: editor.order.length });
 }
 
 function filterEditor() {
@@ -626,7 +695,7 @@ async function saveEditor(event) {
     user: $("editor-user").value, db: $("editor-db").value, new: !editor.name,
   };
   if (!body.services.length) {
-    $("editor-error").textContent = "A stack needs at least one service.";
+    $("editor-error").textContent = t("A stack needs at least one service.");
     $("editor-error").hidden = false;
     return;
   }
@@ -635,13 +704,13 @@ async function saveEditor(event) {
     const { status, data } = await post(`${stackPath(name)}/save`, body);
     if (status === 200) {
       $("editor").close();
-      toast(`Stack '${name}' saved.`, "info");
+      toast(t("Stack '{name}' saved.", { name }), "info");
       return;
     }
-    $("editor-error").textContent = data.error || `pdms ui answered ${status}`;
+    $("editor-error").textContent = data.error || t("pdms ui answered {status}", { status });
     $("editor-error").hidden = false;
   } catch {
-    $("editor-error").textContent = "pdms ui is not reachable: is it still running?";
+    $("editor-error").textContent = t("pdms ui is not reachable: is it still running?");
     $("editor-error").hidden = false;
   } finally {
     $("editor-save").disabled = false;
@@ -669,8 +738,9 @@ function paintProxy() {
   const job = proxyJob();
   const busy = job && !job.error;
   $("proxy-on").textContent = running ? `:${running.port}` : "";
-  $("proxy-summary").textContent = busy ? PHASES[job.phase] || job.phase
-    : running ? `${running.status === "ok" ? "running" : "starting"} on :${running.port}` : "off";
+  $("proxy-summary").textContent = busy ? phaseLabel(job.phase)
+    : running ? running.status === "ok" ? t("running on :{port}", { port: running.port }) : t("starting on :{port}", { port: running.port })
+      : t("off");
   $("proxy-start").hidden = Boolean(running || busy);
   $("proxy-stop").hidden = !running || busy;
   $("proxy-docs").hidden = !running;
@@ -679,25 +749,25 @@ function paintProxy() {
   const card = $("proxy-info");
   if (running) {
     card.replaceChildren(
-      info("URL", `http://localhost:${running.port}`),
-      info("Repo", running.repo_alias || running.repo),
-      info("Environment", running.env),
-      info("Remote API", running.remote || "none (only local services)"),
-      info("Acting as", running.as || "each service's own profile"),
-      info("Frontend", running.frontend ? ".env.local → proxy" : "not changed"),
-      info("Runs", running.background ? "in the background" : "in a terminal"),
-      el("div", {}, el("span", {}, "Uptime"), el("b", running.started_at ? { "data-started": running.started_at } : {},
+      info(t("URL"), `http://localhost:${running.port}`),
+      info(t("Repo"), running.repo_alias || running.repo),
+      info(t("Environment"), running.env),
+      info(t("Remote API"), running.remote || t("none (only local services)")),
+      info(t("Acting as"), running.as || t("each service's own profile")),
+      info(t("Frontend"), running.frontend ? t(".env.local → proxy") : t("not changed")),
+      info(t("Runs"), running.background ? t("in the background") : t("in a terminal")),
+      el("div", {}, el("span", {}, t("Uptime")), el("b", running.started_at ? { "data-started": running.started_at } : {},
         running.started_at ? uptime(running.started_at) : "-")),
     );
   } else {
-    card.replaceChildren(el("p", { class: "muted note" }, busy ? "Starting the proxy…"
-      : "Off. The proxy gives the frontend one port for every service: what runs here answers locally, the rest goes to the remote API."));
+    card.replaceChildren(el("p", { class: "muted note" }, busy ? t("Starting the proxy…")
+      : t("Off. The proxy gives the frontend one port for every service: what runs here answers locally, the rest goes to the remote API.")));
   }
   if (job && job.error) {
-    card.append(el("p", { class: "error" }, `${job.action} failed: ${job.error}`));
+    card.append(el("p", { class: "error" }, failedText(job)));
     card.append(el("div", {},
-      button("Log", () => showLogs("proxy")),
-      button("Dismiss", () => act(`/api/instances/${encodeURIComponent(job.key)}/dismiss`), { class: "btn small ghost" }),
+      button(t("Log"), () => showLogs("proxy")),
+      button(t("Dismiss"), () => act(`/api/instances/${encodeURIComponent(job.key)}/dismiss`), { class: "btn small ghost" }),
     ));
   }
   for (const tab of $("proxy-tabs").children) tab.setAttribute("aria-selected", String(tab.dataset.tab === proxyView.tab));
@@ -748,7 +818,7 @@ function requestRow(req) {
     match: (line) => line.includes(`"${req.method} ${req.path} `) || line.includes(`"${req.method} ${req.path}?`),
   });
   const attrs = local ? {
-    class: "jump", tabindex: "0", title: `Open the log of ${req.target}`,
+    class: "jump", tabindex: "0", title: t("Open the log of {target}", { target: req.target }),
     onclick: open, onkeydown: (event) => { if (event.key === "Enter") open(); },
   } : {};
   return el("tr", attrs,
@@ -787,17 +857,17 @@ function paintRequests() {
 function paintRequestsNote() {
   const shown = $("req-rows").children.length;
   const total = proxyView.requests.length;
-  $("req-count").textContent = total ? `${shown} of ${total}` : "";
+  $("req-count").textContent = total ? t("{shown} of {total}", { shown, total }) : "";
   const running = state && state.proxy;
   let note = "";
   if (running && !running.background) {
-    note = `This proxy runs in a terminal (pid ${running.pid || "?"}): its requests show there. Stop it and start it here, or with pdms proxy -b, to follow them.`;
+    note = t("This proxy runs in a terminal (pid {pid}): its requests show there. Stop it and start it here, or with pdms proxy -b, to follow them.", { pid: running.pid || "?" });
   } else if (!running) {
-    note = total ? "The proxy is off: these are the requests of its last run." : "The proxy is off.";
+    note = total ? t("The proxy is off: these are the requests of its last run.") : t("The proxy is off.");
   } else if (!total) {
-    note = `No requests yet. Point the frontend to http://localhost:${running.port}.`;
+    note = t("No requests yet. Point the frontend to {url}.", { url: `http://localhost:${running.port}` });
   } else if (!shown) {
-    note = "No request matches the filter.";
+    note = t("No request matches the filter.");
   }
   $("req-empty").textContent = note;
   $("req-empty").hidden = !note;
@@ -815,7 +885,7 @@ function routesKey() {
 
 async function loadRoutes() {
   proxyView.routesFor = routesKey();
-  if (!proxyView.routes) $("route-count").textContent = "Reading the routes from Terraform…";
+  if (!proxyView.routes) $("route-count").textContent = t("Reading the routes from Terraform…");
   try {
     const response = await fetch("/api/proxy/routes");
     const data = await response.json();
@@ -823,13 +893,13 @@ async function loadRoutes() {
       proxyView.routes = null;
       $("route-rows").replaceChildren();
       $("route-count").textContent = "";
-      $("route-empty").textContent = data.error || `pdms ui answered ${response.status}`;
+      $("route-empty").textContent = data.error || t("pdms ui answered {status}", { status: response.status });
       $("route-empty").hidden = false;
       return;
     }
     proxyView.routes = data;
   } catch {
-    toast("pdms ui is not reachable: is it still running?");
+    toast(t("pdms ui is not reachable: is it still running?"));
     return;
   }
   paintRoutes();
@@ -837,12 +907,13 @@ async function loadRoutes() {
 
 function routeTarget(route) {
   if (route.target === "local") {
-    return el("td", {}, button(route.key, () => showLogs(route.key), { class: "btn tiny link", title: `Logs of ${route.key}` }));
+    return el("td", {}, button(route.key, () => showLogs(route.key), { class: "btn tiny link", title: t("Logs of {key}", { key: route.key }) }));
   }
   if (route.key) {
-    return el("td", { class: "target-other", title: route.note }, `${route.target === "remote" ? "remote" : "not available"} (${route.key} in another repo)`);
+    return el("td", { class: "target-other", title: route.note }, route.target === "remote"
+      ? t("remote ({key} in another repo)", { key: route.key }) : t("not available ({key} in another repo)", { key: route.key }));
   }
-  return route.target === "remote" ? el("td", { class: "target-remote" }, "remote") : el("td", { class: "target-missing" }, "not available");
+  return route.target === "remote" ? el("td", { class: "target-remote" }, t("remote")) : el("td", { class: "target-missing" }, t("not available"));
 }
 
 function paintRoutes() {
@@ -859,9 +930,10 @@ function paintRoutes() {
     routeTarget(route),
   )));
   const local = data.routes.filter((route) => route.target === "local").length;
-  $("route-count").textContent = `${shown.length} of ${data.routes.length} routes · ${local} local · ${data.env}`
-    + (data.remote ? "" : " · no remote API");
-  $("route-empty").textContent = data.routes.length ? "No route matches the filter." : `No routes in the Terraform of '${data.env}'.`;
+  const parts = [t("{shown} of {total} routes", { shown: shown.length, total: data.routes.length }), t("{n} local", { n: local }), data.env];
+  if (!data.remote) parts.push(t("no remote API"));
+  $("route-count").textContent = parts.join(" · ");
+  $("route-empty").textContent = data.routes.length ? t("No route matches the filter.") : t("No routes in the Terraform of '{env}'.", { env: data.env });
   $("route-empty").hidden = shown.length > 0;
 }
 
@@ -880,9 +952,9 @@ async function openProxyStart() {
   try {
     const response = await fetch("/api/proxy/options");
     found = await response.json();
-    if (!response.ok) { toast(found.error || `pdms ui answered ${response.status}`); return; }
+    if (!response.ok) { toast(found.error || t("pdms ui answered {status}", { status: response.status })); return; }
   } catch {
-    toast("pdms ui is not reachable: is it still running?");
+    toast(t("pdms ui is not reachable: is it still running?"));
     return;
   }
   $("proxy-port").value = found.port;
@@ -890,11 +962,11 @@ async function openProxyStart() {
   $("proxy-remote").value = found.remote;
   $("proxy-no-remote").checked = false;
   $("proxy-remote").disabled = false;
-  options($("proxy-as"), ["", ...state.users], "", (name) => name || "each service's own profile");
+  options($("proxy-as"), ["", ...state.users], "", (name) => name || t("each service's own profile"));
   $("proxy-frontend-label").hidden = !found.frontend;
   $("proxy-frontend").checked = true;
   $("proxy-warn").hidden = $("proxy-error").hidden = true;
-  $("proxy-go").textContent = "Start";
+  $("proxy-go").textContent = t("Start");
   $("proxy-dialog").showModal();
 }
 
@@ -922,20 +994,20 @@ async function submitProxyStart(event) {
     }
     if (status === 409 && data.decision === "port_busy") {
       $("proxy-port").value = data.free;
-      $("proxy-warn").textContent = `Port ${data.port} is in use. Start on ${data.free} instead?`;
+      $("proxy-warn").textContent = t("Port {port} is in use. Start on {free} instead?", { port: data.port, free: data.free });
       $("proxy-warn").hidden = false;
-      $("proxy-go").textContent = `Start on ${data.free}`;
+      $("proxy-go").textContent = t("Start on {port}", { port: data.free });
       return;
     }
     if (status === 409 && data.decision === "point_frontend") {
       $("proxy-frontend-label").hidden = false;
-      $("proxy-warn").textContent = `Point the frontend to ${data.url}?`;
+      $("proxy-warn").textContent = t("Point the frontend to {url}?", { url: data.url });
       $("proxy-warn").hidden = false;
       return;
     }
-    proxyProblem(data.error || `pdms ui answered ${status}`);
+    proxyProblem(data.error || t("pdms ui answered {status}", { status }));
   } catch {
-    proxyProblem("pdms ui is not reachable: is it still running?");
+    proxyProblem(t("pdms ui is not reachable: is it still running?"));
   } finally {
     $("proxy-go").disabled = false;
   }
@@ -943,7 +1015,7 @@ async function submitProxyStart(event) {
 
 function resetProxyPort() {
   $("proxy-warn").hidden = true;
-  $("proxy-go").textContent = "Start";
+  $("proxy-go").textContent = t("Start");
 }
 
 // ---------------------------------------------------------------------------- events
@@ -967,7 +1039,7 @@ function paintEvents() {
   const busy = job && !job.error;
   const up = state.events.up;
   $("events-on").textContent = up ? `:${state.events.port}` : "";
-  $("events-summary").textContent = busy ? `${job.phase}…` : up ? `ElasticMQ running on :${state.events.port}` : "off";
+  $("events-summary").textContent = busy ? phaseLabel(job.phase) : up ? t("ElasticMQ running on :{port}", { port: state.events.port }) : t("off");
   $("events-start").hidden = up || busy;
   $("events-stop").hidden = !up || busy;
   $("events-send").hidden = !up;
@@ -982,21 +1054,21 @@ function paintEvents() {
     const broker = data && data.broker ? consumers.find((i) => i.queue === data.broker) : null;
     const publishers = state.instances.filter((i) => i.events === "local" && i.status !== "stopped").length;
     card.replaceChildren(
-      info("Endpoint", `http://localhost:${state.events.port}`),
-      info("Broker", !data ? "…" : broker ? broker.key : data.broker ? "not running" : "not in the repo"),
-      info("Consumers running", String(consumers.length)),
-      info("Publishing locally", `${publishers} service${publishers === 1 ? "" : "s"}`),
-      info("Last SNS publish", state.sns && state.sns.last_publish ? new Date(state.sns.last_publish).toLocaleTimeString() : "nothing yet"),
+      info(t("Endpoint"), `http://localhost:${state.events.port}`),
+      info(t("Broker"), !data ? "…" : broker ? broker.key : data.broker ? t("not running") : t("not in the repo")),
+      info(t("Consumers running"), String(consumers.length)),
+      info(t("Publishing locally"), servicesCount(publishers)),
+      info(t("Last SNS publish"), state.sns && state.sns.last_publish ? new Date(state.sns.last_publish).toLocaleTimeString() : t("nothing yet")),
     );
   } else {
-    card.replaceChildren(el("p", { class: "muted note" }, busy ? "Starting the local ElasticMQ…"
-      : "Off: services publish to AWS. Start the local events to run a local ElasticMQ (Docker) with every queue of the repo and the broker; services started afterwards publish there and to a local SNS."));
+    card.replaceChildren(el("p", { class: "muted note" }, busy ? t("Starting the local ElasticMQ…")
+      : t("Off: services publish to AWS. Start the local events to run a local ElasticMQ (Docker) with every queue of the repo and the broker; services started afterwards publish there and to a local SNS.")));
   }
   if (job && job.error) {
-    card.append(el("p", { class: "error" }, `${job.action === "up" ? "start" : "stop"} failed: ${job.error}`));
+    card.append(el("p", { class: "error" }, job.action === "up" ? t("Start failed: {error}", { error: job.error }) : t("Stop failed: {error}", { error: job.error })));
     const row = el("div", {});
-    if (job.log_key) row.append(button("Install log", () => showLogs(job.log_key, "install")));
-    row.append(button("Dismiss", () => act(eventsPath("dismiss")), { class: "btn small ghost" }));
+    if (job.log_key) row.append(button(t("Install log"), () => showLogs(job.log_key, "install")));
+    row.append(button(t("Dismiss"), () => act(eventsPath("dismiss")), { class: "btn small ghost" }));
     card.append(row);
   }
   for (const tab of $("events-tabs").children) tab.setAttribute("aria-selected", String(tab.dataset.tab === eventsView.tab));
@@ -1022,9 +1094,9 @@ async function getJson(path) {
   try {
     const response = await fetch(path);
     const data = await response.json();
-    return response.ok ? { data } : { error: data.error || `pdms ui answered ${response.status}` };
+    return response.ok ? { data } : { error: data.error || t("pdms ui answered {status}", { status: response.status }) };
   } catch {
-    return { error: "pdms ui is not reachable: is it still running?" };
+    return { error: t("pdms ui is not reachable: is it still running?") };
   }
 }
 
@@ -1057,9 +1129,10 @@ function consumerJob(service) {
 
 function openConsumerStart(service, what = "consumer") {
   openLaunch({
-    title: "Start", key: service, go: "Start", path: "/api/run", service, user: state.user, db: state.db,
-    hint: `The ${what} reads its queue from the local ElasticMQ, in the background like pdms run -b.`,
-    after: (_install, data) => { toast(`Starting ${data.job}…`, "info"); loadQueues(); },
+    title: t("Start"), key: service, go: "start", path: "/api/run", service, user: state.user, db: state.db,
+    hint: what === "broker" ? t("The broker reads its queue from the local ElasticMQ, in the background like pdms run -b.")
+      : t("The consumer reads its queue from the local ElasticMQ, in the background like pdms run -b."),
+    after: (_install, data) => { toast(t("Starting {job}…", { job: data.job }), "info"); loadQueues(); },
   });
 }
 
@@ -1078,26 +1151,26 @@ function queueRow(queue) {
   const elsewhere = consumerElsewhere(queue);
   const job = queue.running || elsewhere ? null : consumerJob(queue.consumer);
   const consumer = queue.running
-    ? button(queue.running, () => showLogs(queue.running), { class: "btn tiny link", title: `Logs of ${queue.running}` })
-    : elsewhere ? el("span", {}, button(elsewhere.key, () => showLogs(elsewhere.key), { class: "btn tiny link", title: `Logs of ${elsewhere.key}` }),
-      el("span", { class: "muted" }, ` reads ${elsewhere.queue}`))
-    : queue.sns ? el("span", { class: "muted" }, "local SNS: every publish")
-      : queue.broker ? el("span", { class: "muted" }, `${queue.consumer || "broker"} (not running)`)
+    ? button(queue.running, () => showLogs(queue.running), { class: "btn tiny link", title: t("Logs of {key}", { key: queue.running }) })
+    : elsewhere ? el("span", {}, button(elsewhere.key, () => showLogs(elsewhere.key), { class: "btn tiny link", title: t("Logs of {key}", { key: elsewhere.key }) }),
+      el("span", { class: "muted" }, " ", t("reads {queue}", { queue: elsewhere.queue })))
+    : queue.sns ? el("span", { class: "muted" }, t("local SNS: every publish"))
+      : queue.broker ? el("span", { class: "muted" }, queue.consumer ? t("{consumer} (not running)", { consumer: queue.consumer }) : t("broker (not running)"))
         : el("span", { class: "muted" }, queue.consumer || "-");
   const actions = el("td", { class: "row-actions" });
   if (job) {
     actions.append(job.error
-      ? button("Start failed", () => showLogs(job.log_key || job.key, job.installed ? "install" : "current"), { class: "btn small bad", title: job.error })
-      : el("span", { class: "st starting" }, PHASES[job.phase] || job.phase));
+      ? button(t("Start failed"), () => showLogs(job.log_key || job.key, job.installed ? "install" : "current"), { class: "btn small bad", title: job.error })
+      : el("span", { class: "st starting" }, phaseLabel(job.phase)));
   } else if (queue.consumer && !queue.running && !elsewhere && eventsView.queues.up) {
-    actions.append(button("Start", () => openConsumerStart(queue.consumer, queue.broker ? "broker" : "consumer"), { class: "btn small primary" }));
+    actions.append(button(t("Start"), () => openConsumerStart(queue.consumer, queue.broker ? "broker" : "consumer"), { class: "btn small primary" }));
   }
   if (queue.visible !== null) {
-    actions.append(button("Messages", () => openPeek(queue.name)));
-    if (!queue.sns) actions.append(button("Send", () => openSend(queue.name)));
-    if (queue.visible || queue.in_flight) actions.append(button("Purge", () => purge([queue.name]), { class: "btn small bad" }));
+    actions.append(button(t("Messages"), () => openPeek(queue.name)));
+    if (!queue.sns) actions.append(button(t("Send"), () => openSend(queue.name)));
+    if (queue.visible || queue.in_flight) actions.append(button(t("Purge"), () => purge([queue.name]), { class: "btn small bad" }));
   }
-  const tags = [queue.fifo ? "fifo" : "", queue.broker ? "broker" : "", queue.source === "elasticmq.conf" ? "elasticmq.conf only" : ""].filter(Boolean);
+  const tags = [queue.fifo ? "fifo" : "", queue.broker ? t("broker") : "", queue.source === "elasticmq.conf" ? t("elasticmq.conf only") : ""].filter(Boolean);
   return el("tr", eventsView.peek === queue.name ? { class: "picked" } : {},
     el("td", { class: "mono wrap" }, queue.name, tags.length ? el("span", { class: "tag" }, tags.join(" · ")) : ""),
     count(queue.visible), count(queue.in_flight),
@@ -1116,17 +1189,19 @@ function paintQueues() {
     && (!text || `${queue.name} ${queue.consumer} ${queue.running}`.toLowerCase().includes(text)));
   $("queue-rows").replaceChildren(...shown.map(queueRow));
   const waiting = data.queues.reduce((sum, queue) => sum + (queue.visible || 0), 0);
-  $("queue-count").textContent = `${shown.length} of ${data.queues.length} queues` + (data.up ? ` · ${waiting} message${waiting === 1 ? "" : "s"} waiting` : "");
+  const parts = [t("{shown} of {total} queues", { shown: shown.length, total: data.queues.length })];
+  if (data.up) parts.push(waiting === 1 ? t("{n} message waiting", { n: waiting }) : t("{n} messages waiting", { n: waiting }));
+  $("queue-count").textContent = parts.join(" · ");
   $("queue-purge-all").hidden = !data.up || !waiting;
-  $("queue-empty").textContent = data.up ? "No queue matches the filter." : "";
+  $("queue-empty").textContent = data.up ? t("No queue matches the filter.") : "";
   $("queue-empty").hidden = shown.length > 0 || !data.up;
 }
 
 async function purge(queues) {
-  const what = queues.length ? queues.join(", ") : "every queue";
-  if (!await confirmDialog(`Purge ${what}?`, "Every message waiting there is deleted; nothing consumes them.", "Purge")) return;
+  const title = queues.length ? t("Purge {queues}?", { queues: queues.join(", ") }) : t("Purge every queue?");
+  if (!await confirmDialog(title, t("Every message waiting there is deleted; nothing consumes them."), t("Purge"))) return;
   act(eventsPath("purge"), { queues }, (data) => {
-    toast(data.purged.length ? `Purged ${data.purged.join(", ")}.` : "Nothing to purge.", "info");
+    toast(data.purged.length ? t("Purged {queues}.", { queues: data.purged.join(", ") }) : t("Nothing to purge."), "info");
     loadQueues();
     if (eventsView.peek) openPeek(eventsView.peek);
   });
@@ -1182,12 +1257,12 @@ function messageDetails(summary, text) {
   const node = el("details", { class: "msg" }, summary);
   const fill = () => {
     if (node.querySelector("pre")) return;
-    const copy = button("Copy", async () => {
+    const copy = button(t("Copy"), async () => {
       try {
         await navigator.clipboard.writeText(text);
-        toast("Copied.", "info");
+        toast(t("Copied."), "info");
       } catch {
-        toast("The browser did not allow copying.");
+        toast(t("The browser did not allow copying."));
       }
     }, { class: "btn tiny copy" });
     node.append(el("div", { class: "msg-body" }, copy, el("pre", {}, jsonView(text))));
@@ -1212,7 +1287,7 @@ async function openPeek(queue) {
   eventsView.peek = queue;
   $("peek").hidden = false;
   $("peek-queue").textContent = queue;
-  $("peek-note").textContent = "reading…";
+  $("peek-note").textContent = t("reading…");
   paintQueues();
   const { data, error } = await getJson(`${eventsPath("peek")}?${new URLSearchParams({ queue })}`);
   if (eventsView.peek !== queue) return;
@@ -1221,9 +1296,10 @@ async function openPeek(queue) {
     $("peek-messages").replaceChildren();
     return;
   }
-  $("peek-note").textContent = data.messages.length
-    ? `${data.messages.length} waiting${data.messages.length >= 50 ? " (first 50)" : ""} · read without consuming them`
-    : "empty";
+  const waiting = data.messages.length;
+  $("peek-note").textContent = waiting
+    ? [waiting >= 50 ? t("{n} waiting (first 50)", { n: waiting }) : t("{n} waiting", { n: waiting }), t("read without consuming them")].join(" · ")
+    : t("empty");
   $("peek-messages").replaceChildren(...data.messages.map((message) => {
     const kind = messageKind(message.body);
     return messageDetails(
@@ -1231,7 +1307,8 @@ async function openPeek(queue) {
         el("span", { class: "mono muted" }, message.id.slice(0, 8)),
         kind ? el("span", { class: "topic" }, kind) : "",
         message.sent ? el("span", { class: "muted" }, new Date(message.sent).toLocaleString()) : "",
-        el("span", { class: "muted" }, `received ${message.receives} time${message.receives === 1 ? "" : "s"}`),
+        el("span", { class: "muted" }, message.receives === 1
+          ? t("received {n} time", { n: message.receives }) : t("received {n} times", { n: message.receives })),
       ),
       message.body,
     );
@@ -1267,11 +1344,14 @@ function paintMap() {
   $("type-rows").replaceChildren(...shown.map((item) => el("tr", {},
     el("td", { class: "mono" }, item.type),
     el("td", { class: "mono" }, item.queue),
-    item.consumer ? el("td", { class: "mono" }, item.consumer) : el("td", { class: "target-missing" }, "none"),
-    el("td", { class: "row-actions" }, state.events.up ? button("Send", () => openSend(item.type)) : ""),
+    item.consumer ? el("td", { class: "mono" }, item.consumer) : el("td", { class: "target-missing" }, t("none")),
+    el("td", { class: "row-actions" }, state.events.up ? button(t("Send"), () => openSend(item.type)) : ""),
   )));
-  $("type-count").textContent = `${shown.length} of ${data.types.length} event types · broker ${data.broker || "not found"}`;
-  $("type-empty").textContent = data.types.length ? "No event type matches the filter." : "The broker routes no event types.";
+  $("type-count").textContent = [
+    t("{shown} of {total} event types", { shown: shown.length, total: data.types.length }),
+    data.broker ? t("broker {name}", { name: data.broker }) : t("broker not found"),
+  ].join(" · ");
+  $("type-empty").textContent = data.types.length ? t("No event type matches the filter.") : t("The broker routes no event types.");
   $("type-empty").hidden = shown.length > 0;
 }
 
@@ -1338,9 +1418,9 @@ function snsEntry(entry) {
       el("span", { class: "mono muted" }, new Date(entry.time).toLocaleTimeString()),
       el("span", { class: "topic" }, entry.topic),
       kind ? el("span", { class: "kind" }, kind) : "",
-      el("span", { class: "muted" }, `from ${entry.service}`),
+      el("span", { class: "muted" }, t("from {service}", { service: entry.service })),
       entry.subject ? el("span", {}, entry.subject) : "",
-      entry.group ? el("span", { class: "muted", title: "MessageGroupId" }, `group ${entry.group}`) : "",
+      entry.group ? el("span", { class: "muted", title: "MessageGroupId" }, t("group {group}", { group: entry.group })) : "",
       ...attrs,
     ),
     text,
@@ -1356,7 +1436,7 @@ function paintTopics() {
   eventsView.topics = signature;
   const current = $("sns-topic").value;
   $("sns-topic").replaceChildren(
-    el("option", { value: "" }, `All topics (${eventsView.sns.length})`),
+    el("option", { value: "" }, t("All topics ({n})", { n: eventsView.sns.length })),
     ...topics.map((topic) => el("option", topic === current ? { value: topic, selected: "" } : { value: topic }, `${topic} (${counts[topic]})`)),
   );
 }
@@ -1380,10 +1460,11 @@ function paintSns() {
     return node;
   }));
   const total = eventsView.sns.length;
-  $("sns-count").textContent = total ? `${shown.length < 300 ? shown.length : "latest 300"} of ${total} publishes` : "";
+  $("sns-count").textContent = !total ? ""
+    : shown.length < 300 ? t("{shown} of {total} publishes", { shown: shown.length, total }) : t("latest 300 of {total} publishes", { total });
   $("sns-empty").textContent = !total
-    ? state && state.events.up ? "Nothing was published to the local SNS yet. Services started with local events publish here." : "Nothing published locally yet. Start the local events, then the services that publish."
-    : "No publish matches the filter.";
+    ? state && state.events.up ? t("Nothing was published to the local SNS yet. Services started with local events publish here.") : t("Nothing published locally yet. Start the local events, then the services that publish.")
+    : t("No publish matches the filter.");
   $("sns-empty").hidden = shown.length > 0;
 }
 
@@ -1392,17 +1473,19 @@ function paintSns() {
 function openEventsUp() {
   const broker = !eventsView.queues || eventsView.queues.broker_service;
   openLaunch({
-    title: "Start", key: "local events",
-    hint: "A local ElasticMQ (Docker) with every queue of the repo, like pdms events up. The broker runs as this user and database.",
-    user: state.user, db: state.db, go: "Start", path: eventsPath("up"), broker,
+    title: t("Start"), key: t("local events"),
+    hint: t("A local ElasticMQ (Docker) with every queue of the repo, like pdms events up. The broker runs as this user and database."),
+    user: state.user, db: state.db, go: "start", path: eventsPath("up"), broker,
     after: () => showEventsTab(eventsView.tab),
   });
 }
 
 async function stopEvents() {
   const consumers = state.instances.filter((i) => i.queue && i.status !== "stopped").map((i) => i.key);
-  const text = `Its messages are lost${consumers.length ? `, and the consumers stop too: ${consumers.join(", ")}` : ""}. Services keep running, but what they publish now fails until it starts again.`;
-  if (await confirmDialog("Stop the local events?", text, "Stop")) act(eventsPath("down"));
+  const text = consumers.length
+    ? t("Its messages are lost, and the consumers stop too: {consumers}. Services keep running, but what they publish now fails until it starts again.", { consumers: consumers.join(", ") })
+    : t("Its messages are lost. Services keep running, but what they publish now fails until it starts again.");
+  if (await confirmDialog(t("Stop the local events?"), text, t("Stop"))) act(eventsPath("down"));
 }
 
 const sending = { types: new Set(), queues: new Set(), broker: "" };
@@ -1434,7 +1517,7 @@ function sendTargetChanged() {
   const isType = sending.types.has(target);
   $("send-direct-label").hidden = !isType || !sending.broker;
   $("send-template").hidden = !isType;
-  $("send-body-label").textContent = isType ? "Event fields (JSON; event_id and type are added)" : "Message body (JSON)";
+  $("send-body-label").textContent = isType ? t("Event fields (JSON; event_id and type are added)") : t("Message body (JSON)");
 }
 
 async function fillTemplate() {
@@ -1457,18 +1540,21 @@ async function submitSend(event) {
   try {
     const { status, data } = await post(eventsPath("send"), body);
     if (status !== 200) {
-      $("send-error").textContent = data.error || `pdms ui answered ${status}`;
+      $("send-error").textContent = data.error || t("pdms ui answered {status}", { status });
       $("send-error").hidden = false;
       return;
     }
     $("send").close();
-    let note = `Sent ${data.id.slice(0, 8)} to ${data.queue}.`;
-    if (data.routed_to) note += ` The broker routes it to ${data.routed_to} (consumer: ${data.consumer || "none"}).`;
-    if (!data.consumed) note += ` Nothing consumes ${data.queue} right now: it waits there.`;
-    toast(note, "info");
+    const notes = [t("Sent {id} to {queue}.", { id: data.id.slice(0, 8), queue: data.queue })];
+    if (data.routed_to) {
+      notes.push(data.consumer ? t("The broker routes it to {queue} (consumer: {consumer}).", { queue: data.routed_to, consumer: data.consumer })
+        : t("The broker routes it to {queue} (consumer: none).", { queue: data.routed_to }));
+    }
+    if (!data.consumed) notes.push(t("Nothing consumes {queue} right now: it waits there.", { queue: data.queue }));
+    toast(notes.join(" "), "info");
     loadQueues();
   } catch {
-    $("send-error").textContent = "pdms ui is not reachable: is it still running?";
+    $("send-error").textContent = t("pdms ui is not reachable: is it still running?");
     $("send-error").hidden = false;
   } finally {
     $("send-go").disabled = false;
@@ -1482,21 +1568,22 @@ const settingsView = {
   tab: "dbs", data: null, seen: "", revealed: {}, timers: {}, tests: {}, db: null, user: null, passwordTouched: false,
   protectedTouched: false,
 };
-// [key, label, kind, help]: the rows of the Defaults tab, in the order of pdms config defaults.
+// [key, label, kind, help]: the rows of the Defaults tab, in the order of pdms config defaults (label and help
+// translated when painted).
 const DEFAULTS = [
-  ["language", "Language", "select", "Of the CLI and of the messages pdms ui gets from it (this page stays in English)."],
-  ["host", "uvicorn host", "text", "Where services listen (0.0.0.0: every interface)."],
-  ["port", "Default port", "number", "The first port tried for a service; the next free one when it is busy."],
-  ["logging_level", "LOGGING_LEVEL", "select", "Passed to every service."],
-  ["reload", "Reload on code changes", "check", "uvicorn --reload."],
-  ["install", "Install dependencies before starting", "check", "poetry lock && poetry install."],
-  ["smart_install", "Smart install", "check", "Skip the install when nothing that affects it changed since the last one."],
-  ["events", "Where services publish SQS events", "select", "auto: the local broker while pdms events up runs; local: always; aws: as each service is configured."],
-  ["events_port", "Local ElasticMQ port", "number", "Host port of the ElasticMQ that pdms events up starts."],
-  ["db_timeout", "Connection test timeout", "number", "Seconds to wait when testing a database."],
-  ["banner", "Show the PDMS banner", "check", "When the interactive menu opens."],
-  ["update_check", "Tell me about new pdms versions", "check", "Checked at most once a day."],
-  ["env", "Extra environment variables", "env", "Injected on every run, after the profile's own."],
+  ["language", N_("Language"), "select", N_("Of the CLI, of this page and of the messages pdms ui gets from the CLI.")],
+  ["host", N_("uvicorn host"), "text", N_("Where services listen (0.0.0.0: every interface).")],
+  ["port", N_("Default port"), "number", N_("The first port tried for a service; the next free one when it is busy.")],
+  ["logging_level", N_("LOGGING_LEVEL"), "select", N_("Passed to every service.")],
+  ["reload", N_("Reload on code changes"), "check", N_("uvicorn --reload.")],
+  ["install", N_("Install dependencies before starting"), "check", N_("poetry lock && poetry install.")],
+  ["smart_install", N_("Smart install"), "check", N_("Skip the install when nothing that affects it changed since the last one.")],
+  ["events", N_("Where services publish SQS events"), "select", N_("auto: the local broker while pdms events up runs; local: always; aws: as each service is configured.")],
+  ["events_port", N_("Local ElasticMQ port"), "number", N_("Host port of the ElasticMQ that pdms events up starts.")],
+  ["db_timeout", N_("Connection test timeout"), "number", N_("Seconds to wait when testing a database.")],
+  ["banner", N_("Show the PDMS banner"), "check", N_("When the interactive menu opens.")],
+  ["update_check", N_("Tell me about new pdms versions"), "check", N_("Checked at most once a day.")],
+  ["env", N_("Extra environment variables"), "env", N_("Injected on every run, after the profile's own.")],
 ];
 
 function settingsPath(kind, name, verb) {
@@ -1527,7 +1614,12 @@ function paintSettings() {
   for (const name of ["dbs", "users", "defaults"]) $(`settings-${name}`).hidden = name !== settingsView.tab;
   const data = settingsView.data;
   if (!data) return;
-  $("settings-summary").textContent = `${data.dbs.length} databases · ${data.users.length} users`;
+  const dbs = data.dbs.length;
+  const users = data.users.length;
+  $("settings-summary").textContent = [
+    dbs === 1 ? t("{n} database", { n: dbs }) : t("{n} databases", { n: dbs }),
+    users === 1 ? t("{n} user", { n: users }) : t("{n} users", { n: users }),
+  ].join(" · ");
   $("settings-path").textContent = data.path;
   $("settings-path").title = data.path;
   paintDbs();
@@ -1541,15 +1633,21 @@ function showSettingsTab(tab) {
 }
 
 function eyeButton(shown, onclick) {
-  const label = shown ? "Hide the password" : "Show the password";
+  const label = shown ? t("Hide the password") : t("Show the password");
   return button("", onclick, { class: "btn small ghost eye", "aria-label": label, title: label, "aria-pressed": String(shown) });
 }
 
-function usedBy(stacks, what) {
-  if (!stacks.length) return "Only its entry in the configuration goes.";
-  return stacks.length === 1
-    ? `The stack ${stacks[0]} uses it: it will ask for a ${what} when it starts.`
-    : `The stacks ${stacks.join(", ")} use it: they will ask for a ${what} when they start.`;
+// kind: "dbs" or "users".
+function usedBy(stacks, kind) {
+  if (!stacks.length) return t("Only its entry in the configuration goes.");
+  if (stacks.length === 1) {
+    return kind === "dbs"
+      ? t("The stack {stack} uses it: it will ask for a database when it starts.", { stack: stacks[0] })
+      : t("The stack {stack} uses it: it will ask for a user when it starts.", { stack: stacks[0] });
+  }
+  return kind === "dbs"
+    ? t("The stacks {stacks} use it: they will ask for a database when they start.", { stacks: stacks.join(", ") })
+    : t("The stacks {stacks} use it: they will ask for a user when they start.", { stacks: stacks.join(", ") });
 }
 
 // ---- databases
@@ -1558,22 +1656,22 @@ function dbRow(db) {
   const revealed = settingsView.revealed[db.name];
   const password = el("td");
   if (!db.has_password) {
-    password.append(el("span", { class: "not-set" }, "not set"));
+    password.append(el("span", { class: "not-set" }, t("not set")));
   } else {
     password.append(el("span", { class: "secret-text" }, revealed === undefined ? "••••••••" : revealed));
     password.append(eyeButton(revealed !== undefined, () => toggleReveal(db.name)));
   }
   const test = settingsView.tests[db.name];
   const connection = el("td", { class: "wrap-detail" });
-  if (test && test.busy) connection.append(el("span", { class: "st starting" }, "testing…"));
-  else if (test && test.ok) connection.append(el("span", { class: "st ok" }, "ok"), " ", el("span", { class: "muted" }, test.text));
-  else if (test) connection.append(el("span", { class: "st stopped" }, "failed"), el("span", { class: "detail" }, test.text));
+  if (test && test.busy) connection.append(el("span", { class: "st starting" }, t("testing…")));
+  else if (test && test.ok) connection.append(el("span", { class: "st ok" }, t("ok")), " ", el("span", { class: "muted" }, test.text));
+  else if (test) connection.append(el("span", { class: "st stopped" }, t("failed")), el("span", { class: "detail" }, test.text));
   const name = el("td", { class: "mono" }, db.name);
-  if (db.protected) name.append(el("span", { class: "tag protected" }, "protected"));
+  if (db.protected) name.append(el("span", { class: "tag protected" }, t("protected")));
   const actionsCell = el("td", { class: "row-actions" },
-    button("Test", () => testDb(db.name), test && test.busy ? { disabled: "" } : {}),
-    button("Edit", () => openDb(db)),
-    button("Delete", () => removeSetting("dbs", db.name, db.stacks), { class: "btn small bad" }),
+    button(t("Test"), () => testDb(db.name), test && test.busy ? { disabled: "" } : {}),
+    button(t("Edit"), () => openDb(db)),
+    button(t("Delete"), () => removeSetting("dbs", db.name, db.stacks), { class: "btn small bad" }),
   );
   return el("tr", {}, name, el("td", { class: "mono" }, db.host), el("td", { class: "num" }, String(db.port)),
     el("td", { class: "mono" }, db.database), el("td", { class: "mono" }, db.user), password, connection, actionsCell);
@@ -1585,9 +1683,9 @@ function paintDbs() {
   const shown = dbs.filter((db) => (!$("db-protected").checked || db.protected)
     && matches(text, [db.name, db.host, db.port, db.database, db.user]));
   $("db-rows").replaceChildren(...shown.map(dbRow));
-  $("db-count").textContent = dbs.length ? `${shown.length} of ${dbs.length}` : "";
+  $("db-count").textContent = dbs.length ? t("{shown} of {total}", { shown: shown.length, total: dbs.length }) : "";
   $("db-empty").hidden = shown.length > 0;
-  $("db-empty").textContent = dbs.length ? "No database matches the filter." : "No databases yet. Services need at least one to run.";
+  $("db-empty").textContent = dbs.length ? t("No database matches the filter.") : t("No databases yet. Services need at least one to run.");
 }
 
 async function toggleReveal(name) {
@@ -1615,19 +1713,19 @@ async function testDb(name) {
 async function testConnection(body) {
   try {
     const { status, data } = await post("/api/dbs/test", body);
-    return status === 200 ? { ok: true, text: data.version } : { ok: false, text: data.error || `pdms ui answered ${status}`, field: data.field };
+    return status === 200 ? { ok: true, text: data.version } : { ok: false, text: data.error || t("pdms ui answered {status}", { status }), field: data.field };
   } catch {
-    return { ok: false, text: "pdms ui is not reachable: is it still running?" };
+    return { ok: false, text: t("pdms ui is not reachable: is it still running?") };
   }
 }
 
 async function removeSetting(kind, name, stacks) {
-  const what = kind === "dbs" ? "database" : "user";
-  if (!await confirmDialog(`Delete ${what} ${name}?`, usedBy(stacks, what), "Delete")) return;
+  const title = kind === "dbs" ? t("Delete database {name}?", { name }) : t("Delete user {name}?", { name });
+  if (!await confirmDialog(title, usedBy(stacks, kind), t("Delete"))) return;
   await act(settingsPath(kind, name, "remove"), {}, () => {
     delete settingsView.revealed[name];
     delete settingsView.tests[name];
-    toast(`'${name}' deleted.`, "info");
+    toast(t("'{name}' deleted.", { name }), "info");
     loadSettings();
   });
 }
@@ -1657,12 +1755,12 @@ const USER_TEXTS = USER_FIELDS.filter((field) => field !== "roles");
 function showPassword(shown) {
   $("db-password").type = shown ? "text" : "password";
   $("db-eye").setAttribute("aria-pressed", String(shown));
-  $("db-eye").setAttribute("aria-label", shown ? "Hide the password" : "Show the password");
+  $("db-eye").setAttribute("aria-label", shown ? t("Hide the password") : t("Show the password"));
 }
 
 function openDb(db = null) {
   Object.assign(settingsView, { db, passwordTouched: false, protectedTouched: Boolean(db) });
-  $("db-title").textContent = db ? `Edit ${db.name}` : "New database";
+  $("db-title").textContent = db ? t("Edit {name}", { name: db.name }) : t("New database");
   $("db-name-label").hidden = Boolean(db);
   $("db-name").required = !db;
   $("db-name").value = "";
@@ -1671,7 +1769,7 @@ function openDb(db = null) {
   $("db-database").value = db ? db.database : "pdm";
   $("db-user").value = db ? db.user : "";
   $("db-password").value = "";
-  $("db-password").placeholder = db && db.has_password ? "unchanged" : "";
+  $("db-password").placeholder = db && db.has_password ? t("unchanged") : "";
   $("db-protected-box").checked = Boolean(db && db.protected);
   showPassword(false);
   $("db-tested").hidden = true;
@@ -1695,7 +1793,7 @@ async function toggleDbPassword() {
   const db = settingsView.db;
   if (!shown && db && db.has_password && !settingsView.passwordTouched) {
     const { status, data } = await post(settingsPath("dbs", db.name, "password")).catch(() => ({ status: 0, data: {} }));
-    if (status !== 200) { formError("db", data, "Could not read the password."); return; }
+    if (status !== 200) { formError("db", data, t("Could not read the password.")); return; }
     $("db-password").value = data.password;
     settingsView.passwordTouched = true;
   }
@@ -1706,12 +1804,12 @@ async function testDbForm() {
   resetForm("db", DB_FIELDS);
   $("db-test").disabled = true;
   $("db-tested").className = "muted";
-  $("db-tested").textContent = "Connecting…";
+  $("db-tested").textContent = t("Connecting…");
   $("db-tested").hidden = false;
   const result = await testConnection({ ...dbBody(), name: settingsView.db ? settingsView.db.name : "" });
   $("db-test").disabled = false;
   $("db-tested").className = result.ok ? "muted" : "error";
-  $("db-tested").textContent = result.ok ? `✓ Connected: ${result.text}` : result.text;
+  $("db-tested").textContent = result.ok ? t("✓ Connected: {version}", { version: result.text }) : result.text;
   if (result.field && $(`db-${result.field}`)) $(`db-${result.field}`).setAttribute("aria-invalid", "true");
 }
 
@@ -1723,14 +1821,14 @@ async function saveForm(prefix, kind, current, body, fields) {
     const { status, data } = await post(settingsPath(kind, name, "save"), { ...body, new: !current });
     if (status === 200) {
       $(`${prefix}-dialog`).close();
-      toast(`'${data.name}' saved.`, "info");
+      toast(t("'{name}' saved.", { name: data.name }), "info");
       delete settingsView.tests[data.name];
       loadSettings();
       return;
     }
-    formError(prefix, data, `pdms ui answered ${status}`);
+    formError(prefix, data, t("pdms ui answered {status}", { status }));
   } catch {
-    formError(prefix, {}, "pdms ui is not reachable: is it still running?");
+    formError(prefix, {}, t("pdms ui is not reachable: is it still running?"));
   } finally {
     $(`${prefix}-save`).disabled = false;
   }
@@ -1749,8 +1847,8 @@ function userRow(user) {
     el("td", {}, `${user.first_name} ${user.last_name}`.trim() || "-"), el("td", { class: "mono" }, user.roles || "-"),
     el("td", { class: "mono muted" }, user.user_id),
     el("td", { class: "row-actions" },
-      button("Edit", () => openUser(user)),
-      button("Delete", () => removeSetting("users", user.name, user.stacks), { class: "btn small bad" })),
+      button(t("Edit"), () => openUser(user)),
+      button(t("Delete"), () => removeSetting("users", user.name, user.stacks), { class: "btn small bad" })),
   );
 }
 
@@ -1759,14 +1857,14 @@ function paintUsers() {
   const text = $("user-filter").value.trim().toLowerCase();
   const shown = users.filter((u) => matches(text, [u.name, u.username, u.first_name, u.last_name, u.roles, u.user_id]));
   $("user-rows").replaceChildren(...shown.map(userRow));
-  $("user-count").textContent = users.length ? `${shown.length} of ${users.length}` : "";
+  $("user-count").textContent = users.length ? t("{shown} of {total}", { shown: shown.length, total: users.length }) : "";
   $("user-empty").hidden = shown.length > 0;
-  $("user-empty").textContent = users.length ? "No user matches the filter." : "No users yet. Services run as one of them.";
+  $("user-empty").textContent = users.length ? t("No user matches the filter.") : t("No users yet. Services run as one of them.");
 }
 
 function openUser(user = null) {
   settingsView.user = user;
-  $("user-title").textContent = user ? `Edit ${user.name}` : "New user";
+  $("user-title").textContent = user ? t("Edit {name}", { name: user.name }) : t("New user");
   $("user-name-label").hidden = Boolean(user);
   $("user-name").required = !user;
   for (const field of USER_TEXTS) $(`user-${field}`).value = user && field !== "name" ? user[field] : "";
@@ -1791,7 +1889,7 @@ function paintRoles(current) {
   };
   $("user-roles").replaceChildren(
     ...known.map((role) => box(role, [])),
-    ...mine.filter((role) => !known.includes(role)).map((role) => box(role, [el("span", { class: "tag" }, "not a role of this repo")])),
+    ...mine.filter((role) => !known.includes(role)).map((role) => box(role, [el("span", { class: "tag" }, t("not a role of this repo"))])),
   );
 }
 
@@ -1821,7 +1919,7 @@ function settingInput(key, kind, value) {
   if (kind === "env") {
     const rows = el("div", { class: "env-rows", id });
     for (const [name, text] of Object.entries(value)) rows.append(envRow(name, text));
-    rows.append(button("Add variable", () => { rows.lastChild.before(envRow("", "")); defaultsChanged(); rows.lastChild.previousSibling.firstChild.focus(); }));
+    rows.append(button(t("Add variable"), () => { rows.lastChild.before(envRow("", "")); defaultsChanged(); rows.lastChild.previousSibling.firstChild.focus(); }));
     return rows;
   }
   return el("input", kind === "number" ? { type: "number", id, min: "1", value: String(value) } : { id, value });
@@ -1829,17 +1927,17 @@ function settingInput(key, kind, value) {
 
 function envRow(name, value) {
   const row = el("div", { class: "env-row" },
-    el("input", { value: name, placeholder: "NAME", "aria-label": "Variable name", spellcheck: "false" }),
-    el("input", { value, placeholder: "value", "aria-label": "Value", spellcheck: "false" }));
-  row.append(button("Remove", () => { row.remove(); defaultsChanged(); }, { class: "btn small ghost" }));
+    el("input", { value: name, placeholder: t("NAME"), "aria-label": t("Variable name"), spellcheck: "false" }),
+    el("input", { value, placeholder: t("value"), "aria-label": t("Value"), spellcheck: "false" }));
+  row.append(button(t("Remove"), () => { row.remove(); defaultsChanged(); }, { class: "btn small ghost" }));
   return row;
 }
 
 function paintDefaults() {
   const values = settingsView.data.defaults;
   $("defaults-form").replaceChildren(...DEFAULTS.map(([key, label, kind, help]) => {
-    const what = el("div", { class: "what" }, el("span", {}, el("b", {}, label), el("code", {}, key)), el("small", {}, help));
-    const row = el(kind === "env" ? "div" : "label", { class: "setting", "data-key": key, "data-search": `${key} ${label} ${help}`.toLowerCase() },
+    const what = el("div", { class: "what" }, el("span", {}, el("b", {}, t(label)), el("code", {}, key)), el("small", {}, t(help)));
+    const row = el(kind === "env" ? "div" : "label", { class: "setting", "data-key": key, "data-search": `${key} ${t(label)} ${t(help)}`.toLowerCase() },
       what, settingInput(key, kind, values[key]));
     if (kind !== "env") row.setAttribute("for", `default-${key}`);
     return row;
@@ -1891,7 +1989,7 @@ function filterDefaults() {
     row.hidden = Boolean(text) && !row.dataset.search.includes(text);
     shown += row.hidden ? 0 : 1;
   }
-  $("defaults-count").textContent = text ? `${shown} of ${DEFAULTS.length}` : "";
+  $("defaults-count").textContent = text ? t("{shown} of {total}", { shown, total: DEFAULTS.length }) : "";
   $("defaults-none").hidden = shown > 0;
   $("defaults-form").hidden = shown === 0;
 }
@@ -1903,12 +2001,12 @@ async function saveDefaults() {
   try {
     const { status, data } = await post("/api/defaults/save", defaultsValues());
     if (status === 200) {
-      toast("Defaults saved.", "info");
+      toast(t("Defaults saved."), "info");
       await loadSettings();
       paintDefaults();
       return;
     }
-    $("defaults-error").textContent = data.field ? `${data.field}: ${data.error}` : data.error || `pdms ui answered ${status}`;
+    $("defaults-error").textContent = data.field ? `${data.field}: ${data.error}` : data.error || t("pdms ui answered {status}", { status });
     $("defaults-error").hidden = false;
     const input = data.field && $(`default-${data.field}`);
     if (input) {
@@ -1917,7 +2015,7 @@ async function saveDefaults() {
       (input.querySelector("input") || input).focus();
     }
   } catch {
-    toast("pdms ui is not reachable: is it still running?");
+    toast(t("pdms ui is not reachable: is it still running?"));
   } finally {
     defaultsChanged();
   }
@@ -1926,15 +2024,19 @@ async function saveDefaults() {
 
 // ---- export and import of the settings (pdms config export / import)
 
-const SECTION_LABELS = { defaults: "Defaults", users: "Users", dbs: "Databases", stacks: "Stacks" };
+const SECTION_LABELS = { defaults: N_("Defaults"), users: N_("Users"), dbs: N_("Databases"), stacks: N_("Stacks") };
 const importing = { name: "", text: "", plan: null };
+
+function sectionLabel(section) {
+  return SECTION_LABELS[section] ? t(SECTION_LABELS[section]) : section;
+}
 
 function sectionBoxes(container, sections, onchange = null) {
   container.replaceChildren(...sections.map((section) => {
     const input = el("input", { type: "checkbox", value: section });
     input.checked = true;
     if (onchange) input.addEventListener("change", onchange);
-    return el("label", { class: "inline" }, input, SECTION_LABELS[section] || section);
+    return el("label", { class: "inline" }, input, sectionLabel(section));
   }));
 }
 
@@ -1963,13 +2065,14 @@ async function submitExport(event) {
   const body = { sections: checkedValues($("export-sections")), secrets: $("export-secrets").checked };
   const { status, data } = await post("/api/config/export", body).catch(() => ({ status: 0, data: {} }));
   if (status !== 200) {
-    $("export-error").textContent = data.error || "pdms ui is not reachable: is it still running?";
+    $("export-error").textContent = data.error || t("pdms ui is not reachable: is it still running?");
     $("export-error").hidden = false;
     return;
   }
   download(data.filename, data.text);
   $("export-dialog").close();
-  toast(`Exported to ${data.filename}${body.secrets ? ", with the passwords: keep it private." : "."}`, "info");
+  toast(body.secrets ? t("Exported to {file}, with the passwords: keep it private.", { file: data.filename })
+    : t("Exported to {file}.", { file: data.filename }), "info");
 }
 
 async function readImport() {
@@ -1978,11 +2081,11 @@ async function readImport() {
   if (!file) return;
   const text = await file.text();
   const { status, data } = await post("/api/config/import/plan", { text }).catch(() => ({ status: 0, data: {} }));
-  if (status !== 200) { toast(data.error || "pdms ui is not reachable: is it still running?"); return; }
+  if (status !== 200) { toast(data.error || t("pdms ui is not reachable: is it still running?")); return; }
   Object.assign(importing, { name: file.name, text, plan: data });
   $("import-name").textContent = file.name;
   const meta = data.meta;
-  $("import-meta").textContent = `Exported on ${meta.exported_at || "?"} by pdms ${meta.cli_version || "?"}.`;
+  $("import-meta").textContent = t("Exported on {date} by pdms {version}.", { date: meta.exported_at || "?", version: meta.cli_version || "?" });
   sectionBoxes($("import-sections"), data.sections, paintImport);
   $("import-form").mode.value = "merge";
   $("import-conflicts").replaceChildren();
@@ -1997,9 +2100,9 @@ function paintImport() {
   const replace = $("import-form").mode.value === "replace";
   const plans = plan.plans.filter((item) => sections.includes(item.section));
   const list = (names) => names.join(", ") || "-";
-  $("import-missing-head").textContent = replace ? "Removed" : "Only mine";
+  $("import-missing-head").textContent = replace ? t("Removed") : t("Only mine");
   $("import-rows").replaceChildren(...plans.map((item) => el("tr", {},
-    el("td", {}, SECTION_LABELS[item.section]), el("td", {}, list(item.added)), el("td", {}, list(item.changed)),
+    el("td", {}, sectionLabel(item.section)), el("td", {}, list(item.added)), el("td", {}, list(item.changed)),
     el("td", { class: "muted" }, list(item.same)), el("td", replace && item.missing.length ? { class: "code-bad" } : { class: "muted" }, list(item.missing)))));
   const conflicts = plans.flatMap((item) => item.changed.map((name) => [item.section, name]));
   const before = new Set(checkedValues($("import-conflicts")));
@@ -2008,16 +2111,17 @@ function paintImport() {
     const input = el("input", { type: "checkbox", value });
     input.checked = plan.first_setup || before.has(value);
     if (plan.first_setup) input.disabled = true;
-    return el("label", { class: "pick" }, input, section === "defaults" ? "Defaults" : `${SECTION_LABELS[section]}: ${name}`);
+    return el("label", { class: "pick" }, input, section === "defaults" ? sectionLabel(section) : `${sectionLabel(section)}: ${name}`);
   }));
   $("import-conflicts-box").hidden = replace || !conflicts.length;
   const notes = [];
-  if (plan.first_setup) notes.push("There is no configuration of yours yet: everything in the file is taken.");
-  if (!plan.meta.secrets && sections.includes("dbs")) notes.push("The file has no passwords: the databases you already have keep theirs.");
+  if (plan.first_setup) notes.push(t("There is no configuration of yours yet: everything in the file is taken."));
+  if (!plan.meta.secrets && sections.includes("dbs")) notes.push(t("The file has no passwords: the databases you already have keep theirs."));
   $("import-note").textContent = notes.join(" ");
   $("import-note").hidden = !notes.length;
   const removed = plans.reduce((total, item) => total + item.missing.length, 0);
-  $("import-warn").textContent = `Replacing deletes ${removed} of your entries that are not in the file.`;
+  $("import-warn").textContent = removed === 1 ? t("Replacing deletes one of your entries that is not in the file.")
+    : t("Replacing deletes {n} of your entries that are not in the file.", { n: removed });
   $("import-warn").hidden = !replace || !removed;
   $("import-go").disabled = !sections.length;
 }
@@ -2032,14 +2136,14 @@ async function submitImport(event) {
   const { status, data } = await post("/api/config/import/apply", body).catch(() => ({ status: 0, data: {} }));
   $("import-go").disabled = false;
   if (status !== 200) {
-    $("import-error").textContent = data.error || "pdms ui is not reachable: is it still running?";
+    $("import-error").textContent = data.error || t("pdms ui is not reachable: is it still running?");
     $("import-error").hidden = false;
     return;
   }
   $("import-dialog").close();
-  if (!data.changed) { toast("Nothing changes.", "info"); return; }
-  toast(data.backup ? `Settings imported. The previous ones were saved to ${data.backup}.` : "Settings imported.", "info");
-  if (data.no_password.length) toast(`Databases without a password: ${data.no_password.join(", ")}. Edit them to set it.`);
+  if (!data.changed) { toast(t("Nothing changes."), "info"); return; }
+  toast(data.backup ? t("Settings imported. The previous ones were saved to {file}.", { file: data.backup }) : t("Settings imported."), "info");
+  if (data.no_password.length) toast(t("Databases without a password: {dbs}. Edit them to set it.", { dbs: data.no_password.join(", ") }));
   await loadSettings();
   paintDefaults();
 }
@@ -2050,9 +2154,9 @@ const userImport = { users: [] };
 
 function openUserImport() {
   const dbs = settingsView.data.dbs.map((db) => db.name);
-  if (!dbs.length) { toast("Add a database first: the users come from its pdms_user table."); return; }
+  if (!dbs.length) { toast(t("Add a database first: the users come from its pdms_user table.")); return; }
   options($("users-db"), dbs, dbs.includes(state.db) ? state.db : dbs[0], dbLabel);
-  options($("users-role"), ["", ...settingsView.data.roles], "", (role) => role || "any role");
+  options($("users-role"), ["", ...settingsView.data.roles], "", (role) => role || t("any role"));
   $("users-search").value = "";
   $("users-inactive").checked = false;
   userImport.users = [];
@@ -2066,31 +2170,32 @@ async function findDbUsers() {
   const body = { db: $("users-db").value, search: $("users-search").value, role: $("users-role").value, inactive: $("users-inactive").checked };
   $("users-find").disabled = true;
   $("users-error").hidden = true;
-  $("users-note").textContent = `Reading the users of ${body.db}…`;
+  $("users-note").textContent = t("Reading the users of {db}…", { db: body.db });
   $("users-note").hidden = false;
   const { status, data } = await post("/api/import-users/search", body).catch(() => ({ status: 0, data: {} }));
   $("users-find").disabled = false;
   if (status !== 200) {
     $("users-note").hidden = true;
-    $("users-error").textContent = data.error || "pdms ui is not reachable: is it still running?";
+    $("users-error").textContent = data.error || t("pdms ui is not reachable: is it still running?");
     $("users-error").hidden = false;
     return;
   }
   userImport.users = data.users;
-  const notes = [data.users.length ? `${data.users.length} found.` : "No user matches."];
-  if (data.limited) notes.push("Only the first ones: narrow it down with the search or the role.");
-  if (data.source === "built-in") notes.push("The roles of the current repo could not be read: pdms's own copy maps them.");
+  const found = data.users.length;
+  const notes = [!found ? t("No user matches.") : found === 1 ? t("{n} user found.", { n: found }) : t("{n} users found.", { n: found })];
+  if (data.limited) notes.push(t("Only the first ones: narrow it down with the search or the role."));
+  if (data.source === "built-in") notes.push(t("The roles of the current repo could not be read: pdms's own copy maps them."));
   $("users-note").textContent = notes.join(" ");
   $("users-found").replaceChildren(...data.users.map((user, index) => {
     const input = el("input", { type: "checkbox", value: String(index) });
     input.checked = !user.imported_as;
     const tags = [];
-    if (user.imported_as) tags.push(`already imported as ${user.imported_as}`);
-    if (user.is_active === false) tags.push("inactive");
-    if (user.unknown_roles.length) tags.push(`unknown roles kept: ${user.unknown_roles.join(", ")}`);
+    if (user.imported_as) tags.push(t("already imported as {name}", { name: user.imported_as }));
+    if (user.is_active === false) tags.push(t("inactive"));
+    if (user.unknown_roles.length) tags.push(t("unknown roles kept: {roles}", { roles: user.unknown_roles.join(", ") }));
     return el("label", { class: "pick" }, input,
       el("span", { class: "who" }, `${user.first_name} ${user.last_name}`.trim() || user.username, " ",
-        el("span", { class: "muted" }, `<${user.username}>`), el("br"), el("span", { class: "roles" }, user.dev_roles || "no roles")),
+        el("span", { class: "muted" }, `<${user.username}>`), el("br"), el("span", { class: "roles" }, user.dev_roles || t("no roles"))),
       el("span", { class: "muted" }, tags.join(" · ")));
   }));
   $("users-picker").hidden = !data.users.length;
@@ -2100,10 +2205,10 @@ async function findDbUsers() {
 function usersCount() {
   const boxes = [...$("users-found").querySelectorAll("input")];
   const picked = boxes.filter((box) => box.checked).length;
-  $("users-count").textContent = `${picked} of ${boxes.length} selected`;
+  $("users-count").textContent = t("{picked} of {total} selected", { picked, total: boxes.length });
   $("users-all").checked = boxes.length > 0 && picked === boxes.length;
   $("users-go").disabled = picked === 0;
-  $("users-go").textContent = picked ? `Import ${picked}` : "Import";
+  $("users-go").textContent = picked ? t("Import {n}", { n: picked }) : t("Import");
 }
 
 async function submitUserImport(event) {
@@ -2113,13 +2218,13 @@ async function submitUserImport(event) {
   const { status, data } = await post("/api/import-users/apply", { users: picked }).catch(() => ({ status: 0, data: {} }));
   if (status !== 200) {
     usersCount();
-    $("users-error").textContent = data.error || "pdms ui is not reachable: is it still running?";
+    $("users-error").textContent = data.error || t("pdms ui is not reachable: is it still running?");
     $("users-error").hidden = false;
     return;
   }
   $("users-dialog").close();
   const unchanged = picked.length - data.added.length - data.updated.length;
-  toast(`${data.added.length} added, ${data.updated.length} updated, ${unchanged} unchanged.`, "info");
+  toast(t("{added} added, {updated} updated, {unchanged} unchanged.", { added: data.added.length, updated: data.updated.length, unchanged }), "info");
   loadSettings();
 }
 
@@ -2148,7 +2253,7 @@ function route() {
 $("logs-close").addEventListener("click", closeLogs);
 $("logs-clear").addEventListener("click", clearLog);
 for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => openLogs(logs.key, tab.dataset.which));
-$("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(`Forgot ${data.forgotten.length} stopped.`, "info")));
+$("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info")));
 $("svc-filter").addEventListener("input", () => state && paintServices());
 $("svc-problems").addEventListener("change", () => state && paintServices());
 $("stack-filter").addEventListener("input", () => state && paintStacks());

@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, events, instances, proxy
+from .. import actions, events, i18n, instances, proxy
 from ..config import Config
 from ..logview import LogFollower
 from . import jobs as ui_jobs
@@ -576,7 +576,13 @@ def make_app() -> tuple[Hub, ui_jobs.Jobs]:
     """The hub and the jobs of one ``pdms ui``: the state carries the jobs, and a job's change refreshes it."""
     hub: Hub
     jobs = ui_jobs.Jobs(lambda: hub.poke())
-    hub = Hub(build=lambda: build_state(jobs=jobs.snapshot()))
+
+    def build() -> dict:
+        state = build_state(jobs=jobs.snapshot())
+        i18n.set_language(state["language"])  # the server's own messages follow a change made in the CLI too
+        return state
+
+    hub = Hub(build=build)
     return hub, jobs
 
 

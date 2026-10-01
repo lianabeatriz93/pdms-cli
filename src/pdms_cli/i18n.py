@@ -32,6 +32,14 @@ def current_language() -> str:
     return _language
 
 
+def configured(lang: str) -> str:
+    """The language in use when the configuration says ``lang``: ``PDMS_LANG`` still wins, as in the CLI."""
+    env = os.environ.get("PDMS_LANG", "")
+    if env in LANGUAGES:
+        return env
+    return lang if lang in LANGUAGES else DEFAULT_LANGUAGE
+
+
 def set_language(lang: str) -> None:
     global _language
     _language = lang if lang in LANGUAGES else DEFAULT_LANGUAGE
