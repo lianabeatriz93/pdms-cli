@@ -10,11 +10,11 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
-from .. import actions, events, instances, proxy, repos, routes, runner
-from ..config import Config, Stack
+from .. import actions, events, i18n, instances, proxy, repos, routes, runner
+from ..config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack, config_path
 from ..i18n import _
 
 PROXY_PORT = 8000  # pdms proxy's --port default
@@ -502,3 +502,114 @@ def forget_stopped() -> list[str]:
     for key in stopped:
         instances.forget(key)
     return stopped
+
+
+# --------------------------------------------------------------------------- settings: databases, users, defaults
+
+
+def settings(cfg: Config) -> dict:
+    """What the Settings tab shows: every database without its password, the users, the defaults and the stacks
+    that use each database or user (they ask again when it is deleted)."""
+    def used_by(kind: str, name: str) -> list[str]:
+        return [stack_name for stack_name, stack in cfg.stacks.items() if getattr(stack, kind) == name]
+
+    return {
+        "path": str(config_path()),
+        "dbs": [
+            {"name": name, **{k: v for k, v in asdict(db).items() if k != "password"},
+             "has_password": bool(db.password), "stacks": used_by("db", name)}
+            for name, db in cfg.dbs.items()
+        ],
+        "users": [{"name": name, **asdict(user), "stacks": used_by("user", name)} for name, user in cfg.users.items()],
+        "defaults": asdict(cfg.defaults),
+        "choices": {"language": i18n.LANGUAGES, "logging_level": list(LOG_LEVELS), "events": list(EVENTS_MODES)},
+    }
+
+
+def _text(body: dict, key: str, default: str = "") -> str:
+    value = body.get(key, default)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise actions.ActionError(f"{key} must be a text")
+    return value
+
+
+def database_from(body: dict, current: Database | None) -> Database:
+    """The database a form sends; a ``password`` left out or null keeps the current one."""
+    password = body.get("password")
+    if password is None:
+        password = current.password if current else ""
+    elif not isinstance(password, str):
+        raise actions.ActionError("password must be a text, or null to keep the current one")
+    return Database(
+        host=_text(body, "host"), port=body.get("port", 5432), database=_text(body, "database"),
+        user=_text(body, "user"), password=password, driver=current.driver if current else Database.driver,
+        protected=body.get("protected") is True,
+    )
+
+
+def save_db(name: str, body: dict, new: bool) -> str:
+    cfg = Config.load()
+    current = None if new else cfg.dbs[actions.require(cfg.dbs, _("database"), name)]
+    return actions.save_db(cfg, name, database_from(body, current), new=new)
+
+
+def remove_db(name: str) -> list[str]:
+    return actions.remove_db(Config.load(), name)
+
+
+def db_password(name: str) -> str:
+    cfg = Config.load()
+    return cfg.dbs[actions.require(cfg.dbs, _("database"), name)].password
+
+
+def connect_db(body: dict) -> str:
+    """Connect to a saved database (only its ``name``) or to the one in a form (its fields; the password of ``name``
+    when the form leaves it out); returns the server version."""
+    cfg = Config.load()
+    name = _text(body, "name")
+    if "host" not in body:
+        return actions.check_connection(cfg.dbs[actions.require(cfg.dbs, _("database"), name)], cfg.defaults.db_timeout)
+    current = cfg.dbs[actions.require(cfg.dbs, _("database"), name)] if name else None
+    return actions.check_connection(actions.valid_db(database_from(body, current)), cfg.defaults.db_timeout)
+
+
+def user_from(body: dict) -> DevUser:
+    return DevUser(**{key: _text(body, key) for key in ("user_id", "username", "first_name", "last_name", "roles")})
+
+
+def save_user(name: str, body: dict, new: bool) -> str:
+    return actions.save_user(Config.load(), name, user_from(body), new=new)
+
+
+def remove_user(name: str) -> list[str]:
+    return actions.remove_user(Config.load(), name)
+
+
+def defaults_from(body: dict, current: Defaults) -> Defaults:
+    """The current defaults with the values the form sends, each of the right kind (the action checks the rest)."""
+    values = asdict(current)
+    for item in fields(Defaults):
+        if item.name not in body:
+            continue
+        value, kind = body[item.name], type(values[item.name])
+        if kind is bool:
+            ok, expected = isinstance(value, bool), "true or false"
+        elif kind is int:
+            ok, expected = isinstance(value, (int, str)) and not isinstance(value, bool), "a number"
+        elif kind is dict:
+            ok, expected = isinstance(value, dict) and all(isinstance(v, str) for v in value.values()), "texts by name"
+        else:
+            ok, expected = isinstance(value, str), "a text"
+        if not ok:
+            raise actions.InvalidValue(item.name, f"must be {expected}")
+        values[item.name] = value
+    return Defaults(**values)
+
+
+def save_defaults(body: dict) -> None:
+    """Save the defaults; the language also applies to this server's messages from now on."""
+    cfg = Config.load()
+    actions.save_defaults(cfg, defaults_from(body, cfg.defaults))
+    i18n.set_language(cfg.defaults.language)

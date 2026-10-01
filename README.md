@@ -246,12 +246,13 @@ pdms ui --no-browser -p 9000
 pdms ui --window           # the same page in a window of its own; closing it stops pdms ui
 ```
 
-A page with the background services, the proxy and the local events, updated live from the same files the CLI
+A page with the background services, the stacks, the proxy, the local events and the settings, updated live from the same files the CLI
 uses, so both can be used at the same time. From the services screen (which also has a row for the local SNS, see
 [SNS](#sns-one-local-topic-for-everything)) you can follow a service's logs live (also the
 previous run's and the install's), open its Swagger docs, stop it, forget the stopped ones, and restart it with the
 same or another user and database: it asks before a protected database and installs only if something changed, like
-`pdms restart`. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
+`pdms restart`. **Start service** starts any service of the current repo (like `pdms run -b`), on the port you choose
+or the next free one. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
 services run, and creates, edits and deletes stacks with a searchable list of the repo's services. The proxy screen
 starts the proxy in the background (like `pdms proxy -b`: it asks for another port when the one you chose is in use)
 and stops it, follows its requests live with where each one went, and opens the log of the local service that served
@@ -261,11 +262,13 @@ started in a terminal shows there too, but its requests stay in that terminal. T
 consumer, shows a queue's messages without consuming them, purges them, and sends events (with the fields of the
 event class filled in, through the broker or straight to the queue) or messages to a queue. It also lists the event
 types with their queues and consumers, and every SNS publish, filtered by topic or text, with its attributes and
-message. Starting single new services comes in a next release.
+message. The settings screen adds, edits, deletes and filters the databases (with a connection test, also for a
+database not saved yet) and the users, like `pdms db` and `pdms user`, and edits the defaults of `pdms config defaults`.
+Deleting a database or a user that a stack uses makes that stack ask for one when it starts.
 
 It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the
-session, which the browser keeps as a cookie. Requests from other web pages are rejected, and database passwords are
-never sent to the page.
+session, which the browser keeps as a cookie. Requests from other web pages are rejected, and a database password
+only reaches the page when you click its eye to show it (in the table it hides again after 30 seconds).
 
 The window (`--window`) uses [pywebview](https://pywebview.flowrl.com/), which comes with the optional `desktop`
 extra: Edge WebView2 on Windows and WebKit on macOS (both part of the system), Qt on Linux (installed with the extra,

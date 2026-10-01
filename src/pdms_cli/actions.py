@@ -667,7 +667,7 @@ def _required(field: str, value: str) -> str:
 
 def _number(field: str, value: int | str, low: int, high: int) -> int:
     try:
-        number = int(value)
+        number = None if isinstance(value, bool) else int(value)
     except (TypeError, ValueError):
         number = None
     if number is None or not low <= number <= high:
@@ -681,13 +681,18 @@ def _one_of(field: str, value: str, choices: Iterable[str]) -> str:
     return value
 
 
-def save_db(cfg: Config, name: str, db: Database, new: bool = False) -> str:
-    """Create (``new``) or replace the database ``name``; returns its alias. The password is stored as given."""
-    name = _alias(cfg.dbs, _("database"), name, new)
-    cfg.dbs[name] = replace(
+def valid_db(db: Database) -> Database:
+    """``db`` with its fields trimmed, or :class:`InvalidValue` for the first wrong one. The password stays as given."""
+    return replace(
         db, host=_required("host", db.host), port=_number("port", db.port, 1, 65535),
         database=_required("database", db.database), user=_required("user", db.user),
     )
+
+
+def save_db(cfg: Config, name: str, db: Database, new: bool = False) -> str:
+    """Create (``new``) or replace the database ``name``; returns its alias."""
+    name = _alias(cfg.dbs, _("database"), name, new)
+    cfg.dbs[name] = valid_db(db)
     cfg.save()
     return name
 

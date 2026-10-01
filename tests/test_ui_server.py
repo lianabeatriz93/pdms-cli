@@ -801,3 +801,106 @@ def test_events_down_stops_the_consumers_and_elasticmq(ui, elasticmq, monkeypatc
     assert post(port, "/api/events/down") == (202, {"job": "events:elasticmq"})
     wait_until(lambda: elasticmq["stopped"] and not jobs.snapshot())
     assert stopped == ["svc@8081"]
+
+
+# --------------------------------------------------------------------------- settings
+
+
+def test_settings_carry_no_password_until_asked_for_one(ui, machine) -> None:
+    port, _hub, _states, _jobs = ui
+    machine.stacks = {"leads": Stack(["lead/a"], user="agent", db="shared")}
+    status, data = get(port, "/api/config")
+    assert status == 200 and "hunter2" not in json.dumps(data)
+    shared = next(db for db in data["dbs"] if db["name"] == "shared")
+    assert shared["has_password"] and shared["protected"] and shared["stacks"] == ["leads"] and "password" not in shared
+    assert data["users"][0] == {
+        "name": "agent", "user_id": "u1", "username": "a@x.com", "first_name": "", "last_name": "", "roles": "",
+        "stacks": ["leads"],
+    }
+    assert data["defaults"]["port"] == 8080 and data["choices"]["events"] == ["auto", "local", "aws"]
+
+    assert post(port, "/api/dbs/shared/password") == (200, {"password": "hunter2"})
+    assert post(port, "/api/dbs/nope/password")[0] == 400
+    response, _raw, _conn = request(port, "/api/dbs/shared/password", {**cookie(port), "Content-Type": "application/json"},
+                                    "POST", b"{}")
+    assert response.status == 403  # not from the page itself
+
+
+def test_save_and_remove_databases(ui, machine) -> None:
+    port, _hub, _states, _jobs = ui
+    form = {"host": "db.example.com", "port": 5433, "database": "pdm", "user": "app", "password": None}
+    assert post(port, "/api/dbs/shared/save", {**form, "protected": True}) == (200, {"name": "shared"})
+    assert machine.dbs["shared"].password == "hunter2" and machine.dbs["shared"].port == 5433  # null keeps it
+    assert post(port, "/api/dbs/shared/save", {**form, "password": ""})[0] == 200
+    assert machine.dbs["shared"].password == "" and not machine.dbs["shared"].protected
+    assert post(port, "/api/dbs/local/save", {**form, "new": True}) == (
+        400, {"error": "That name already exists", "field": "name"})
+    assert post(port, "/api/dbs//save", {**form, "new": True}) == (400, {"error": "Required field", "field": "name"})
+    assert post(port, "/api/dbs/qa/save", {**form, "port": "x", "new": True}) == (
+        400, {"error": "Must be a number between 1 and 65535", "field": "port"})
+    assert post(port, "/api/dbs/qa/save", {**form, "host": ["no"], "new": True}) == (400, {"error": "host must be a text"})
+    assert post(port, "/api/dbs/qa/save", {**form, "new": True}) == (200, {"name": "qa"})
+
+    machine.stacks = {"leads": Stack(["lead/a"], db="qa")}
+    assert post(port, "/api/dbs/qa/remove") == (200, {"stacks": ["leads"]})
+    assert "qa" not in machine.dbs and machine.stacks["leads"].db == ""
+    assert post(port, "/api/dbs/qa/remove")[0] == 400
+
+
+def test_test_a_saved_database_or_the_form(ui, machine, monkeypatch) -> None:
+    port, _hub, _states, _jobs = ui
+    tried = []
+
+    def connect(db, timeout):
+        tried.append((db.host, db.password, timeout))
+        if db.host == "down.example.com":
+            raise OSError("connection refused")
+        return "PostgreSQL 16.4, compiled by gcc"
+
+    monkeypatch.setattr(actions.runner, "test_connection", connect)
+    assert post(port, "/api/dbs/test", {"name": "shared"}) == (200, {"version": "PostgreSQL 16.4"})
+    form = {"host": "other.example.com", "port": 5432, "database": "pdm", "user": "app", "password": None}
+    assert post(port, "/api/dbs/test", {**form, "name": "shared"})[0] == 200  # the saved password, not saved again
+    assert post(port, "/api/dbs/test", {**form, "host": "down.example.com", "name": ""}) == (
+        400, {"error": "connection refused"})
+    assert post(port, "/api/dbs/test", {**form, "user": "", "name": ""}) == (
+        400, {"error": "Required field", "field": "user"})
+    assert tried == [("db.example.com", "hunter2", 15), ("other.example.com", "hunter2", 15),
+                     ("down.example.com", "", 15)]
+    assert machine.dbs["shared"].host == "db.example.com"
+
+
+def test_save_and_remove_users(ui, machine) -> None:
+    port, _hub, _states, _jobs = ui
+    form = {"user_id": " u3 ", "username": "c@x.com", "first_name": "Carla", "last_name": "", "roles": "TPR.Agent"}
+    assert post(port, "/api/users/carla/save", {**form, "new": True}) == (200, {"name": "carla"})
+    assert machine.users["carla"] == DevUser("u3", "c@x.com", "Carla", "", "TPR.Agent")
+    assert post(port, "/api/users/carla/save", {**form, "username": ""}) == (
+        400, {"error": "Required field", "field": "username"})
+    assert post(port, "/api/users/carla/remove") == (200, {"stacks": []})
+    assert post(port, "/api/users/carla/password") == (404, {"error": "not found"})
+
+
+def test_save_defaults_checks_each_kind_and_applies_the_language(ui, machine, monkeypatch) -> None:
+    port, _hub, _states, _jobs = ui
+    languages = []
+    monkeypatch.setattr(ui_jobs.i18n, "set_language", languages.append)
+    assert post(port, "/api/defaults/save", {"reload": "yes"}) == (400, {"error": "must be true or false", "field": "reload"})
+    assert post(port, "/api/defaults/save", {"port": True}) == (400, {"error": "must be a number", "field": "port"})
+    assert post(port, "/api/defaults/save", {"env": {"A": 1}}) == (400, {"error": "must be texts by name", "field": "env"})
+    assert post(port, "/api/defaults/save", {"env": {"BAD NAME": "1"}}) == (
+        400, {"error": "'BAD NAME' is not a valid variable name", "field": "env"})
+    assert post(port, "/api/defaults/save", {"logging_level": "TRACE"})[1]["field"] == "logging_level"
+    assert machine.defaults.reload is True and languages == []
+
+    assert post(port, "/api/defaults/save", {"language": "es", "port": "9000", "reload": False, "env": {"X": "1"}}) == (200, {})
+    assert (machine.defaults.language, machine.defaults.port, machine.defaults.reload) == ("es", 9000, False)
+    assert machine.defaults.env == {"X": "1"} and machine.defaults.host == "0.0.0.0" and languages == ["es"]
+
+
+def test_the_page_has_an_icon(ui) -> None:
+    port, _hub, _states, _jobs = ui
+    response, body, _conn = request(port, "/static/icon.svg", cookie(port))
+    assert response.status == 200 and response.getheader("Content-Type") == "image/svg+xml" and body.startswith(b"<svg")
+    _response, page, _conn = request(port, "/", cookie(port))
+    assert b'<link rel="icon" href="/static/icon.svg"' in page

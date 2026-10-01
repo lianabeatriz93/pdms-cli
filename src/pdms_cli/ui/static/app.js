@@ -188,6 +188,7 @@ function paint(next) {
   paintEvents();
   if (wasUp !== undefined && wasUp !== eventsView.up && currentView() === "events") showEventsTab(eventsView.tab);
   if (logs.key) paintLogTabs();
+  syncSettings();
 }
 
 function connect() {
@@ -1474,9 +1475,435 @@ async function submitSend(event) {
   }
 }
 
+// ---------------------------------------------------------------------------- settings
+
+const REVEAL_FOR = 30000; // a shown password hides again by itself
+const settingsView = {
+  tab: "dbs", data: null, seen: "", revealed: {}, timers: {}, tests: {}, db: null, user: null, passwordTouched: false,
+  protectedTouched: false,
+};
+// [key, label, kind, help]: the rows of the Defaults tab, in the order of pdms config defaults.
+const DEFAULTS = [
+  ["language", "Language", "select", "Of the CLI and of the messages pdms ui gets from it (this page stays in English)."],
+  ["host", "uvicorn host", "text", "Where services listen (0.0.0.0: every interface)."],
+  ["port", "Default port", "number", "The first port tried for a service; the next free one when it is busy."],
+  ["logging_level", "LOGGING_LEVEL", "select", "Passed to every service."],
+  ["reload", "Reload on code changes", "check", "uvicorn --reload."],
+  ["install", "Install dependencies before starting", "check", "poetry lock && poetry install."],
+  ["smart_install", "Smart install", "check", "Skip the install when nothing that affects it changed since the last one."],
+  ["events", "Where services publish SQS events", "select", "auto: the local broker while pdms events up runs; local: always; aws: as each service is configured."],
+  ["events_port", "Local ElasticMQ port", "number", "Host port of the ElasticMQ that pdms events up starts."],
+  ["db_timeout", "Connection test timeout", "number", "Seconds to wait when testing a database."],
+  ["banner", "Show the PDMS banner", "check", "When the interactive menu opens."],
+  ["update_check", "Tell me about new pdms versions", "check", "Checked at most once a day."],
+  ["env", "Extra environment variables", "env", "Injected on every run, after the profile's own."],
+];
+
+function settingsPath(kind, name, verb) {
+  return `/api/${kind}/${encodeURIComponent(name)}/${verb}`;
+}
+
+function matches(text, values) {
+  return !text || values.join(" ").toLowerCase().includes(text);
+}
+
+async function loadSettings() {
+  const { data, error } = await getJson("/api/config");
+  if (error) { toast(error); return; }
+  settingsView.data = data;
+  paintSettings();
+}
+
+// The CLI may change the databases or users while the tab is open: the state's names tell when to load them again.
+function syncSettings() {
+  const seen = JSON.stringify([state.users, state.dbs]);
+  if (seen === settingsView.seen) return;
+  settingsView.seen = seen;
+  if (currentView() === "settings") loadSettings();
+}
+
+function paintSettings() {
+  for (const tab of $("settings-tabs").children) tab.setAttribute("aria-selected", String(tab.dataset.tab === settingsView.tab));
+  for (const name of ["dbs", "users", "defaults"]) $(`settings-${name}`).hidden = name !== settingsView.tab;
+  const data = settingsView.data;
+  if (!data) return;
+  $("settings-summary").textContent = `${data.dbs.length} databases · ${data.users.length} users`;
+  $("settings-path").textContent = data.path;
+  $("settings-path").title = data.path;
+  paintDbs();
+  paintUsers();
+  if (!defaultsChanged()) paintDefaults();
+}
+
+function showSettingsTab(tab) {
+  settingsView.tab = tab;
+  paintSettings();
+}
+
+function eyeButton(shown, onclick) {
+  const label = shown ? "Hide the password" : "Show the password";
+  return button("", onclick, { class: "btn small ghost eye", "aria-label": label, title: label, "aria-pressed": String(shown) });
+}
+
+function usedBy(stacks, what) {
+  if (!stacks.length) return "Only its entry in the configuration goes.";
+  return stacks.length === 1
+    ? `The stack ${stacks[0]} uses it: it will ask for a ${what} when it starts.`
+    : `The stacks ${stacks.join(", ")} use it: they will ask for a ${what} when they start.`;
+}
+
+// ---- databases
+
+function dbRow(db) {
+  const revealed = settingsView.revealed[db.name];
+  const password = el("td");
+  if (!db.has_password) {
+    password.append(el("span", { class: "not-set" }, "not set"));
+  } else {
+    password.append(el("span", { class: "secret-text" }, revealed === undefined ? "••••••••" : revealed));
+    password.append(eyeButton(revealed !== undefined, () => toggleReveal(db.name)));
+  }
+  const test = settingsView.tests[db.name];
+  const connection = el("td", { class: "wrap-detail" });
+  if (test && test.busy) connection.append(el("span", { class: "st starting" }, "testing…"));
+  else if (test && test.ok) connection.append(el("span", { class: "st ok" }, "ok"), " ", el("span", { class: "muted" }, test.text));
+  else if (test) connection.append(el("span", { class: "st stopped" }, "failed"), el("span", { class: "detail" }, test.text));
+  const name = el("td", { class: "mono" }, db.name);
+  if (db.protected) name.append(el("span", { class: "tag protected" }, "protected"));
+  const actionsCell = el("td", { class: "row-actions" },
+    button("Test", () => testDb(db.name), test && test.busy ? { disabled: "" } : {}),
+    button("Edit", () => openDb(db)),
+    button("Delete", () => removeSetting("dbs", db.name, db.stacks), { class: "btn small bad" }),
+  );
+  return el("tr", {}, name, el("td", { class: "mono" }, db.host), el("td", { class: "num" }, String(db.port)),
+    el("td", { class: "mono" }, db.database), el("td", { class: "mono" }, db.user), password, connection, actionsCell);
+}
+
+function paintDbs() {
+  const dbs = settingsView.data.dbs;
+  const text = $("db-filter").value.trim().toLowerCase();
+  const shown = dbs.filter((db) => (!$("db-protected").checked || db.protected)
+    && matches(text, [db.name, db.host, db.port, db.database, db.user]));
+  $("db-rows").replaceChildren(...shown.map(dbRow));
+  $("db-count").textContent = dbs.length ? `${shown.length} of ${dbs.length}` : "";
+  $("db-empty").hidden = shown.length > 0;
+  $("db-empty").textContent = dbs.length ? "No database matches the filter." : "No databases yet. Services need at least one to run.";
+}
+
+async function toggleReveal(name) {
+  clearTimeout(settingsView.timers[name]);
+  if (settingsView.revealed[name] !== undefined) {
+    delete settingsView.revealed[name];
+    paintDbs();
+    return;
+  }
+  await act(settingsPath("dbs", name, "password"), {}, (data) => {
+    settingsView.revealed[name] = data.password;
+    settingsView.timers[name] = setTimeout(() => { delete settingsView.revealed[name]; paintDbs(); }, REVEAL_FOR);
+    paintDbs();
+  });
+}
+
+async function testDb(name) {
+  settingsView.tests[name] = { busy: true };
+  paintDbs();
+  const result = await testConnection({ name });
+  settingsView.tests[name] = result;
+  paintDbs();
+}
+
+async function testConnection(body) {
+  try {
+    const { status, data } = await post("/api/dbs/test", body);
+    return status === 200 ? { ok: true, text: data.version } : { ok: false, text: data.error || `pdms ui answered ${status}`, field: data.field };
+  } catch {
+    return { ok: false, text: "pdms ui is not reachable: is it still running?" };
+  }
+}
+
+async function removeSetting(kind, name, stacks) {
+  const what = kind === "dbs" ? "database" : "user";
+  if (!await confirmDialog(`Delete ${what} ${name}?`, usedBy(stacks, what), "Delete")) return;
+  await act(settingsPath(kind, name, "remove"), {}, () => {
+    delete settingsView.revealed[name];
+    delete settingsView.tests[name];
+    toast(`'${name}' deleted.`, "info");
+    loadSettings();
+  });
+}
+
+// ---- forms of a database and a user
+
+function formError(prefix, data, fallback) {
+  const node = $(`${prefix}-error`);
+  node.textContent = data.error || fallback;
+  node.hidden = false;
+  const input = data.field && $(`${prefix}-${data.field}`);
+  if (input) {
+    input.setAttribute("aria-invalid", "true");
+    input.focus();
+  }
+}
+
+function resetForm(prefix, fields) {
+  $(`${prefix}-error`).hidden = true;
+  for (const field of fields) $(`${prefix}-${field}`).removeAttribute("aria-invalid");
+}
+
+const DB_FIELDS = ["name", "host", "port", "database", "user", "password"];
+const USER_FIELDS = ["name", "username", "first_name", "last_name", "roles", "user_id"];
+
+function showPassword(shown) {
+  $("db-password").type = shown ? "text" : "password";
+  $("db-eye").setAttribute("aria-pressed", String(shown));
+  $("db-eye").setAttribute("aria-label", shown ? "Hide the password" : "Show the password");
+}
+
+function openDb(db = null) {
+  Object.assign(settingsView, { db, passwordTouched: false, protectedTouched: Boolean(db) });
+  $("db-title").textContent = db ? `Edit ${db.name}` : "New database";
+  $("db-name-label").hidden = Boolean(db);
+  $("db-name").required = !db;
+  $("db-name").value = "";
+  $("db-host").value = db ? db.host : "localhost";
+  $("db-port").value = db ? db.port : 5432;
+  $("db-database").value = db ? db.database : "pdm";
+  $("db-user").value = db ? db.user : "";
+  $("db-password").value = "";
+  $("db-password").placeholder = db && db.has_password ? "unchanged" : "";
+  $("db-protected-box").checked = Boolean(db && db.protected);
+  showPassword(false);
+  $("db-tested").hidden = true;
+  resetForm("db", DB_FIELDS);
+  $("db-dialog").showModal();
+  (db ? $("db-host") : $("db-name")).focus();
+}
+
+// The password of a database being edited is left out (kept) unless it was typed or shown.
+function dbBody() {
+  const db = settingsView.db;
+  return {
+    host: $("db-host").value, port: $("db-port").value === "" ? "" : Number($("db-port").value),
+    database: $("db-database").value, user: $("db-user").value, protected: $("db-protected-box").checked,
+    password: db && !settingsView.passwordTouched ? null : $("db-password").value,
+  };
+}
+
+async function toggleDbPassword() {
+  const shown = $("db-eye").getAttribute("aria-pressed") === "true";
+  const db = settingsView.db;
+  if (!shown && db && db.has_password && !settingsView.passwordTouched) {
+    const { status, data } = await post(settingsPath("dbs", db.name, "password")).catch(() => ({ status: 0, data: {} }));
+    if (status !== 200) { formError("db", data, "Could not read the password."); return; }
+    $("db-password").value = data.password;
+    settingsView.passwordTouched = true;
+  }
+  showPassword(!shown);
+}
+
+async function testDbForm() {
+  resetForm("db", DB_FIELDS);
+  $("db-test").disabled = true;
+  $("db-tested").className = "muted";
+  $("db-tested").textContent = "Connecting…";
+  $("db-tested").hidden = false;
+  const result = await testConnection({ ...dbBody(), name: settingsView.db ? settingsView.db.name : "" });
+  $("db-test").disabled = false;
+  $("db-tested").className = result.ok ? "muted" : "error";
+  $("db-tested").textContent = result.ok ? `✓ Connected: ${result.text}` : result.text;
+  if (result.field && $(`db-${result.field}`)) $(`db-${result.field}`).setAttribute("aria-invalid", "true");
+}
+
+async function saveForm(prefix, kind, current, body, fields) {
+  resetForm(prefix, fields);
+  const name = current ? current.name : $(`${prefix}-name`).value.trim();
+  $(`${prefix}-save`).disabled = true;
+  try {
+    const { status, data } = await post(settingsPath(kind, name, "save"), { ...body, new: !current });
+    if (status === 200) {
+      $(`${prefix}-dialog`).close();
+      toast(`'${data.name}' saved.`, "info");
+      delete settingsView.tests[data.name];
+      loadSettings();
+      return;
+    }
+    formError(prefix, data, `pdms ui answered ${status}`);
+  } catch {
+    formError(prefix, {}, "pdms ui is not reachable: is it still running?");
+  } finally {
+    $(`${prefix}-save`).disabled = false;
+  }
+}
+
+function saveDb(event) {
+  event.preventDefault();
+  saveForm("db", "dbs", settingsView.db, dbBody(), DB_FIELDS);
+}
+
+// ---- users
+
+function userRow(user) {
+  return el("tr", {},
+    el("td", { class: "mono" }, user.name), el("td", {}, user.username),
+    el("td", {}, `${user.first_name} ${user.last_name}`.trim() || "-"), el("td", { class: "mono" }, user.roles || "-"),
+    el("td", { class: "mono muted" }, user.user_id),
+    el("td", { class: "row-actions" },
+      button("Edit", () => openUser(user)),
+      button("Delete", () => removeSetting("users", user.name, user.stacks), { class: "btn small bad" })),
+  );
+}
+
+function paintUsers() {
+  const users = settingsView.data.users;
+  const text = $("user-filter").value.trim().toLowerCase();
+  const shown = users.filter((u) => matches(text, [u.name, u.username, u.first_name, u.last_name, u.roles, u.user_id]));
+  $("user-rows").replaceChildren(...shown.map(userRow));
+  $("user-count").textContent = users.length ? `${shown.length} of ${users.length}` : "";
+  $("user-empty").hidden = shown.length > 0;
+  $("user-empty").textContent = users.length ? "No user matches the filter." : "No users yet. Services run as one of them.";
+}
+
+function openUser(user = null) {
+  settingsView.user = user;
+  $("user-title").textContent = user ? `Edit ${user.name}` : "New user";
+  $("user-name-label").hidden = Boolean(user);
+  $("user-name").required = !user;
+  for (const field of USER_FIELDS) $(`user-${field}`).value = user && field !== "name" ? user[field] : "";
+  resetForm("user", USER_FIELDS);
+  $("user-dialog").showModal();
+  (user ? $("user-username") : $("user-name")).focus();
+}
+
+function saveUser(event) {
+  event.preventDefault();
+  const body = Object.fromEntries(USER_FIELDS.filter((f) => f !== "name").map((f) => [f, $(`user-${f}`).value]));
+  saveForm("user", "users", settingsView.user, body, USER_FIELDS);
+}
+
+// ---- defaults
+
+function settingInput(key, kind, value) {
+  const id = `default-${key}`;
+  if (kind === "check") {
+    const box = el("input", { type: "checkbox", id });
+    box.checked = Boolean(value);
+    return box;
+  }
+  if (kind === "select") {
+    const select = el("select", { id });
+    const choices = settingsView.data.choices[key];
+    const names = Array.isArray(choices) ? Object.fromEntries(choices.map((c) => [c, c])) : choices;
+    options(select, Object.keys(names), value, (code) => names[code]);
+    return select;
+  }
+  if (kind === "env") {
+    const rows = el("div", { class: "env-rows", id });
+    for (const [name, text] of Object.entries(value)) rows.append(envRow(name, text));
+    rows.append(button("Add variable", () => { rows.lastChild.before(envRow("", "")); defaultsChanged(); rows.lastChild.previousSibling.firstChild.focus(); }));
+    return rows;
+  }
+  return el("input", kind === "number" ? { type: "number", id, min: "1", value: String(value) } : { id, value });
+}
+
+function envRow(name, value) {
+  const row = el("div", { class: "env-row" },
+    el("input", { value: name, placeholder: "NAME", "aria-label": "Variable name", spellcheck: "false" }),
+    el("input", { value, placeholder: "value", "aria-label": "Value", spellcheck: "false" }));
+  row.append(button("Remove", () => { row.remove(); defaultsChanged(); }, { class: "btn small ghost" }));
+  return row;
+}
+
+function paintDefaults() {
+  const values = settingsView.data.defaults;
+  $("defaults-form").replaceChildren(...DEFAULTS.map(([key, label, kind, help]) => {
+    const what = el("div", { class: "what" }, el("span", {}, el("b", {}, label), el("code", {}, key)), el("small", {}, help));
+    const row = el(kind === "env" ? "div" : "label", { class: "setting", "data-key": key, "data-search": `${key} ${label} ${help}`.toLowerCase() },
+      what, settingInput(key, kind, values[key]));
+    if (kind !== "env") row.setAttribute("for", `default-${key}`);
+    return row;
+  }));
+  $("defaults-error").hidden = true;
+  filterDefaults();
+  defaultsChanged();
+}
+
+function envValues() {
+  const env = {};
+  for (const row of $("default-env").querySelectorAll(".env-row")) {
+    const [name, value] = row.querySelectorAll("input");
+    if (name.value.trim() || value.value) env[name.value.trim()] = value.value;
+  }
+  return env;
+}
+
+function defaultsValues() {
+  const values = {};
+  for (const [key, , kind] of DEFAULTS) {
+    const input = $(`default-${key}`);
+    if (!input) return null;
+    values[key] = kind === "check" ? input.checked : kind === "env" ? envValues() : input.value;
+  }
+  return values;
+}
+
+// Marks the changed rows; true when something differs from what is saved.
+function defaultsChanged() {
+  const values = settingsView.data && defaultsValues();
+  if (!values) return false;
+  const saved = settingsView.data.defaults;
+  let changed = false;
+  for (const [key] of DEFAULTS) {
+    const differs = JSON.stringify(key === "env" ? values[key] : String(values[key])) !== JSON.stringify(key === "env" ? saved[key] : String(saved[key]));
+    document.querySelector(`.setting[data-key="${key}"]`).classList.toggle("changed", differs);
+    changed ||= differs;
+  }
+  $("default-smart_install").disabled = !$("default-install").checked;
+  $("defaults-save").disabled = $("defaults-discard").disabled = !changed;
+  return changed;
+}
+
+function filterDefaults() {
+  const text = $("defaults-filter").value.trim().toLowerCase();
+  let shown = 0;
+  for (const row of $("defaults-form").children) {
+    row.hidden = Boolean(text) && !row.dataset.search.includes(text);
+    shown += row.hidden ? 0 : 1;
+  }
+  $("defaults-count").textContent = text ? `${shown} of ${DEFAULTS.length}` : "";
+  $("defaults-none").hidden = shown > 0;
+  $("defaults-form").hidden = shown === 0;
+}
+
+async function saveDefaults() {
+  $("defaults-error").hidden = true;
+  for (const input of $("defaults-form").querySelectorAll("[aria-invalid]")) input.removeAttribute("aria-invalid");
+  $("defaults-save").disabled = true;
+  try {
+    const { status, data } = await post("/api/defaults/save", defaultsValues());
+    if (status === 200) {
+      toast("Defaults saved.", "info");
+      await loadSettings();
+      paintDefaults();
+      return;
+    }
+    $("defaults-error").textContent = data.field ? `${data.field}: ${data.error}` : data.error || `pdms ui answered ${status}`;
+    $("defaults-error").hidden = false;
+    const input = data.field && $(`default-${data.field}`);
+    if (input) {
+      input.setAttribute("aria-invalid", "true");
+      input.closest(".setting").hidden = false;
+      (input.querySelector("input") || input).focus();
+    }
+  } catch {
+    toast("pdms ui is not reachable: is it still running?");
+  } finally {
+    defaultsChanged();
+  }
+}
+
 // ---------------------------------------------------------------------------- views
 
-const VIEWS = ["services", "stacks", "proxy", "events"];
+const VIEWS = ["services", "stacks", "proxy", "events", "settings"];
 
 function currentView() {
   const view = location.hash.slice(1);
@@ -1491,6 +1918,7 @@ function route() {
   paintProxy();
   paintEvents();
   if (view === "events") showEventsTab(eventsView.tab);
+  if (view === "settings") loadSettings();
 }
 
 // ---------------------------------------------------------------------------- wiring
@@ -1549,6 +1977,33 @@ setInterval(() => { if (eventsVisible("queues") && state && state.events.up) loa
 window.addEventListener("hashchange", route);
 route();
 $("restart-cancel").addEventListener("click", () => $("restart").close());
+for (const tab of $("settings-tabs").children) tab.addEventListener("click", () => showSettingsTab(tab.dataset.tab));
+$("db-filter").addEventListener("input", paintDbs);
+$("db-protected").addEventListener("change", paintDbs);
+$("db-new").addEventListener("click", () => openDb());
+$("db-form").addEventListener("submit", saveDb);
+$("db-cancel").addEventListener("click", () => $("db-dialog").close());
+$("db-test").addEventListener("click", testDbForm);
+$("db-eye").addEventListener("click", toggleDbPassword);
+$("db-password").addEventListener("input", () => { settingsView.passwordTouched = true; });
+$("db-protected-box").addEventListener("change", () => { settingsView.protectedTouched = true; });
+// Like pdms db add: a database that is not on this machine is protected unless said otherwise.
+$("db-host").addEventListener("input", () => {
+  if (!settingsView.protectedTouched) $("db-protected-box").checked = !["localhost", "127.0.0.1", ""].includes($("db-host").value.trim());
+});
+for (const form of ["db-form", "user-form"]) {
+  $(form).addEventListener("input", (event) => event.target.removeAttribute("aria-invalid"));
+}
+$("user-filter").addEventListener("input", paintUsers);
+$("user-new").addEventListener("click", () => openUser());
+$("user-form").addEventListener("submit", saveUser);
+$("user-cancel").addEventListener("click", () => $("user-dialog").close());
+$("defaults-filter").addEventListener("input", filterDefaults);
+$("defaults-form").addEventListener("input", defaultsChanged);
+$("defaults-form").addEventListener("change", defaultsChanged);
+$("defaults-form").addEventListener("submit", (event) => { event.preventDefault(); if (defaultsChanged()) saveDefaults(); });
+$("defaults-save").addEventListener("click", saveDefaults);
+$("defaults-discard").addEventListener("click", paintDefaults);
 $("restart-db").addEventListener("change", resetConfirmation);
 
 fetch("/api/state").then((response) => response.json()).then(paint).finally(connect);

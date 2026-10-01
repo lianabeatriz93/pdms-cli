@@ -225,7 +225,7 @@ def test_save_db_checks_every_field_and_the_alias(cfg) -> None:
         actions.save_db(cfg, "nope", Database("localhost", user="pdm"))  # editing one that does not exist
     for db, field in [
         (Database(" ", user="pdm"), "host"), (Database("h", user=""), "user"), (Database("h", database="", user="pdm"),
-         "database"), (Database("h", port=70000, user="pdm"), "port"), (Database("h", port="x", user="pdm"), "port"),
+         "database"), (Database("h", port=70000, user="pdm"), "port"), (Database("h", port="x", user="pdm"), "port"), (Database("h", port=True, user="pdm"), "port"),
     ]:
         with pytest.raises(actions.InvalidValue) as invalid:
             actions.save_db(cfg, "new", db, new=True)
