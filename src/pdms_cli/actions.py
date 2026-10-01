@@ -12,14 +12,16 @@ import json
 import os
 import subprocess
 import re
+import shutil
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
+from datetime import datetime
 from pathlib import Path
 from typing import IO
 
-from . import events, installer, instances, proxy, repos, routes, runner, userimport
-from .config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack
+from . import events, installer, instances, proxy, repos, routes, runner, transfer, userimport
+from .config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack, config_path
 from .i18n import LANGUAGES, _
 
 
@@ -717,12 +719,31 @@ def check_connection(db: Database, timeout: int) -> str:
         raise ActionError(str(exc).strip() or type(exc).__name__) from exc
 
 
-def save_user(cfg: Config, name: str, user: DevUser, new: bool = False) -> str:
-    """Create (``new``) or replace the development user ``name``; returns its alias."""
+def known_roles(cfg: Config) -> list[str]:
+    """The ``DEV_ROLES`` the services of the current repo understand (its ``MAP_INTERNAL_ROLES``)."""
+    mapping, _source = userimport.role_mapping(repos.active_root(cfg))
+    return list(dict.fromkeys(mapping.values()))
+
+
+def split_roles(roles: str) -> list[str]:
+    return list(dict.fromkeys(role.strip() for role in roles.split(",") if role.strip()))
+
+
+def save_user(cfg: Config, name: str, user: DevUser, new: bool = False, roles: Iterable[str] | None = None) -> str:
+    """Create (``new``) or replace the development user ``name``; returns its alias.
+
+    With ``roles``, every role must be one of them, except the ones the user already had (an import keeps the roles
+    the repo does not know, and editing the user must not fail because of them)."""
     name = _alias(cfg.users, _("user"), name, new)
+    picked = split_roles(user.roles)
+    if roles is not None:
+        allowed = set(roles) | set(split_roles(cfg.users[name].roles) if name in cfg.users else [])
+        if unknown := [role for role in picked if role not in allowed]:
+            raise InvalidValue("roles", _("Unknown roles: {roles}. Available: {available}",
+                                          roles=", ".join(unknown), available=", ".join(roles)))
     cfg.users[name] = DevUser(
         user_id=_required("user_id", user.user_id), username=_required("username", user.username),
-        first_name=user.first_name.strip(), last_name=user.last_name.strip(), roles=user.roles.strip(),
+        first_name=user.first_name.strip(), last_name=user.last_name.strip(), roles=",".join(picked),
     )
     cfg.save()
     return name
@@ -763,6 +784,38 @@ def import_users(
     cfg.users, added, updated = userimport.merge_users(cfg.users, picked, mapping)
     cfg.save()
     return added, updated
+
+
+def export_config(cfg: Config, sections: list[str], secrets: bool) -> str:
+    """The TOML of ``pdms config export`` with those sections; database passwords only with ``secrets``."""
+    if unknown := [section for section in sections if section not in transfer.SECTIONS]:
+        raise ActionError(_("Unknown sections: {unknown}. Available: {codes}",
+                            unknown=", ".join(unknown), codes=", ".join(transfer.SECTIONS)))
+    if not sections:
+        raise ActionError(_("Nothing selected."))
+    return transfer.export_document(cfg, [section for section in transfer.SECTIONS if section in sections], secrets)
+
+
+def read_export(text: str) -> transfer.Document:
+    try:
+        return transfer.read_document(text)
+    except transfer.TransferError as exc:
+        raise ActionError(str(exc)) from exc
+
+
+def first_setup() -> bool:
+    """No configuration file yet: an import has nothing of the user's own to keep."""
+    return not config_path().exists()
+
+
+def import_config(result: Config) -> Path | None:
+    """Save an imported configuration (``transfer.apply_import``), keeping a copy of the previous file; returns it."""
+    backup = None
+    if config_path().exists():
+        backup = config_path().with_name(f"{config_path().name}.bak-{datetime.now():%Y%m%d-%H%M%S}")
+        shutil.copy2(config_path(), backup)
+    result.save()
+    return backup
 
 
 def save_defaults(cfg: Config, defaults: Defaults) -> None:

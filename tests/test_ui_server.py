@@ -904,3 +904,76 @@ def test_the_page_has_an_icon(ui) -> None:
     assert response.status == 200 and response.getheader("Content-Type") == "image/svg+xml" and body.startswith(b"<svg")
     _response, page, _conn = request(port, "/", cookie(port))
     assert b'<link rel="icon" href="/static/icon.svg"' in page
+
+
+def test_user_roles_must_be_roles_of_the_repo(ui, machine, monkeypatch) -> None:
+    port, _hub, _states, _jobs = ui
+    monkeypatch.setattr(ui_jobs.actions, "known_roles", lambda cfg: ["TPR.Agent", "TPR.Supervisor"])
+    assert get(port, "/api/config")[1]["roles"] == ["TPR.Agent", "TPR.Supervisor"]
+    form = {"user_id": "u3", "username": "c@x.com", "roles": "TPR.Agent,Boss", "new": True}
+    assert post(port, "/api/users/carla/save", form) == (
+        400, {"error": "Unknown roles: Boss. Available: TPR.Agent, TPR.Supervisor", "field": "roles"})
+    machine.users["boss"].roles = "Legacy.Role"  # an import kept a role the repo does not know
+    assert post(port, "/api/users/boss/save", {"user_id": "u2", "username": "b@x.com",
+                                              "roles": "Legacy.Role, TPR.Supervisor"})[0] == 200
+    assert machine.users["boss"].roles == "Legacy.Role,TPR.Supervisor"
+
+
+def test_export_and_import_the_settings(ui, machine, monkeypatch, tmp_path) -> None:
+    port, _hub, _states, _jobs = ui
+    monkeypatch.setenv("PDMS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "config.toml").write_text("", encoding="utf-8")  # not a first setup
+    status, exported = post(port, "/api/config/export", {"sections": ["dbs", "users"], "secrets": False})
+    assert status == 200 and exported["filename"].endswith(".toml") and "hunter2" not in exported["text"]
+    assert "hunter2" in post(port, "/api/config/export", {"sections": ["dbs"], "secrets": True})[1]["text"]
+    assert post(port, "/api/config/export", {"sections": []}) == (400, {"error": "Nothing selected."})
+    assert post(port, "/api/config/export", {"sections": ["repos"]})[0] == 400
+
+    from pdms_cli import transfer
+    theirs = Config(users={"agent": DevUser("u1", "other@x.com"), "carla": DevUser("u3", "c@x.com")},
+                    dbs={"shared": Database("db.example.com", protected=True)})
+    text = transfer.export_document(theirs, ["users", "dbs"], secrets=False)
+    status, plan = post(port, "/api/config/import/plan", {"text": text})
+    assert status == 200 and plan["sections"] == ["users", "dbs"] and plan["first_setup"] is False
+    users = next(item for item in plan["plans"] if item["section"] == "users")
+    assert (users["added"], users["changed"], users["missing"]) == (["carla"], ["agent"], ["boss"])
+    assert next(item for item in plan["plans"] if item["section"] == "dbs")["same"] == ["shared"]  # keeps the password
+    assert post(port, "/api/config/import/plan", {"text": "not = [toml"})[0] == 400
+
+    saved = []
+    monkeypatch.setattr(ui_jobs.actions, "import_config", lambda result: saved.append(result) or tmp_path / "bak")
+    monkeypatch.setattr(ui_jobs.i18n, "set_language", lambda lang: None)
+    assert post(port, "/api/config/import/apply", {"text": text, "sections": ["users"], "overwrite": []}) == (
+        200, {"changed": True, "backup": str(tmp_path / "bak"), "no_password": ["local"]})
+    assert saved[-1].users["agent"].username == "a@x.com" and "carla" in saved[-1].users  # mine kept, new added
+    post(port, "/api/config/import/apply", {"text": text, "sections": ["users"], "overwrite": [["users", "agent"]]})
+    assert saved[-1].users["agent"].username == "other@x.com" and "boss" in saved[-1].users
+    post(port, "/api/config/import/apply", {"text": text, "sections": ["users"], "replace": True})
+    assert sorted(saved[-1].users) == ["agent", "carla"]
+    assert post(port, "/api/config/import/apply", {"text": text, "sections": ["dbs"]}) == (
+        200, {"changed": False, "backup": None, "no_password": []})
+    assert post(port, "/api/config/import/apply", {"text": text, "sections": ["users"], "overwrite": ["x"]})[0] == 400
+
+
+def test_import_users_from_a_database(ui, machine, monkeypatch) -> None:
+    port, _hub, _states, _jobs = ui
+    from pdms_cli.userimport import DbUser
+
+    asked = []
+
+    def fetch(db, **kwargs):
+        asked.append((db.host, kwargs["search"], kwargs["role"], kwargs["include_inactive"]))
+        return [DbUser("u1", "a@x.com", "Ana", "Gent", ["TRANSPORTATION_PR_AGENT"], True),
+                DbUser("u9", "n@x.com", "New", "One", ["TRANSPORTATION_PR_SUPERVISOR", "WEIRD"], False)]
+
+    monkeypatch.setattr(actions.userimport, "fetch_users", fetch)
+    status, data = post(port, "/api/import-users/search", {"db": "shared", "search": " ana ", "role": "TPR.Agent",
+                                                           "inactive": True})
+    assert status == 200 and asked == [("db.example.com", "ana", "TRANSPORTATION_PR_AGENT", True)]
+    assert [(u["imported_as"], u["dev_roles"], u["unknown_roles"]) for u in data["users"]] == [
+        ("agent", "TPR.Agent", []), ("", "TPR.Supervisor,WEIRD", ["WEIRD"])]
+    assert post(port, "/api/import-users/search", {"db": "nope"})[0] == 400
+
+    assert post(port, "/api/import-users/apply", {"users": data["users"]}) == (200, {"added": ["n"], "updated": ["agent"]})
+    assert machine.users["n"].roles == "TPR.Supervisor,WEIRD" and machine.users["agent"].first_name == "Ana"
+    assert post(port, "/api/import-users/apply", {"users": []}) == (400, {"error": "Nothing selected."})

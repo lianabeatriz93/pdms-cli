@@ -32,5 +32,6 @@ def open_window(url: str) -> None:
     import webview
 
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True  # Docs and /docs open in the browser, not here
+    webview.settings["ALLOW_DOWNLOADS"] = True  # Settings → Export… downloads a file
     webview.create_window(TITLE, url, width=SIZE[0], height=SIZE[1], min_size=MIN_SIZE, text_select=True)
     webview.start(gui="qt" if sys.platform.startswith("linux") else None)

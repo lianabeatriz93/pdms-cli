@@ -50,7 +50,7 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
 }
-MAX_BODY = 64 * 1024
+MAX_BODY = 1024 * 1024  # an imported configuration travels in the body
 LOG_LINES = 200
 MAX_LOG_LINES = 20000  # the local SNS log: a publish takes a line per line of its JSON
 LOG_POLL = 0.25
@@ -431,6 +431,13 @@ def make_handler(
                 return 200, {}
             if path == "/api/dbs/test":
                 return 200, {"version": ui_jobs.connect_db(body)}
+            settings_actions = {
+                "/api/config/export": ui_jobs.export_config, "/api/config/import/plan": ui_jobs.plan_import,
+                "/api/config/import/apply": ui_jobs.apply_import, "/api/import-users/search": ui_jobs.db_users,
+                "/api/import-users/apply": ui_jobs.import_db_users,
+            }
+            if path in settings_actions:
+                return 200, settings_actions[path](body)
             parts = path.split("/")
             if len(parts) == 5 and parts[:2] == ["", "api"] and parts[2] in ("dbs", "users"):
                 return self.act_on_setting(parts[2], unquote(parts[3]), parts[4], body)

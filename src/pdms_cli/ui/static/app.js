@@ -1652,6 +1652,7 @@ function resetForm(prefix, fields) {
 
 const DB_FIELDS = ["name", "host", "port", "database", "user", "password"];
 const USER_FIELDS = ["name", "username", "first_name", "last_name", "roles", "user_id"];
+const USER_TEXTS = USER_FIELDS.filter((field) => field !== "roles");
 
 function showPassword(shown) {
   $("db-password").type = shown ? "text" : "password";
@@ -1768,15 +1769,36 @@ function openUser(user = null) {
   $("user-title").textContent = user ? `Edit ${user.name}` : "New user";
   $("user-name-label").hidden = Boolean(user);
   $("user-name").required = !user;
-  for (const field of USER_FIELDS) $(`user-${field}`).value = user && field !== "name" ? user[field] : "";
+  for (const field of USER_TEXTS) $(`user-${field}`).value = user && field !== "name" ? user[field] : "";
+  paintRoles(user ? user.roles : "");
   resetForm("user", USER_FIELDS);
   $("user-dialog").showModal();
   (user ? $("user-username") : $("user-name")).focus();
 }
 
+function splitRoles(roles) {
+  return [...new Set(roles.split(",").map((role) => role.trim()).filter(Boolean))];
+}
+
+// The repo's roles to tick; a role of the user the repo does not know shows too (ticked), so editing keeps it.
+function paintRoles(current) {
+  const mine = splitRoles(current);
+  const known = settingsView.data.roles;
+  const box = (role, extra) => {
+    const input = el("input", { type: "checkbox", value: role });
+    input.checked = mine.includes(role);
+    return el("label", { class: "inline" }, input, role, ...extra);
+  };
+  $("user-roles").replaceChildren(
+    ...known.map((role) => box(role, [])),
+    ...mine.filter((role) => !known.includes(role)).map((role) => box(role, [el("span", { class: "tag" }, "not a role of this repo")])),
+  );
+}
+
 function saveUser(event) {
   event.preventDefault();
-  const body = Object.fromEntries(USER_FIELDS.filter((f) => f !== "name").map((f) => [f, $(`user-${f}`).value]));
+  const body = Object.fromEntries(USER_TEXTS.filter((f) => f !== "name").map((f) => [f, $(`user-${f}`).value]));
+  body.roles = [...$("user-roles").querySelectorAll("input:checked")].map((input) => input.value).join(",");
   saveForm("user", "users", settingsView.user, body, USER_FIELDS);
 }
 
@@ -1901,6 +1923,206 @@ async function saveDefaults() {
   }
 }
 
+
+// ---- export and import of the settings (pdms config export / import)
+
+const SECTION_LABELS = { defaults: "Defaults", users: "Users", dbs: "Databases", stacks: "Stacks" };
+const importing = { name: "", text: "", plan: null };
+
+function sectionBoxes(container, sections, onchange = null) {
+  container.replaceChildren(...sections.map((section) => {
+    const input = el("input", { type: "checkbox", value: section });
+    input.checked = true;
+    if (onchange) input.addEventListener("change", onchange);
+    return el("label", { class: "inline" }, input, SECTION_LABELS[section] || section);
+  }));
+}
+
+function checkedValues(container) {
+  return [...container.querySelectorAll("input:checked")].map((input) => input.value);
+}
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/toml" }));
+  const link = el("a", { href: url, download: name });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function openExport() {
+  sectionBoxes($("export-sections"), settingsView.data.sections);
+  $("export-secrets").checked = false;
+  $("export-warn").hidden = $("export-error").hidden = true;
+  $("export-dialog").showModal();
+}
+
+async function submitExport(event) {
+  event.preventDefault();
+  const body = { sections: checkedValues($("export-sections")), secrets: $("export-secrets").checked };
+  const { status, data } = await post("/api/config/export", body).catch(() => ({ status: 0, data: {} }));
+  if (status !== 200) {
+    $("export-error").textContent = data.error || "pdms ui is not reachable: is it still running?";
+    $("export-error").hidden = false;
+    return;
+  }
+  download(data.filename, data.text);
+  $("export-dialog").close();
+  toast(`Exported to ${data.filename}${body.secrets ? ", with the passwords: keep it private." : "."}`, "info");
+}
+
+async function readImport() {
+  const file = $("import-file").files[0];
+  $("import-file").value = ""; // the same file can be picked again
+  if (!file) return;
+  const text = await file.text();
+  const { status, data } = await post("/api/config/import/plan", { text }).catch(() => ({ status: 0, data: {} }));
+  if (status !== 200) { toast(data.error || "pdms ui is not reachable: is it still running?"); return; }
+  Object.assign(importing, { name: file.name, text, plan: data });
+  $("import-name").textContent = file.name;
+  const meta = data.meta;
+  $("import-meta").textContent = `Exported on ${meta.exported_at || "?"} by pdms ${meta.cli_version || "?"}.`;
+  sectionBoxes($("import-sections"), data.sections, paintImport);
+  $("import-form").mode.value = "merge";
+  $("import-conflicts").replaceChildren();
+  $("import-error").hidden = true;
+  paintImport();
+  $("import-dialog").showModal();
+}
+
+function paintImport() {
+  const plan = importing.plan;
+  const sections = checkedValues($("import-sections"));
+  const replace = $("import-form").mode.value === "replace";
+  const plans = plan.plans.filter((item) => sections.includes(item.section));
+  const list = (names) => names.join(", ") || "-";
+  $("import-missing-head").textContent = replace ? "Removed" : "Only mine";
+  $("import-rows").replaceChildren(...plans.map((item) => el("tr", {},
+    el("td", {}, SECTION_LABELS[item.section]), el("td", {}, list(item.added)), el("td", {}, list(item.changed)),
+    el("td", { class: "muted" }, list(item.same)), el("td", replace && item.missing.length ? { class: "code-bad" } : { class: "muted" }, list(item.missing)))));
+  const conflicts = plans.flatMap((item) => item.changed.map((name) => [item.section, name]));
+  const before = new Set(checkedValues($("import-conflicts")));
+  $("import-conflicts").replaceChildren(...conflicts.map(([section, name]) => {
+    const value = `${section}\n${name}`;
+    const input = el("input", { type: "checkbox", value });
+    input.checked = plan.first_setup || before.has(value);
+    if (plan.first_setup) input.disabled = true;
+    return el("label", { class: "pick" }, input, section === "defaults" ? "Defaults" : `${SECTION_LABELS[section]}: ${name}`);
+  }));
+  $("import-conflicts-box").hidden = replace || !conflicts.length;
+  const notes = [];
+  if (plan.first_setup) notes.push("There is no configuration of yours yet: everything in the file is taken.");
+  if (!plan.meta.secrets && sections.includes("dbs")) notes.push("The file has no passwords: the databases you already have keep theirs.");
+  $("import-note").textContent = notes.join(" ");
+  $("import-note").hidden = !notes.length;
+  const removed = plans.reduce((total, item) => total + item.missing.length, 0);
+  $("import-warn").textContent = `Replacing deletes ${removed} of your entries that are not in the file.`;
+  $("import-warn").hidden = !replace || !removed;
+  $("import-go").disabled = !sections.length;
+}
+
+async function submitImport(event) {
+  event.preventDefault();
+  const body = {
+    text: importing.text, sections: checkedValues($("import-sections")), replace: $("import-form").mode.value === "replace",
+    overwrite: checkedValues($("import-conflicts")).map((value) => value.split("\n")),
+  };
+  $("import-go").disabled = true;
+  const { status, data } = await post("/api/config/import/apply", body).catch(() => ({ status: 0, data: {} }));
+  $("import-go").disabled = false;
+  if (status !== 200) {
+    $("import-error").textContent = data.error || "pdms ui is not reachable: is it still running?";
+    $("import-error").hidden = false;
+    return;
+  }
+  $("import-dialog").close();
+  if (!data.changed) { toast("Nothing changes.", "info"); return; }
+  toast(data.backup ? `Settings imported. The previous ones were saved to ${data.backup}.` : "Settings imported.", "info");
+  if (data.no_password.length) toast(`Databases without a password: ${data.no_password.join(", ")}. Edit them to set it.`);
+  await loadSettings();
+  paintDefaults();
+}
+
+// ---- users from a database (pdms user import)
+
+const userImport = { users: [] };
+
+function openUserImport() {
+  const dbs = settingsView.data.dbs.map((db) => db.name);
+  if (!dbs.length) { toast("Add a database first: the users come from its pdms_user table."); return; }
+  options($("users-db"), dbs, dbs.includes(state.db) ? state.db : dbs[0], dbLabel);
+  options($("users-role"), ["", ...settingsView.data.roles], "", (role) => role || "any role");
+  $("users-search").value = "";
+  $("users-inactive").checked = false;
+  userImport.users = [];
+  $("users-picker").hidden = $("users-note").hidden = $("users-error").hidden = true;
+  usersCount();
+  $("users-dialog").showModal();
+  $("users-search").focus();
+}
+
+async function findDbUsers() {
+  const body = { db: $("users-db").value, search: $("users-search").value, role: $("users-role").value, inactive: $("users-inactive").checked };
+  $("users-find").disabled = true;
+  $("users-error").hidden = true;
+  $("users-note").textContent = `Reading the users of ${body.db}…`;
+  $("users-note").hidden = false;
+  const { status, data } = await post("/api/import-users/search", body).catch(() => ({ status: 0, data: {} }));
+  $("users-find").disabled = false;
+  if (status !== 200) {
+    $("users-note").hidden = true;
+    $("users-error").textContent = data.error || "pdms ui is not reachable: is it still running?";
+    $("users-error").hidden = false;
+    return;
+  }
+  userImport.users = data.users;
+  const notes = [data.users.length ? `${data.users.length} found.` : "No user matches."];
+  if (data.limited) notes.push("Only the first ones: narrow it down with the search or the role.");
+  if (data.source === "built-in") notes.push("The roles of the current repo could not be read: pdms's own copy maps them.");
+  $("users-note").textContent = notes.join(" ");
+  $("users-found").replaceChildren(...data.users.map((user, index) => {
+    const input = el("input", { type: "checkbox", value: String(index) });
+    input.checked = !user.imported_as;
+    const tags = [];
+    if (user.imported_as) tags.push(`already imported as ${user.imported_as}`);
+    if (user.is_active === false) tags.push("inactive");
+    if (user.unknown_roles.length) tags.push(`unknown roles kept: ${user.unknown_roles.join(", ")}`);
+    return el("label", { class: "pick" }, input,
+      el("span", { class: "who" }, `${user.first_name} ${user.last_name}`.trim() || user.username, " ",
+        el("span", { class: "muted" }, `<${user.username}>`), el("br"), el("span", { class: "roles" }, user.dev_roles || "no roles")),
+      el("span", { class: "muted" }, tags.join(" · ")));
+  }));
+  $("users-picker").hidden = !data.users.length;
+  usersCount();
+}
+
+function usersCount() {
+  const boxes = [...$("users-found").querySelectorAll("input")];
+  const picked = boxes.filter((box) => box.checked).length;
+  $("users-count").textContent = `${picked} of ${boxes.length} selected`;
+  $("users-all").checked = boxes.length > 0 && picked === boxes.length;
+  $("users-go").disabled = picked === 0;
+  $("users-go").textContent = picked ? `Import ${picked}` : "Import";
+}
+
+async function submitUserImport(event) {
+  event.preventDefault();
+  const picked = [...$("users-found").querySelectorAll("input:checked")].map((box) => userImport.users[Number(box.value)]);
+  $("users-go").disabled = true;
+  const { status, data } = await post("/api/import-users/apply", { users: picked }).catch(() => ({ status: 0, data: {} }));
+  if (status !== 200) {
+    usersCount();
+    $("users-error").textContent = data.error || "pdms ui is not reachable: is it still running?";
+    $("users-error").hidden = false;
+    return;
+  }
+  $("users-dialog").close();
+  const unchanged = picked.length - data.added.length - data.updated.length;
+  toast(`${data.added.length} added, ${data.updated.length} updated, ${unchanged} unchanged.`, "info");
+  loadSettings();
+}
+
 // ---------------------------------------------------------------------------- views
 
 const VIEWS = ["services", "stacks", "proxy", "events", "settings"];
@@ -2004,6 +2226,25 @@ $("defaults-form").addEventListener("change", defaultsChanged);
 $("defaults-form").addEventListener("submit", (event) => { event.preventDefault(); if (defaultsChanged()) saveDefaults(); });
 $("defaults-save").addEventListener("click", saveDefaults);
 $("defaults-discard").addEventListener("click", paintDefaults);
+$("settings-export").addEventListener("click", () => settingsView.data && openExport());
+$("export-secrets").addEventListener("change", () => { $("export-warn").hidden = !$("export-secrets").checked; });
+$("export-form").addEventListener("submit", submitExport);
+$("export-cancel").addEventListener("click", () => $("export-dialog").close());
+$("settings-import").addEventListener("click", () => $("import-file").click());
+$("import-file").addEventListener("change", readImport);
+$("import-form").addEventListener("change", (event) => { if (event.target.name === "mode") paintImport(); });
+$("import-form").addEventListener("submit", submitImport);
+$("import-cancel").addEventListener("click", () => $("import-dialog").close());
+$("user-import").addEventListener("click", () => settingsView.data && openUserImport());
+$("users-find").addEventListener("click", findDbUsers);
+$("users-search").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); findDbUsers(); } });
+$("users-found").addEventListener("change", usersCount);
+$("users-all").addEventListener("change", () => {
+  for (const box of $("users-found").querySelectorAll("input")) box.checked = $("users-all").checked;
+  usersCount();
+});
+$("users-form").addEventListener("submit", submitUserImport);
+$("users-cancel").addEventListener("click", () => $("users-dialog").close());
 $("restart-db").addEventListener("change", resetConfirmation);
 
 fetch("/api/state").then((response) => response.json()).then(paint).finally(connect);

@@ -201,6 +201,11 @@
   <div class="bar">
     <h1>Settings</h1><span class="muted" id="settings-summary"></span>
     <span class="muted mono push" id="settings-path"></span>
+    <div class="bar-actions">
+      <button class="btn" id="settings-import" type="button">Import…</button>
+      <button class="btn" id="settings-export" type="button">Export…</button>
+    </div>
+    <input type="file" id="import-file" accept=".toml,text/plain" hidden>
   </div>
 
   <div class="tabs view-tabs" id="settings-tabs" role="tablist">
@@ -230,7 +235,10 @@
     <div class="bar">
       <input type="search" id="user-filter" placeholder="Filter by name, email, full name or role" aria-label="Filter users" autocomplete="off">
       <span class="muted" id="user-count"></span>
-      <button class="btn primary push" id="user-new" type="button">New user</button>
+      <div class="bar-actions push">
+        <button class="btn" id="user-import" type="button">Import from a database</button>
+        <button class="btn primary" id="user-new" type="button">New user</button>
+      </div>
     </div>
     <div class="tbl">
       <table>
@@ -239,7 +247,7 @@
       </table>
       <p class="empty" id="user-empty" hidden></p>
     </div>
-    <p class="muted note">Services run as one of these users (the <code>DEV_*</code> variables). <code>pdms user import</code> brings them from the <code>pdms_user</code> table of a database.</p>
+    <p class="muted note">Services run as one of these users (the <code>DEV_*</code> variables). <b>Import from a database</b> brings them from its <code>pdms_user</code> table, like <code>pdms user import</code>.</p>
   </div>
 
   <div class="panel" id="settings-defaults" hidden>
@@ -385,12 +393,95 @@
       <label>DEV_FIRST_NAME <input id="user-first_name"></label>
       <label>DEV_LAST_NAME <input id="user-last_name"></label>
     </div>
-    <label>DEV_ROLES (comma separated) <input id="user-roles" placeholder="TPR.Supervisor,TPR.Agent"></label>
+    <fieldset>
+      <legend>DEV_ROLES</legend>
+      <div class="role-list" id="user-roles" role="group" aria-label="DEV_ROLES"></div>
+    </fieldset>
     <label>DEV_USER_ID (uuid) <input id="user-user_id" class="mono" required></label>
     <p class="error" id="user-error" hidden></p>
     <div class="actions">
       <button class="btn ghost" type="button" id="user-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="user-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="export-dialog">
+  <form method="dialog" id="export-form">
+    <h2>Export the settings</h2>
+    <p class="muted">A TOML file to share or keep, like <code>pdms config export</code>; <b>Import…</b> or <code>pdms config import</code> reads it back.</p>
+    <fieldset>
+      <legend>Sections</legend>
+      <div id="export-sections"></div>
+    </fieldset>
+    <label class="inline"><input type="checkbox" id="export-secrets"> Include the database passwords</label>
+    <p class="warn" id="export-warn" hidden>The file will hold the passwords: keep it private, do not share or commit it.</p>
+    <p class="error" id="export-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="export-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="export-go">Download</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="import-dialog">
+  <form method="dialog" id="import-form">
+    <h2>Import <span class="mono" id="import-name"></span></h2>
+    <p class="muted" id="import-meta"></p>
+    <fieldset>
+      <legend>Sections</legend>
+      <div id="import-sections"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Entries you already have</legend>
+      <label class="inline"><input type="radio" name="mode" value="merge" checked> Add the new ones and choose which of mine to overwrite</label>
+      <label class="inline"><input type="radio" name="mode" value="replace"> Replace these sections with the file (mine that are not in it go)</label>
+    </fieldset>
+    <div class="tbl import-plan">
+      <table>
+        <thead><tr><th>Section</th><th>New</th><th>Changed</th><th>Unchanged</th><th id="import-missing-head">Only mine</th></tr></thead>
+        <tbody id="import-rows"></tbody>
+      </table>
+    </div>
+    <div id="import-conflicts-box">
+      <p class="muted">These differ from yours. Tick the ones to overwrite (unticked: yours stay).</p>
+      <div class="picker-list" id="import-conflicts"></div>
+    </div>
+    <p class="muted" id="import-note" hidden></p>
+    <p class="warn" id="import-warn" hidden></p>
+    <p class="error" id="import-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="import-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="import-go">Import</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="users-dialog">
+  <form method="dialog" id="users-form">
+    <h2>Import users from a database</h2>
+    <p class="muted">From its <code>pdms_user</code> table, with their roles turned into <code>DEV_ROLES</code>. Users already imported are updated.</p>
+    <div class="row3">
+      <label>Database <select id="users-db"></select></label>
+      <label>Role <select id="users-role"></select></label>
+    </div>
+    <div class="picker-bar search-row">
+      <input type="search" id="users-search" placeholder="Email or name (empty: all)" aria-label="Search users" autocomplete="off">
+      <label class="inline"><input type="checkbox" id="users-inactive"> Inactive too</label>
+      <button class="btn" type="button" id="users-find">Search</button>
+    </div>
+    <p class="muted" id="users-note" hidden></p>
+    <div class="picker" id="users-picker" hidden>
+      <div class="picker-bar">
+        <label class="inline"><input type="checkbox" id="users-all"> All</label>
+        <span class="muted" id="users-count"></span>
+      </div>
+      <div class="picker-list" id="users-found" role="group" aria-label="Users found"></div>
+    </div>
+    <p class="error" id="users-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="users-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="users-go" disabled>Import</button>
     </div>
   </form>
 </dialog>

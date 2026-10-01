@@ -69,6 +69,9 @@ ES: dict[str, str] = {
     "Must be a number between 1 and 65535": "Debe ser un número entre 1 y 65535",
     "Must be a number between {low} and {high}": "Debe ser un número entre {low} y {high}",
     "Must be one of: {choices}": "Debe ser uno de: {choices}",
+    "Unknown roles: {roles}. Available: {available}": "Roles desconocidos: {roles}. Disponibles: {available}",
+    "{role} (not a role of this repo)": "{role} (no es un rol de este repo)",
+    "DEV_ROLES (space to select):": "DEV_ROLES (espacio para marcar):",
     "'{name}' is not a valid variable name": "'{name}' no es un nombre de variable válido",
     "These stacks will ask for it again when they start: {names}":
         "Estos stacks lo volverán a preguntar al levantarse: {names}",

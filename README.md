@@ -264,6 +264,10 @@ event class filled in, through the broker or straight to the queue) or messages 
 types with their queues and consumers, and every SNS publish, filtered by topic or text, with its attributes and
 message. The settings screen adds, edits, deletes and filters the databases (with a connection test, also for a
 database not saved yet) and the users, like `pdms db` and `pdms user`, and edits the defaults of `pdms config defaults`.
+A user's `DEV_ROLES` are ticked from the roles of the current repo (also in `pdms user add/edit`), and users can be
+imported from the `pdms_user` table of a database, like `pdms user import`. **Export…** and **Import…** do what
+`pdms config export` and `pdms config import` do: choose the sections, the passwords only if asked, and on import see
+what is new or changed and which of your entries to overwrite (the previous file is kept as a backup).
 Deleting a database or a user that a stack uses makes that stack ask for one when it starts.
 
 It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the

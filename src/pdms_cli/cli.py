@@ -135,8 +135,9 @@ def add_db(cfg: Config) -> str:
 def add_user(cfg: Config) -> str:
     prompts.require_tty()
     name = prompts.ask_name(_("user"), cfg.users)
-    user = prompts.ask_user()
-    settle(lambda: actions.save_user(cfg, name, user, new=True))
+    roles = actions.known_roles(cfg)
+    user = prompts.ask_user(roles=roles)
+    settle(lambda: actions.save_user(cfg, name, user, new=True, roles=roles))
     console.print("[green]✓[/] " + _("User '{name}' saved.", name=name))
     return name
 
@@ -1314,8 +1315,9 @@ def user_edit(name: Optional[str] = typer.Argument(None, autocompletion=completi
     cfg = Config.load()
     prompts.require_tty()
     name = pick(cfg.users, _("user"), name)
-    user = prompts.ask_user(cfg.users[name])
-    settle(lambda: actions.save_user(cfg, name, user))
+    roles = actions.known_roles(cfg)
+    user = prompts.ask_user(cfg.users[name], roles)
+    settle(lambda: actions.save_user(cfg, name, user, roles=roles))
     console.print("[green]✓[/] " + _("User '{name}' updated.", name=name))
 
 
@@ -2110,7 +2112,7 @@ def config_export(
             _("Include database passwords? (only if the file stays private)"), default=False
         ).unsafe_ask()
 
-    text = transfer.export_document(cfg, sections, secrets)
+    text = settle(lambda: actions.export_config(cfg, sections, secrets))
     if file == Path("-"):
         sys.stdout.write(text)
         return
@@ -2174,8 +2176,8 @@ def config_import(
 
     conflicts = [(p.section, name) for p in plans for name in p.changed]
     chosen: set[tuple[str, str]] = set()
-    if not config_path().exists():
-        chosen = set(conflicts)  # first setup: there is no own configuration to keep
+    if actions.first_setup():
+        chosen = set(conflicts)  # there is no own configuration to keep
     elif replace:
         removed = sum(len(p.missing) for p in plans)
         if removed:
@@ -2204,11 +2206,7 @@ def config_import(
         if not questionary.confirm(_("Apply the import?"), default=True).unsafe_ask():
             raise typer.Exit(1)
 
-    backup = None
-    if config_path().exists():
-        backup = config_path().with_name(f"{config_path().name}.bak-{datetime.now():%Y%m%d-%H%M%S}")
-        shutil.copy2(config_path(), backup)
-    result.save()
+    backup = actions.import_config(result)
     i18n.set_language(result.defaults.language)
     console.print("[green]✓[/] " + _("Configuration imported."))
     if backup:
