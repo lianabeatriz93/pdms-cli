@@ -609,7 +609,7 @@ def test(
 ) -> None:
     cfg = Config.load()
     target = resolve_service(cfg, service, path)
-    env = dict(os.environ)
+    env = runner.poetry_environ()
     if user or db:
         user_name = pick(cfg.users, _("user"), user, cfg.last_user)
         db_name = pick(cfg.dbs, _("database"), db, cfg.last_db)
