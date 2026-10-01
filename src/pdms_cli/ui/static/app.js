@@ -147,10 +147,25 @@ function serviceItems() {
   return items;
 }
 
+function problem(item) {
+  const job = state.jobs[item.key];
+  return item.status === "error" || (item.status === "stopped" && !item.placeholder) || Boolean(job && job.error);
+}
+
+function serviceShown(item) {
+  const text = $("svc-filter").value.trim().toLowerCase();
+  if ($("svc-problems").checked && !problem(item)) return false;
+  return !text || [item.key, item.status, item.detail, item.url, item.repo, item.user, item.db]
+    .join(" ").toLowerCase().includes(text);
+}
+
 function paintServices() {
   const items = serviceItems();
-  $("rows").replaceChildren(...items.map(row));
+  const shown = items.filter(serviceShown);
+  $("rows").replaceChildren(...shown.map(row));
   $("empty").hidden = items.length > 0;
+  $("svc-none").hidden = !items.length || shown.length > 0;
+  $("svc-count").textContent = items.length ? `${shown.length} of ${items.length}` : "";
   const alive = state.instances.filter((i) => i.status !== "stopped");
   const failing = state.instances.filter((i) => i.status === "error" || i.status === "stopped");
   $("count").textContent = alive.length || "";
@@ -377,7 +392,19 @@ function stackGroups(services) {
   return [...groups];
 }
 
+function stackFilterText() {
+  return $("stack-filter").value.trim().toLowerCase();
+}
+
+function stackShown(stack) {
+  const text = stackFilterText();
+  if ($("stack-running").checked && !stack.services.some((svc) => svc.running.length)) return false;
+  return !text || [stack.name, stack.user, stack.db, ...stack.services.map((svc) => svc.path)]
+    .join(" ").toLowerCase().includes(text);
+}
+
 function stackCard(stack) {
+  const text = stackFilterText();
   const job = state.jobs[`stack:${stack.name}`];
   const busy = job && !job.error;
   const total = stack.services.length;
@@ -392,7 +419,9 @@ function stackCard(stack) {
     return el("section", { class: "stack-group" },
       el("h3", {}, el("span", { class: "mono" }, domain || "(repo root)"),
         el("span", { class: "muted" }, `${running}/${services.length}`)),
-      el("ul", { class: "stack-services" }, ...services.map((svc) => el("li", { title: svc.path },
+      el("ul", { class: "stack-services" }, ...services.map((svc) => el("li", {
+        title: svc.path, ...(text && svc.path.toLowerCase().includes(text) ? { class: "hit" } : {}),
+      },
         el("span", { class: `dot ${svc.running.length ? "on" : ""}` }),
         el("span", { class: "mono name" }, svc.name),
         el("span", { class: "ports" }, ...svc.running.map((key) => button(key.slice(key.indexOf("@")), () => showLogs(key), {
@@ -424,8 +453,11 @@ function stackCard(stack) {
 }
 
 function paintStacks() {
-  $("stacks").replaceChildren(...state.stacks.map(stackCard));
+  const shown = state.stacks.filter(stackShown);
+  $("stacks").replaceChildren(...shown.map(stackCard));
   $("stacks-empty").hidden = state.stacks.length > 0;
+  $("stacks-none").hidden = !state.stacks.length || shown.length > 0;
+  $("stack-shown").textContent = state.stacks.length ? `${shown.length} of ${state.stacks.length}` : "";
   const running = state.stacks.filter((stack) => stack.services.some((svc) => svc.running.length)).length;
   $("stack-count").textContent = state.stacks.length || "";
   $("stack-summary").textContent = `${state.stacks.length} stacks · ${running} running`;
@@ -1356,6 +1388,10 @@ $("logs-close").addEventListener("click", closeLogs);
 $("logs-clear").addEventListener("click", clearLog);
 for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => openLogs(logs.key, tab.dataset.which));
 $("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(`Forgot ${data.forgotten.length} stopped.`, "info")));
+$("svc-filter").addEventListener("input", () => state && paintServices());
+$("svc-problems").addEventListener("change", () => state && paintServices());
+$("stack-filter").addEventListener("input", () => state && paintStacks());
+$("stack-running").addEventListener("change", () => state && paintStacks());
 $("restart-form").addEventListener("submit", submitLaunch);
 $("stack-new").addEventListener("click", () => openEditor());
 $("editor-form").addEventListener("submit", saveEditor);

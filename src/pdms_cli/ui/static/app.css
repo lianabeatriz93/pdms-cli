@@ -133,6 +133,7 @@ dialog legend { font-size: .82rem; color: var(--muted); padding: 0 .3rem; }
 .stack-services { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; font-size: .8rem; }
 .stack-services li { display: flex; align-items: center; gap: .4rem; min-width: 0; padding: .05rem 0; }
 .stack-services .name { overflow-wrap: anywhere; min-width: 0; }
+.stack-services li.hit .name { background: var(--warn-soft); border-radius: 3px; }
 .stack-services .ports { margin-left: auto; display: flex; gap: .2rem; flex: none; }
 .stack-services .ports .btn { margin: 0; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); flex: none; }
@@ -163,12 +164,12 @@ dialog label.pick .muted { margin-left: auto; font-size: .75rem; white-space: no
 .proxy-info b { font-weight: 500; overflow-wrap: anywhere; }
 .proxy-info .error { margin: 0; flex-basis: 100%; }
 .panel { display: grid; gap: .6rem; min-width: 0; }
-.panel .bar { align-items: center; flex-wrap: wrap; }
-.panel input[type="search"] {
+.panel .bar, .bar.filter { align-items: center; flex-wrap: wrap; }
+.panel input[type="search"], .bar.filter input[type="search"] {
   font: inherit; font-size: .82rem; padding: .3rem .5rem; border-radius: 6px; border: 1px solid var(--line);
   background: var(--surface); color: var(--ink); width: min(22rem, 100%);
 }
-.panel label.inline { display: flex; gap: .35rem; align-items: center; font-size: .82rem; }
+.panel label.inline, .bar.filter label.inline { display: flex; gap: .35rem; align-items: center; font-size: .82rem; }
 .panel .tbl { max-height: 60vh; overflow: auto; }
 .panel thead th { position: sticky; top: 0; background: var(--surface); }
 td.code-ok { color: var(--ok); }
