@@ -1758,12 +1758,9 @@ def ui_cmd(
 
 def load_events(env: str = "dev") -> tuple[Path, events.EventMap]:
     cfg = Config.load()
-    root = current_repo_root(cfg)
+    current_repo_root(cfg)
     with console.status(_("Reading the event map (Terraform and backend/common/event)...")):
-        event_map = events.load_event_map(root, env)
-    if not event_map.queues:
-        fail(_("No SQS queues found in {path}.", path=root))
-    return root, event_map
+        return settle(lambda: actions.load_events(cfg, env))
 
 
 @events_app.callback()
@@ -1807,28 +1804,11 @@ def events_up(
     env: str = typer.Option("dev", "--env", "-e", help=_("Terraform environment to read the routes from.")),
     broker: bool = typer.Option(True, "--broker/--no-broker", help=_("Also run the broker (broker-sqs-event) locally.")),
 ) -> None:
-    ok, detail = events.docker_available()
-    if not ok:
-        fail(_("Docker is not available: {detail}", detail=detail or _("docker not found")))
     cfg = Config.load()
     _root, event_map = load_events(env)
     port = cfg.defaults.events_port
-    state = events.container_state()
-    if not (state and state["running"] and state["port"] == port) and not runner.port_is_free("127.0.0.1", port):
-        fail(_("Port {port} is in use by something else (maybe infra/local_sqs's docker compose). Stop it or change "
-               "events_port in pdms config.", port=port))
     with console.status(_("Starting ElasticMQ...")):
-        try:
-            result = events.start(event_map.queues, port)
-        except RuntimeError as exc:
-            fail(_("Could not start ElasticMQ: {error}", error=exc))
-        for _attempt in range(60):
-            if events.is_up(port):
-                break
-            time.sleep(0.5)
-        else:
-            fail(_("ElasticMQ did not answer on {url}; see: docker logs {name}", url=events.endpoint(port),
-                   name=events.CONTAINER))
+        result = settle(lambda: actions.start_events(cfg, event_map.queues))
     extra = sum(q.source != "terraform" for q in event_map.queues.values())
     message = {
         "created": _("ElasticMQ started"), "restarted": _("ElasticMQ restarted with the updated queues"),
@@ -1843,12 +1823,12 @@ def events_up(
 
 def start_broker(cfg: Config, root: Path, event_map: events.EventMap) -> None:
     """Run broker-sqs-event locally, so published events are routed to their queues as in AWS."""
-    service = root / "backend" / events.BROKER_SERVICE
-    if not event_map.broker_queue or not runner.is_service(service):
+    service = actions.broker_service(root, event_map)
+    if service is None:
         console.print("[yellow]" + _("⚠ The broker ({service}) was not found in the repo; events stay in the broker "
                                      "queue.", service=events.BROKER_SERVICE) + "[/]")
         return
-    if any(i.is_consumer and i.queue == event_map.broker_queue and i.alive() for i in instances.load().values()):
+    if actions.event_consumers(event_map.broker_queue):
         console.print(_("[dim]The broker is already running.[/]"))
         return
     if not cfg.users or not cfg.dbs:
@@ -1865,7 +1845,7 @@ def start_broker(cfg: Config, root: Path, event_map: events.EventMap) -> None:
 
 @events_app.command("down", help=_("Stop the local ElasticMQ (its messages are lost)."))
 def events_down() -> None:
-    for inst in [i for i in instances.load().values() if i.is_consumer and i.alive()]:
+    for inst in actions.event_consumers():
         with console.status(_("Stopping {key}...", key=inst.key)):
             actions.stop_service(inst)
         console.print("[green]✓[/] " + _("{key} stopped.", key=inst.key))
@@ -1929,12 +1909,9 @@ def events_send(
 ) -> None:
     cfg = Config.load()
     root, event_map = load_events()
-    if target not in event_map.routes and target not in event_map.queues:
-        close = [t for t in sorted(event_map.routes) + sorted(event_map.queues) if target in t][:8]
-        fail(_("'{target}' is not an event type nor a queue.", target=target)
-             + (" " + _("Did you mean: {names}", names=", ".join(close)) if close else " pdms events map"))
     is_event = target in event_map.routes
     if template:
+        settle(lambda: actions.plan_send(event_map, target, None))  # an unknown target says so first
         fields = events.event_template(root, target) if is_event else None
         if fields is None:
             fail(_("No event class found for '{target}' in backend/common/event.", target=target))
@@ -1943,27 +1920,16 @@ def events_send(
     if file is not None:
         raw = sys.stdin.read() if str(file) == "-" else file.read_text(encoding="utf-8")
     else:
-        raw = body if body is not None else "{}"
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        fail(_("Invalid JSON: {error}", error=exc))
-    port = require_elasticmq(cfg)
-    if is_event:
-        if not isinstance(data, dict):
-            fail(_("Event fields must be a JSON object."))
-        queue = event_map.routes[target] if direct or not event_map.broker_queue else event_map.broker_queue
-        message = events.event_body(target, data)
-    else:
-        queue = target
-        message = raw if body is not None or file is not None else "{}"
-    message_id = events.send(port, queue, message, fifo=event_map.queues.get(queue, events.Queue(queue)).fifo)
+        raw = body
+    queue, message = settle(lambda: actions.plan_send(event_map, target, raw, direct))
+    require_elasticmq(cfg)
+    message_id = settle(lambda: actions.send_message(cfg, event_map, queue, message))
     console.print("[green]✓[/] " + _("Sent {id} to {queue}", id=message_id[:8], queue=queue))
     if is_event and queue == event_map.broker_queue:
         consumer = event_map.consumer_of_type(target)
         console.print("  [dim]" + _("The broker routes it to {queue} (consumer: {consumer}).",
                                     queue=event_map.routes[target], consumer=consumer.service if consumer else "-") + "[/]")
-    if not any(i.is_consumer and i.queue == queue and i.alive() for i in instances.load().values()):
+    if not actions.event_consumers(queue):
         console.print("  [yellow]" + _("Nothing is consuming {queue} right now; it waits there (pdms events peek {queue}).",
                                        queue=queue) + "[/]")
 

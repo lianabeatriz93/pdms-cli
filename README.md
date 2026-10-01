@@ -255,8 +255,12 @@ services run, and creates, edits and deletes stacks with a searchable list of th
 starts the proxy in the background (like `pdms proxy -b`: it asks for another port when the one you chose is in use)
 and stops it, follows its requests live with where each one went, and opens the log of the local service that served
 a request with its lines marked. Its routes tab shows where each route goes now, like `pdms proxy routes`. A proxy
-started in a terminal shows there too, but its requests stay in that terminal. Starting single new services comes in
-a next release.
+started in a terminal shows there too, but its requests stay in that terminal. The events screen starts (like
+`pdms events up`, the broker included) and stops the local ElasticMQ, lists every queue with its waiting messages and
+consumer, shows a queue's messages without consuming them, purges them, and sends events (with the fields of the
+event class filled in, through the broker or straight to the queue) or messages to a queue. It also lists the event
+types with their queues and consumers, and every SNS publish, filtered by topic or text, with its attributes and
+message. Starting single new services comes in a next release.
 
 It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the
 session, which the browser keeps as a cookie. Requests from other web pages are rejected, and database passwords are
@@ -355,7 +359,8 @@ pdms events purge pdms-sns
 ```
 
 `pdms ui` shows it as an `sns` row in Services (with when something was last published) whose **Logs** follow that
-log live, like any service; `pdms events status` always lists it.
+log live, like any service, and in more detail in Events → SNS (filter by topic, attributes); `pdms events status`
+always lists it.
 
 Each service also gets its topics' ARNs from its Lambda's Terraform (`SNS_ACCOUNT_PUBLISH_ARN =
 aws_sns_topic.sns_account_topic.arn` becomes `arn:aws:sns:us-east-1:000000000000:sns-account-publish.fifo`), so

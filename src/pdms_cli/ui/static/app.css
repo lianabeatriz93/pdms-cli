@@ -69,7 +69,7 @@ td.num { font-variant-numeric: tabular-nums; }
 .btn {
   font: inherit; font-size: .82rem; line-height: 1.4; padding: .3rem .75rem; border-radius: 6px; cursor: pointer;
   border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none;
-  display: inline-flex; align-items: center;
+  display: inline-flex; align-items: center; white-space: nowrap;
 }
 .btn:hover { border-color: var(--accent); }
 .btn:focus-visible, .tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -147,8 +147,8 @@ dialog label.pick:hover { background: var(--code); }
 dialog label.pick .muted { margin-left: auto; font-size: .75rem; white-space: nowrap; }
 
 .bar-actions { display: flex; gap: .4rem; }
-#proxy-tabs { justify-self: start; }
-#proxy-tabs button { font-size: .82rem; padding: .25rem .8rem; }
+.view-tabs { justify-self: start; }
+.view-tabs button { font-size: .82rem; padding: .25rem .8rem; }
 .proxy-info { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; padding: .7rem .9rem; font-size: .82rem; }
 .proxy-info div { display: grid; min-width: 0; }
 .proxy-info span { color: var(--muted); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
@@ -173,6 +173,25 @@ tr.jump { cursor: pointer; }
 tr.jump:hover td, tr.jump:focus-visible td { background: var(--code); }
 tr.jump:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .logs-text mark { background: var(--warn-soft); color: inherit; outline: 1px solid var(--warn); border-radius: 2px; }
+
+.panel select, dialog textarea {
+  font: inherit; font-size: .82rem; padding: .3rem .4rem; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink);
+}
+dialog textarea { font: .78rem/1.45 var(--mono); background: var(--bg); resize: vertical; }
+#send { width: min(40rem, calc(100vw - 32px)); }
+.messages { display: grid; gap: .4rem; max-height: 65vh; overflow: auto; padding: .5rem; }
+.panel > .messages { padding: 0; }
+.msg { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.msg summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .7rem; padding: .45rem .7rem; cursor: pointer; font-size: .82rem; }
+.msg summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+.msg summary .mono { overflow-wrap: anywhere; }
+.msg pre { margin: 0; padding: .6rem .8rem; border-top: 1px solid var(--line); background: var(--code); font: .76rem/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow: auto; border-radius: 0 0 8px 8px; }
+.msg .attr { font-family: var(--mono); font-size: .72rem; padding: 0 .4rem; border-radius: 4px; background: var(--code); }
+.topic { font-family: var(--mono); font-weight: 600; color: var(--accent); }
+td.wrap { white-space: normal; overflow-wrap: anywhere; min-width: 12rem; }
+.tag { margin-left: .5rem; font-family: system-ui, sans-serif; font-size: .72rem; color: var(--muted); }
+td.count-on { font-weight: 600; color: var(--warn); }
 
 @media (max-width: 640px) {
   body { grid-template: auto auto 1fr / 1fr; }
