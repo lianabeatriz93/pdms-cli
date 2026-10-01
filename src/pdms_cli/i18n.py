@@ -82,6 +82,9 @@ ES: dict[str, str] = {
     "Could not install pywebview ({error}). Install it with:\n  {command}\nor use pdms ui to open it in the browser.":
         "No se pudo instalar pywebview ({error}). Instálalo con:\n  {command}\no usa pdms ui para abrirla en el navegador.",
     "pywebview installed.": "pywebview instalado.",
+    "Qt needs the system library libxcb-cursor to open windows on X11; install it with sudo apt install libxcb-cursor0 (Fedora, Arch: xcb-util-cursor)":
+        "Qt necesita la librería del sistema libxcb-cursor para abrir ventanas en X11; instálala con "
+        "sudo apt install libxcb-cursor0 (Fedora, Arch: xcb-util-cursor)",
     "Unknown roles: {roles}. Available: {available}": "Roles desconocidos: {roles}. Disponibles: {available}",
     "{role} (not a role of this repo)": "{role} (no es un rol de este repo)",
     "DEV_ROLES (space to select):": "DEV_ROLES (espacio para marcar):",

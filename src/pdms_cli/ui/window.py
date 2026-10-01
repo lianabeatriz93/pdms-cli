@@ -9,13 +9,17 @@ stops when the window closes.
 
 from __future__ import annotations
 
+import ctypes.util
 import importlib
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
+from importlib import resources
 
 from .. import __version__, update
+from ..i18n import _
 
 # The desktop extra (pyproject.toml) on Windows and macOS, installed into pdms's own environment.
 DESKTOP_REQUIREMENTS = ["pywebview>=5"]
@@ -63,11 +67,34 @@ def install_desktop() -> None:
         raise RuntimeError("pywebview is still not importable")
 
 
+def icon_name() -> str:
+    """The window's icon: Windows takes an .ico, Qt (Linux) and macOS's Dock a PNG; both are drawn from icon.svg."""
+    return "icon.ico" if sys.platform == "win32" else "icon.png"
+
+
+def missing_system_library() -> str | None:
+    """What Qt still needs from the system to open a window here, or None.
+
+    Since Qt 6.5 its X11 (xcb) plugin needs libxcb-cursor, which is not part of the wheels; without it Qt aborts the
+    whole process, so this has to be checked before."""
+    if not sys.platform.startswith("linux"):
+        return None
+    platform = os.environ.get("QT_QPA_PLATFORM", "")
+    on_x11 = platform.startswith("xcb") or (not platform and not os.environ.get("WAYLAND_DISPLAY"))
+    if on_x11 and ctypes.util.find_library("xcb-cursor") is None:
+        return _("Qt needs the system library libxcb-cursor to open windows on X11; install it with "
+                 "sudo apt install libxcb-cursor0 (Fedora, Arch: xcb-util-cursor)")
+    return None
+
+
 def open_window(url: str) -> None:
     """Show ``url`` in a native window until it is closed (blocks; pywebview needs the main thread)."""
+    if missing := missing_system_library():
+        raise RuntimeError(missing)
     import webview
 
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True  # Docs and /docs open in the browser, not here
     webview.settings["ALLOW_DOWNLOADS"] = True  # Settings → Export… downloads a file
     webview.create_window(TITLE, url, width=SIZE[0], height=SIZE[1], min_size=MIN_SIZE, text_select=True)
-    webview.start(gui="qt" if sys.platform.startswith("linux") else None)
+    with resources.as_file(resources.files("pdms_cli.ui") / "static" / icon_name()) as icon:
+        webview.start(gui="qt" if sys.platform.startswith("linux") else None, icon=str(icon))
