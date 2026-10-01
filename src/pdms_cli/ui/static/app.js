@@ -365,6 +365,18 @@ function showLogs(key, which = "current", find = null) {
   openLogs(key, which, find);
 }
 
+// The stack's services by domain (lead/lead-tp-list → lead), in the stack's order.
+function stackGroups(services) {
+  const groups = new Map();
+  for (const svc of services) {
+    const cut = svc.path.indexOf("/");
+    const domain = cut < 0 ? "" : svc.path.slice(0, cut);
+    if (!groups.has(domain)) groups.set(domain, []);
+    groups.get(domain).push({ ...svc, name: cut < 0 ? svc.path : svc.path.slice(cut + 1) });
+  }
+  return [...groups];
+}
+
 function stackCard(stack) {
   const job = state.jobs[`stack:${stack.name}`];
   const busy = job && !job.error;
@@ -375,13 +387,20 @@ function stackCard(stack) {
     : el("span", { class: `st ${up === total ? "ok" : up ? "starting" : "stopped"}` },
       up === total ? "running" : up ? `${up} of ${total} running` : "stopped");
 
-  const list = el("ul", { class: "stack-services" }, ...stack.services.map((svc) => el("li", {},
-    el("span", { class: `dot ${svc.running.length ? "on" : ""}` }),
-    el("span", { class: "mono" }, svc.path),
-    ...svc.running.map((key) => button(key.slice(key.indexOf("@")), () => showLogs(key), {
-      class: "btn tiny link", title: `Logs of ${key}`,
-    })),
-  )));
+  const list = el("div", { class: "stack-groups" }, ...stackGroups(stack.services).map(([domain, services]) => {
+    const running = services.filter((svc) => svc.running.length).length;
+    return el("section", { class: "stack-group" },
+      el("h3", {}, el("span", { class: "mono" }, domain || "(repo root)"),
+        el("span", { class: "muted" }, `${running}/${services.length}`)),
+      el("ul", { class: "stack-services" }, ...services.map((svc) => el("li", { title: svc.path },
+        el("span", { class: `dot ${svc.running.length ? "on" : ""}` }),
+        el("span", { class: "mono name" }, svc.name),
+        el("span", { class: "ports" }, ...svc.running.map((key) => button(key.slice(key.indexOf("@")), () => showLogs(key), {
+          class: "btn tiny link", title: `Logs of ${key}`,
+        }))),
+      ))),
+    );
+  }));
 
   const card = el("article", { class: "card stack" },
     el("header", {}, el("h2", { class: "mono" }, stack.name), status),
@@ -971,18 +990,59 @@ async function purge(queues) {
 
 // ---- messages of a queue (peek)
 
-function pretty(text) {
+const JSON_TOKEN = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+
+// Pretty JSON with its keys, strings, numbers and literals coloured; text that is not JSON stays as it is.
+function jsonView(text) {
+  let source;
   try {
-    return JSON.stringify(JSON.parse(text), null, 2);
+    source = JSON.stringify(JSON.parse(text), null, 2);
   } catch {
-    return text;
+    return document.createTextNode(text);
   }
+  const out = document.createDocumentFragment();
+  let at = 0;
+  for (const match of source.matchAll(JSON_TOKEN)) {
+    if (match.index > at) out.append(source.slice(at, match.index));
+    const [token, string, colon, literal] = match;
+    if (string) {
+      out.append(el("span", { class: colon ? "j-key" : "j-str" }, string));
+      if (colon) out.append(colon);
+    } else {
+      out.append(el("span", { class: literal ? "j-lit" : "j-num" }, token));
+    }
+    at = match.index + token.length;
+  }
+  out.append(source.slice(at));
+  return out;
 }
 
-function messageType(text) {
+// The message of a details row, built when it is first opened (a long SNS log holds many large ones).
+function messageDetails(summary, text) {
+  const node = el("details", { class: "msg" }, summary);
+  const fill = () => {
+    if (node.querySelector("pre")) return;
+    const copy = button("Copy", async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast("Copied.", "info");
+      } catch {
+        toast("The browser did not allow copying.");
+      }
+    }, { class: "btn tiny copy" });
+    node.append(el("div", { class: "msg-body" }, copy, el("pre", {}, jsonView(text))));
+  };
+  node.addEventListener("toggle", () => { if (node.open) fill(); });
+  node.fill = fill;
+  return node;
+}
+
+// What a message is about: the event name or type it carries, if any.
+function messageKind(text) {
   try {
     const parsed = JSON.parse(text);
-    return parsed && typeof parsed === "object" ? parsed.type || parsed.Topic || "" : "";
+    if (!parsed || typeof parsed !== "object") return "";
+    return String(parsed.event || parsed.type || parsed.event_type || (parsed.Message && messageKind(parsed.Message)) || "");
   } catch {
     return "";
   }
@@ -1005,15 +1065,15 @@ async function openPeek(queue) {
     ? `${data.messages.length} waiting${data.messages.length >= 50 ? " (first 50)" : ""} · read without consuming them`
     : "empty";
   $("peek-messages").replaceChildren(...data.messages.map((message) => {
-    const kind = messageType(message.body);
-    return el("details", { class: "msg" },
+    const kind = messageKind(message.body);
+    return messageDetails(
       el("summary", {},
         el("span", { class: "mono muted" }, message.id.slice(0, 8)),
         kind ? el("span", { class: "topic" }, kind) : "",
         message.sent ? el("span", { class: "muted" }, new Date(message.sent).toLocaleString()) : "",
         el("span", { class: "muted" }, `received ${message.receives} time${message.receives === 1 ? "" : "s"}`),
       ),
-      el("pre", {}, pretty(message.body)),
+      message.body,
     );
   }));
   $("peek").scrollIntoView({ block: "nearest" });
@@ -1111,16 +1171,19 @@ function snsShown(entry, topic, text) {
 function snsEntry(entry) {
   const attrs = Object.entries(entry.attributes).map(([key, value]) =>
     el("span", { class: "attr" }, `${key}=${typeof value === "object" ? JSON.stringify(value) : value}`));
-  return el("details", { class: "msg" },
+  const text = entry.body.join("\n");
+  const kind = messageKind(text);
+  return messageDetails(
     el("summary", {},
       el("span", { class: "mono muted" }, new Date(entry.time).toLocaleTimeString()),
       el("span", { class: "topic" }, entry.topic),
+      kind ? el("span", { class: "kind" }, kind) : "",
       el("span", { class: "muted" }, `from ${entry.service}`),
       entry.subject ? el("span", {}, entry.subject) : "",
-      entry.group ? el("span", { class: "muted" }, `group ${entry.group}`) : "",
+      entry.group ? el("span", { class: "muted", title: "MessageGroupId" }, `group ${entry.group}`) : "",
       ...attrs,
     ),
-    el("pre", {}, entry.body.join("\n")),
+    text,
   );
 }
 
@@ -1150,7 +1213,10 @@ function paintSns() {
   $("sns-entries").replaceChildren(...shown.map(([i, entry]) => {
     const node = snsEntry(entry);
     node.dataset.at = `${entry.time}|${i}`;
-    if (open.has(node.dataset.at)) node.open = true;
+    if (open.has(node.dataset.at)) {
+      node.fill();
+      node.open = true;
+    }
     return node;
   }));
   const total = eventsView.sns.length;
