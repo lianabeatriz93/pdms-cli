@@ -27,8 +27,8 @@ def proxy_state() -> dict | None:
     }
 
 
-def build_state(cfg: Config | None = None) -> dict:
-    """Everything the first paint needs: repo, default user and DB, instances, proxy and local events."""
+def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) -> dict:
+    """Everything the page shows: repo, users and DBs (names only), instances, proxy, local events and jobs."""
     cfg = cfg or Config.load()
     items = list(instances.load().values())
     healths = instances.health_all(items)
@@ -38,7 +38,10 @@ def build_state(cfg: Config | None = None) -> dict:
         "repo": {"alias": cfg.current_repo, "root": str(root)} if root else None,
         "user": cfg.last_user,
         "db": cfg.last_db,
+        "users": list(cfg.users),
+        "dbs": [{"name": name, "protected": db.protected} for name, db in cfg.dbs.items()],
         "instances": [instance_state(cfg, inst, healths[inst.key]) for inst in items],
         "proxy": proxy_state(),
         "events": {"port": cfg.defaults.events_port, "up": events.is_up(cfg.defaults.events_port)},
+        "jobs": jobs or {},
     }

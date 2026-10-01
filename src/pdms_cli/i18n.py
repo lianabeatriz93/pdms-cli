@@ -485,6 +485,11 @@ ES: dict[str, str] = {
     "[dim]Only this machine can open it, and only with this link. Ctrl+C to stop it.[/]":
         "[dim]Solo se puede abrir desde esta máquina y solo con este enlace. Ctrl+C para pararla.[/]",
     "pdms ui stopped.": "pdms ui parada.",
+    "{key} is busy ({phase}).": "{key} está ocupada ({phase}).",
+    "{key} is busy.": "{key} está ocupada.",
+    "There is no instance {key}.": "No hay ninguna instancia {key}.",
+    "{key} is running; stop it first.": "{key} está corriendo; párala primero.",
+    "{cmd} failed (exit code {code}).": "{cmd} falló (código de salida {code}).",
     # ------------------------------------------------------------------ proxy
     "Local API gateway: one port for every service, local instances first, the remote API otherwise.":
         "Gateway local: un solo puerto para todos los servicios; primero las instancias locales, si no la API remota.",

@@ -17,7 +17,7 @@ SPANISH_HINT = re.compile(r"[áéíóúñ¿¡]", re.IGNORECASE)
 
 def source_strings() -> set[str]:
     found = set()
-    for path in SRC.glob("*.py"):
+    for path in SRC.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if (
                 isinstance(node, ast.Call)

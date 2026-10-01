@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+from typing import IO
 
 from . import installer
 from .config import Database, Defaults, DevUser
@@ -104,14 +105,19 @@ def ensure_poetry() -> None:
         raise RuntimeError(_("'poetry' was not found in PATH."))
 
 
-def install(service: Path) -> None:
+def install(service: Path, output: IO[str] | None = None) -> None:
+    """``poetry lock && poetry install``, printing to the terminal or, with ``output``, writing everything there."""
+    redirect = {"stdout": output, "stderr": subprocess.STDOUT, "stdin": subprocess.DEVNULL} if output else {}
     for cmd in ([poetry(), "lock"], [poetry(), "install"]):
-        subprocess.run(cmd, cwd=service, check=True)
+        if output:
+            output.write(f"$ {' '.join(cmd)}\n")
+            output.flush()
+        subprocess.run(cmd, cwd=service, check=True, **redirect)
     copied = installer.copied_dependencies(service)
     if copied:
         # poetry keeps a copied path dependency whose version did not change, even if its code did
         subprocess.run([poetry(), "run", "python", "-m", "pip", "install", "--quiet", "--no-deps", "--force-reinstall",
-                        *map(str, copied)], cwd=service, check=True)
+                        *map(str, copied)], cwd=service, check=True, **redirect)
 
 
 def uvicorn_command(host: str, port: int, reload: bool) -> list[str]:

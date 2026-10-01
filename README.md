@@ -246,8 +246,10 @@ pdms ui --no-browser -p 9000
 ```
 
 A page with the background services, the proxy and the local events, updated live from the same files the CLI
-uses, so both can be used at the same time. For now it only shows them; starting, stopping, logs, stacks and the proxy
-come in the next releases.
+uses, so both can be used at the same time. From the services screen you can follow a service's logs live (also the
+previous run's and the install's), open its Swagger docs, stop it, forget the stopped ones, and restart it with the
+same or another user and database: it asks before a protected database and installs only if something changed, like
+`pdms restart`. Starting new services, stacks and the proxy come in the next releases.
 
 It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the
 session, which the browser keeps as a cookie. Requests from other web pages are rejected, and database passwords are
