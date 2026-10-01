@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from .. import __version__, events, instances, proxy, repos
 from ..config import Config
 
@@ -30,6 +32,17 @@ def stacks_state(cfg: Config, live: dict[str, list[str]]) -> list[dict]:
     ]
 
 
+def sns_state(cfg: Config, events_up: bool) -> dict:
+    """The local SNS: up with the local ElasticMQ, and when something was last published to it."""
+    log = events.sns_log_path()
+    try:
+        last = datetime.fromtimestamp(log.stat().st_mtime).astimezone().isoformat(timespec="seconds")
+    except OSError:
+        last = ""
+    return {"key": events.SNS_KEY, "queue": events.SNS_QUEUE, "status": "ok" if events_up else "stopped",
+            "last_publish": last}
+
+
 def proxy_state() -> dict | None:
     running = proxy.running_proxy()
     if not running:
@@ -52,6 +65,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) 
     for inst in items:
         if healths[inst.key].state != "stopped":
             live.setdefault(inst.service, []).append(inst.key)
+    events_up = events.is_up(cfg.defaults.events_port)
     return {
         "version": __version__,
         "repo": {"alias": cfg.current_repo, "root": str(root)} if root else None,
@@ -62,6 +76,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) 
         "instances": [instance_state(cfg, inst, healths[inst.key]) for inst in items],
         "stacks": stacks_state(cfg, live),
         "proxy": proxy_state(),
-        "events": {"port": cfg.defaults.events_port, "up": events.is_up(cfg.defaults.events_port)},
+        "events": {"port": cfg.defaults.events_port, "up": events_up},
+        "sns": sns_state(cfg, events_up),
         "jobs": jobs or {},
     }

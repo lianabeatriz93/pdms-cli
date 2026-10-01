@@ -7,7 +7,8 @@ PDMS services pin botocore 1.29, which predates ``AWS_ENDPOINT_URL_SQS``, hence 
 
 SNS has no local server: with ``PDMS_SNS_QUEUE_URL`` every ``Publish`` and ``PublishBatch`` of any topic is kept as
 one message in that local queue (``pdms events peek pdms-sns``) and answered like AWS would, so nothing leaves the
-machine. Other SNS calls go to ElasticMQ, which rejects them, instead of the real AWS.
+machine; with ``PDMS_SNS_LOG`` it is also written there, readable (``pdms logs sns`` and the sns row of ``pdms ui``).
+Other SNS calls go to ElasticMQ, which rejects them, instead of the real AWS.
 """
 
 import base64
@@ -21,6 +22,7 @@ import urllib.request
 import uuid
 
 CAPTURED = "pdms_sns_params"
+LOG_LIMIT = 5 * 1024 * 1024  # then the log starts again, keeping the previous one as <log>.1
 
 
 def _plain(value):
@@ -53,6 +55,26 @@ def keep(queue_url, notification):
         _sqs(queue_url, "SendMessage", MessageBody=body)
 
 
+def write_log(path, kept):
+    """One readable entry per publish: when, who, to which topic, then the message (JSON pretty-printed)."""
+    try:
+        if os.path.getsize(path) > LOG_LIMIT:
+            os.replace(path, f"{path}.1")
+    except OSError:
+        pass
+    extras = [f"{name}={kept[key]}" for name, key in (("group", "MessageGroupId"), ("subject", "Subject")) if kept[key]]
+    if kept["MessageAttributes"]:
+        extras.append("attributes=" + json.dumps(kept["MessageAttributes"], sort_keys=True))
+    try:
+        message = json.dumps(json.loads(kept["Message"]), indent=2, ensure_ascii=False)
+    except (TypeError, ValueError):
+        message = str(kept["Message"])
+    header = " ".join([kept["Timestamp"], kept["Service"], "→", kept["Topic"], *extras])
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a", encoding="utf-8") as fh:  # one write per entry: several services may append at once
+        fh.write(header + "\n" + "".join(f"  {line}\n" for line in message.splitlines()))
+
+
 def notification(params, entry=None):
     """What a ``Publish`` (or one ``PublishBatch`` entry) carried, with where and when it was published."""
     source = entry or params
@@ -66,7 +88,7 @@ def notification(params, entry=None):
         "MessageGroupId": source.get("MessageGroupId", ""),
         "MessageDeduplicationId": source.get("MessageDeduplicationId", ""),
         "Service": os.path.basename(os.getcwd()),
-        "Timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "Timestamp": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),  # local, like the other logs
     }
 
 
@@ -74,7 +96,7 @@ def _capture_params(params, context, **kwargs):
     context[CAPTURED] = dict(params)
 
 
-def _publish_locally(queue_url):
+def _publish_locally(queue_url, log):
     from botocore.awsrequest import AWSResponse
 
     def handler(model, context, **kwargs):
@@ -82,7 +104,10 @@ def _publish_locally(queue_url):
         is_fifo = (params.get("TopicArn") or "").endswith(".fifo")
 
         def answer(entry=None):
-            keep(queue_url, notification(params, entry))
+            kept = notification(params, entry)
+            keep(queue_url, kept)
+            if log:
+                write_log(log, kept)
             message = {"MessageId": str(uuid.uuid4())}
             if is_fifo:
                 message["SequenceNumber"] = str(uuid.uuid4().int)[:20]
@@ -128,6 +153,7 @@ def _patch() -> None:
         return
 
     sns_queue = os.environ.get("PDMS_SNS_QUEUE_URL")
+    sns_log = os.environ.get("PDMS_SNS_LOG")
 
     def create_client(self, service_name, *args, **kwargs):
         if service_name == "sqs" or (service_name == "sns" and sns_queue):
@@ -136,7 +162,7 @@ def _patch() -> None:
         if service_name == "sns" and sns_queue:
             for operation in ("Publish", "PublishBatch"):
                 client.meta.events.register(f"before-parameter-build.sns.{operation}", _capture_params)
-                client.meta.events.register(f"before-call.sns.{operation}", _publish_locally(sns_queue))
+                client.meta.events.register(f"before-call.sns.{operation}", _publish_locally(sns_queue, sns_log))
         return client
 
     create_client._pdms_patched = True

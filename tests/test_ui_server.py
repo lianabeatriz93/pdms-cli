@@ -459,3 +459,23 @@ def test_the_state_shows_which_stack_services_run(repo, machine, monkeypatch) ->
         "name": "leads", "user": "", "db": "",
         "services": [{"path": "lead/lead-list", "running": ["svc@8081"]}, {"path": "lead/lead-get", "running": []}],
     }]
+
+
+
+def test_the_local_sns_is_a_row_with_its_log(ui, machine, monkeypatch) -> None:
+    port, _hub, _states, _jobs = ui
+    from pdms_cli import events
+
+    log = events.sns_log_path()
+    log.write_text("2026-10-01T10:00:00+00:00 account-publish-ev → sns-account-publish.fifo\n  {}\n", encoding="utf-8")
+    _response, raw, _conn = request(port, "/api/logs?key=sns", cookie(port))
+    assert json.loads(raw)["lines"] == ["2026-10-01T10:00:00+00:00 account-publish-ev → sns-account-publish.fifo", "  {}"]
+    assert request(port, "/api/logs?key=sns&which=install", cookie(port))[0].status == 404
+
+    monkeypatch.setattr(ui_state.instances, "health_all", lambda items: {i.key: Health("ok") for i in items})
+    monkeypatch.setattr(ui_state.events, "is_up", lambda port: True)
+    sns = ui_state.build_state(machine)["sns"]
+    assert sns["key"] == "sns" and sns["queue"] == "pdms-sns" and sns["status"] == "ok" and sns["last_publish"]
+    monkeypatch.setattr(ui_state.events, "is_up", lambda port: False)
+    log.unlink()
+    assert ui_state.build_state(machine)["sns"] == {"key": "sns", "queue": "pdms-sns", "status": "stopped", "last_publish": ""}

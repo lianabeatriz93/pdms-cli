@@ -135,11 +135,12 @@ def sns_probe(env: dict[str, str]) -> dict:
     return {**json.loads(result.stdout), "stderr": result.stderr}
 
 
-def test_every_sns_publish_lands_in_the_one_local_queue():
+def test_every_sns_publish_lands_in_the_one_local_queue(tmp_path):
     elasticmq = FakeElasticMQ()
     queue = f"http://127.0.0.1:{elasticmq.port}/000000000000/{events.SNS_QUEUE}"
+    log = tmp_path / "logs" / "sns.log"
     out = sns_probe({"PYTHONPATH": str(events.PATCH_DIR), "PDMS_SQS_ENDPOINT": f"http://127.0.0.1:{elasticmq.port}",
-                     "PDMS_SNS_QUEUE_URL": queue})
+                     "PDMS_SNS_QUEUE_URL": queue, "PDMS_SNS_LOG": str(log)})
     elasticmq.server.shutdown()
     assert "error" not in out, out
     assert out["endpoint"] == f"http://127.0.0.1:{elasticmq.port}"  # never the real AWS
@@ -159,6 +160,15 @@ def test_every_sns_publish_lands_in_the_one_local_queue():
     assert kept[1]["Topic"] == "(no TopicArn)" and kept[1]["Message"] == "no topic"
     assert [k["Message"] for k in kept[2:]] == ["one", "two"]
 
+    # The readable log: a header per publish, then the message (JSON pretty-printed).
+    lines = log.read_text(encoding="utf-8").splitlines()
+    assert lines[0].endswith(' sqs_patch → sns-account-publish.fifo group=7 subject=terms attributes='
+                             '{"raw": {"BinaryValue": "b2s=", "DataType": "Binary"}, '
+                             '"type": {"DataType": "String", "StringValue": "term-cond"}}')
+    assert lines[1:4] == ["  {", '    "lead_id": 7', "  }"]
+    assert lines[4].endswith(" sqs_patch → (no TopicArn)") and lines[5] == "  no topic"
+    assert lines[6].endswith(" sqs_patch → sns-account-publish.fifo group=g") and lines[7] == "  one"
+
 
 def test_sns_fails_like_aws_when_the_local_queue_is_unreachable():
     out = sns_probe({"PYTHONPATH": str(events.PATCH_DIR), "PDMS_SQS_ENDPOINT": "http://127.0.0.1:9",
@@ -176,8 +186,25 @@ def test_local_env_names_the_sns_queue_and_each_services_topics():
     event_map = events.EventMap(topic_variables={
         "credential/credential-term-cond-publish-ev": {"SNS_CONTRACT_TERM_AND_COND_PUBLISH_ARN": "sns-account-publish.fifo"},
     })
-    assert events.local_env(event_map, 9324)["PDMS_SNS_QUEUE_URL"] == "http://localhost:9324/000000000000/pdms-sns"
+    env = events.local_env(event_map, 9324)
+    assert env["PDMS_SNS_QUEUE_URL"] == "http://localhost:9324/000000000000/pdms-sns"
+    assert env["PDMS_SNS_LOG"] == str(events.sns_log_path()) and events.sns_log_path().name == "sns.log"
     assert events.topic_env(event_map, "credential/credential-term-cond-publish-ev") == {
         "SNS_CONTRACT_TERM_AND_COND_PUBLISH_ARN": "arn:aws:sns:us-east-1:000000000000:sns-account-publish.fifo",
     }
     assert events.topic_env(event_map, "lead/lead-tp-list") == {}
+
+
+def test_pdms_logs_sns_shows_what_was_published(tmp_path, monkeypatch):
+    from pdms_cli import cli
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    with pytest.raises(cli.typer.Exit), cli.console.capture() as captured:
+        cli.logs(["sns"], False, None, False, None, False)
+    assert "Nothing was published to the local SNS yet." in captured.get()
+
+    events.sns_log_path().parent.mkdir(parents=True)
+    events.sns_log_path().write_text("2026-10-01T10:00:00+00:00 lead → sns-account-publish.fifo\n  hi\n", encoding="utf-8")
+    with cli.console.capture() as captured:
+        cli.logs(["sns"], False, None, False, 5, False)
+    assert "lead → sns-account-publish.fifo" in captured.get() and "  hi" in captured.get()

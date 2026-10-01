@@ -39,6 +39,11 @@ def instance_keys(incomplete: str) -> list[str]:
         return []
 
 
+def log_keys(incomplete: str) -> list[str]:
+    """What ``pdms logs`` follows: instances, the running proxy and the local SNS."""
+    return instance_or_proxy_keys(incomplete) + _matching(["sns"], incomplete)
+
+
 def instance_or_proxy_keys(incomplete: str) -> list[str]:
     """Instances plus the running proxy (``pdms stop`` and ``pdms logs`` also take it)."""
     try:

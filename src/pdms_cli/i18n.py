@@ -233,7 +233,8 @@ ES: dict[str, str] = {
     "Show the console of background services (Ctrl+C to exit).":
         "Muestra la consola de servicios en segundo plano (Ctrl+C para salir).",
     "Instances (or parts of the service name).": "Instancias (o partes del nombre del servicio).",
-    "Instances (or parts of the service name), or proxy.": "Instancias (o partes del nombre del servicio), o proxy.",
+    "Instances (or parts of the service name), proxy, or sns (what was published to SNS locally).":
+        "Instancias (o partes del nombre del servicio), proxy, o sns (lo publicado a SNS en local).",
     "All running instances, including ones started later.":
         "Todas las instancias corriendo, incluidas las que se levanten después.",
     "All instances of a stack.": "Todas las instancias de un stack.",
@@ -492,6 +493,7 @@ ES: dict[str, str] = {
     "{cmd} failed (exit code {code}).": "{cmd} falló (código de salida {code}).",
     "Not services of the current repo: {names}": "No son servicios del repo actual: {names}",
     "local SNS": "SNS local",
+    "Nothing was published to the local SNS yet.": "Todavía no se publicó nada en el SNS local.",
     "every SNS publish · pdms events peek {queue}": "todo lo publicado a SNS · pdms events peek {queue}",
     # ------------------------------------------------------------------ proxy
     "Local API gateway: one port for every service, local instances first, the remote API otherwise.":

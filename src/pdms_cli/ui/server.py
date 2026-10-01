@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, instances, proxy
+from .. import actions, events, instances, proxy
 from ..config import Config
 from ..logview import LogFollower
 from . import jobs as ui_jobs
@@ -351,6 +351,8 @@ def make_handler(
             """The log ``which`` (current, previous or install) of an instance, the proxy or a job's instance."""
             if proxy.is_key(key):
                 base = proxy.log_path()
+            elif key == events.SNS_KEY:
+                base = events.sns_log_path()
             elif (inst := instances.load().get(key)) is not None:
                 base = Path(inst.log)
             elif key in (current := jobs.snapshot()) or any(job["log_key"] == key for job in current.values()):
@@ -360,7 +362,7 @@ def make_handler(
             if which == "previous":
                 return instances.previous_log_path(base)
             if which == "install":
-                return None if proxy.is_key(key) else ui_jobs.install_log(key)
+                return None if proxy.is_key(key) or key == events.SNS_KEY else ui_jobs.install_log(key)
             return base if which == "current" else None
 
         def logs(self, query: dict[str, list[str]], live: bool) -> None:
