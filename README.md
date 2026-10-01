@@ -243,6 +243,7 @@ pdms proxy routes -f tp    # which service handles each route and where it would
 ```bash
 pdms ui                    # opens http://127.0.0.1:8765 in the browser; Ctrl+C to stop it
 pdms ui --no-browser -p 9000
+pdms ui --window           # the same page in a window of its own; closing it stops pdms ui
 ```
 
 A page with the background services, the proxy and the local events, updated live from the same files the CLI
@@ -265,6 +266,12 @@ message. Starting single new services comes in a next release.
 It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the
 session, which the browser keeps as a cookie. Requests from other web pages are rejected, and database passwords are
 never sent to the page.
+
+The window (`--window`) uses [pywebview](https://pywebview.flowrl.com/), which comes with the optional `desktop`
+extra: Edge WebView2 on Windows and WebKit on macOS (both part of the system), Qt on Linux (installed with the extra,
+about 210 MB to download). Add it to an install with `uv tool install --force 'pdms-cli[desktop] @ <wheel URL of the release>'`
+(`pdms ui --window` prints the exact command), or `uv tool install -e '.[desktop]' --force` from a checkout;
+`pdms self-update` keeps it.
 
 ## Events (local SQS)
 
@@ -454,7 +461,7 @@ do it later).
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |
-| `pdms ui` | Web interface with the services, the proxy and the events, live (preview) |
+| `pdms ui` | Web interface with the services, the proxy and the events, live (preview); `--window` in a window of its own |
 | `pdms events` | Local SQS: map, ElasticMQ and broker (`map`, `up`, `status`, `send`, `peek`, `purge`, `down`) |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
