@@ -67,6 +67,11 @@ ES: dict[str, str] = {
     "That name already exists": "Ya existe ese nombre",
     "Use only letters, numbers, '-' or '_'": "Usa solo letras, números, '-' o '_'",
     "Must be a number between 1 and 65535": "Debe ser un número entre 1 y 65535",
+    "Must be a number between {low} and {high}": "Debe ser un número entre {low} y {high}",
+    "Must be one of: {choices}": "Debe ser uno de: {choices}",
+    "'{name}' is not a valid variable name": "'{name}' no es un nombre de variable válido",
+    "These stacks will ask for it again when they start: {names}":
+        "Estos stacks lo volverán a preguntar al levantarse: {names}",
     "Port {port} is in use": "El puerto {port} está ocupado",
     # ------------------------------------------------------------------ prompts
     "Alias ({kind}):": "Alias ({kind}):",

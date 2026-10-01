@@ -468,12 +468,7 @@ def save_stack(name: str, services: list[str], user: str, db: str, new: bool) ->
     cfg = Config.load()
     name = name.strip()
     if new:
-        if not name:
-            raise actions.ActionError(_("Required field"))
-        if name in cfg.stacks:
-            raise actions.ActionError(_("That name already exists"))
-        if not all(c.isalnum() or c in "-_" for c in name):
-            raise actions.ActionError(_("Use only letters, numbers, '-' or '_'"))
+        actions.check_alias(name, cfg.stacks)
     else:
         actions.require(cfg.stacks, _("stack"), name)
     _root, known = repo_services(cfg)

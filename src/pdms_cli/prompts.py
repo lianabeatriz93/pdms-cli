@@ -11,10 +11,9 @@ from typing import Callable, Iterable
 import questionary
 import typer
 
-from .config import Database, Defaults, DevUser
+from . import actions
+from .config import EVENTS_MODES, LOG_LEVELS, Database, Defaults, DevUser
 from .i18n import LANGUAGES, _
-
-LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
 
 
 def require_tty() -> None:
@@ -34,13 +33,10 @@ def ask_name(kind: str, taken: Iterable[str]) -> str:
     taken = set(taken)
 
     def validate(value: str) -> bool | str:
-        value = value.strip()
-        if not value:
-            return _("Required field")
-        if value in taken:
-            return _("That name already exists")
-        if not all(c.isalnum() or c in "-_" for c in value):
-            return _("Use only letters, numbers, '-' or '_'")
+        try:
+            actions.check_alias(value, taken)
+        except actions.InvalidValue as invalid:
+            return invalid.reason
         return True
 
     return questionary.text(_("Alias ({kind}):", kind=kind), validate=validate).unsafe_ask().strip()
@@ -127,7 +123,7 @@ def ask_defaults(current: Defaults) -> Defaults:
     language = ask_language(current.language)
     host = questionary.text(_("uvicorn host:"), default=current.host).unsafe_ask()
     port = questionary.text(_("Default port:"), default=str(current.port), validate=_is_int).unsafe_ask()
-    level = questionary.select("LOGGING_LEVEL:", choices=LOG_LEVELS, default=current.logging_level).unsafe_ask()
+    level = questionary.select("LOGGING_LEVEL:", choices=list(LOG_LEVELS), default=current.logging_level).unsafe_ask()
     reload = questionary.confirm(_("Use --reload?"), default=current.reload).unsafe_ask()
     install = questionary.confirm(
         _("Run poetry lock && poetry install before starting?"), default=current.install
@@ -142,7 +138,7 @@ def ask_defaults(current: Defaults) -> Defaults:
             questionary.Choice(_("local: always the local broker"), "local"),
             questionary.Choice(_("aws: as configured by each service"), "aws"),
         ],
-        default=current.events if current.events in ("auto", "local", "aws") else "auto",
+        default=current.events if current.events in EVENTS_MODES else "auto",
     ).unsafe_ask()
     banner = questionary.confirm(_("Show the PDMS banner when the menu opens?"), default=current.banner).unsafe_ask()
     update_check = questionary.confirm(

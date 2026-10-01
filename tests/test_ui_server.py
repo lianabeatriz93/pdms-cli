@@ -474,8 +474,10 @@ def test_save_and_remove_stacks(ui, repo, machine) -> None:
     def save(name, services, new=True, **extra):
         return post(port, f"/api/stacks/{name}/save", {"services": services, "new": new, **extra})
 
-    assert save("bad%20name", ["user/user-me"]) == (400, {"error": "Use only letters, numbers, '-' or '_'"})
-    assert save("leads", ["user/user-me"]) == (400, {"error": "That name already exists"})
+    assert save("bad%20name", ["user/user-me"]) == (
+        400, {"error": "Use only letters, numbers, '-' or '_'", "field": "name"}
+    )
+    assert save("leads", ["user/user-me"]) == (400, {"error": "That name already exists", "field": "name"})
     assert save("me", ["user/nope"]) == (400, {"error": "Not services of the current repo: user/nope"})
     assert save("me", [])[0] == 400
     assert save("me", "user/user-me")[0] == 400
