@@ -1,3 +1,41 @@
+## v0.2.5 (2026-10-01)
+
+### Feat
+
+- **ui**: pdms ui in the language of pdms, switching live
+- **ui**: pdms ui --window installs pywebview by itself on Windows and macOS
+- **ui**: roles to tick, settings export/import and users from a database
+- **ui**: settings screen for databases, users and defaults, and an icon
+- **ui**: start the SQS consumers and the broker from the events screen
+- **ui**: start a single service from pdms ui
+- **ui**: filter the services and stacks of pdms ui
+- **ui**: open pdms ui in a window of its own with --window
+- **ui**: coloured JSON for event messages and wider stack cards
+- **ui**: local events screen in pdms ui
+- **ui**: start, stop and follow the proxy from pdms ui
+- **events**: follow the local SNS in pdms ui and with pdms logs sns
+- **ui**: start, stop and edit stacks from pdms ui
+- **ui**: stop, restart and follow the logs of services from pdms ui
+- **ui**: add the pdms ui web server with live state
+- **proxy**: run the proxy in the background and start it through actions
+
+### Fix
+
+- **install**: keep poetry out of the virtualenv pdms runs in
+- **ui**: open the JSON nested in the strings of event messages
+- **events**: keep SQS consumers ready in pdms ps and pdms ui
+- **events**: open JSON sent as a string in the local SNS log
+- **events**: always show the local SNS queue in pdms events status
+- **events**: keep every SNS publish in one local queue with local events
+- **proxy**: skip the reverse DNS lookup when binding the proxy
+- **proxy**: recognize the background proxy by its port, not the spawned pid
+
+### Refactor
+
+- **config**: non-interactive actions for databases, users and defaults
+- **actions**: plan, start, stop, save and remove stacks through actions
+- **actions**: move starting, stopping and restarting services into actions
+
 ## v0.2.4 (2026-09-30)
 
 ### Feat
