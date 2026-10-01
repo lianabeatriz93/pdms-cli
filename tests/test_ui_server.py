@@ -977,3 +977,16 @@ def test_import_users_from_a_database(ui, machine, monkeypatch) -> None:
     assert post(port, "/api/import-users/apply", {"users": data["users"]}) == (200, {"added": ["n"], "updated": ["agent"]})
     assert machine.users["n"].roles == "TPR.Supervisor,WEIRD" and machine.users["agent"].first_name == "Ana"
     assert post(port, "/api/import-users/apply", {"users": []}) == (400, {"error": "Nothing selected."})
+
+
+def test_the_state_carries_the_language_and_the_server_follows_it(machine, monkeypatch) -> None:
+    monkeypatch.setattr(ui_state.instances, "health_all", lambda items: {i.key: Health("ok") for i in items})
+    monkeypatch.setattr(ui_state.events, "is_up", lambda port: False)
+    monkeypatch.delenv("PDMS_LANG", raising=False)
+    machine.defaults.language = "es"
+    hub, _jobs = ui_server.make_app()
+    languages = []
+    monkeypatch.setattr(ui_server.i18n, "set_language", languages.append)
+    assert hub.build()["language"] == "es" and languages == ["es"]  # a change made in the CLI reaches the server
+    monkeypatch.setenv("PDMS_LANG", "en")
+    assert hub.build()["language"] == "en"

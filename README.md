@@ -270,6 +270,8 @@ imported from the `pdms_user` table of a database, like `pdms user import`. **Ex
 what is new or changed and which of your entries to overwrite (the previous file is kept as a backup).
 Deleting a database or a user that a stack uses makes that stack ask for one when it starts.
 
+The page uses the language of pdms (`pdms config language`, or `PDMS_LANG`) and changes with it while it is open.
+
 It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the
 session, which the browser keeps as a cookie. Requests from other web pages are rejected, and a database password
 only reaches the page when you click its eye to show it (in the table it hides again after 30 seconds).
