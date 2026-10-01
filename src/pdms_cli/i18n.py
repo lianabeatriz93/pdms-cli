@@ -69,6 +69,11 @@ ES: dict[str, str] = {
     "Must be a number between 1 and 65535": "Debe ser un número entre 1 y 65535",
     "Must be a number between {low} and {high}": "Debe ser un número entre {low} y {high}",
     "Must be one of: {choices}": "Debe ser uno de: {choices}",
+    "The window needs pywebview; installing it (only this once)...":
+        "La ventana necesita pywebview; instalándolo (solo esta vez)...",
+    "Could not install pywebview ({error}). Install it with:\n  {command}\nor use pdms ui to open it in the browser.":
+        "No se pudo instalar pywebview ({error}). Instálalo con:\n  {command}\no usa pdms ui para abrirla en el navegador.",
+    "pywebview installed.": "pywebview instalado.",
     "Unknown roles: {roles}. Available: {available}": "Roles desconocidos: {roles}. Disponibles: {available}",
     "{role} (not a role of this repo)": "{role} (no es un rol de este repo)",
     "DEV_ROLES (space to select):": "DEV_ROLES (espacio para marcar):",
