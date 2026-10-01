@@ -55,8 +55,23 @@ def keep(queue_url, notification):
         _sqs(queue_url, "SendMessage", MessageBody=body)
 
 
+def _unnest(value):
+    """``value`` with every string that holds a JSON object or list decoded, at any depth (for the readable log)."""
+    if isinstance(value, str) and value.lstrip()[:1] in ("{", "["):
+        try:
+            return _unnest(json.loads(value))
+        except ValueError:
+            return value
+    if isinstance(value, dict):
+        return {key: _unnest(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_unnest(item) for item in value]
+    return value
+
+
 def write_log(path, kept):
-    """One readable entry per publish: when, who, to which topic, then the message (JSON pretty-printed)."""
+    """One readable entry per publish: when, who, to which topic, then the message (JSON pretty-printed, JSON
+    nested in its strings too, as services often send ``data`` as a JSON string)."""
     try:
         if os.path.getsize(path) > LOG_LIMIT:
             os.replace(path, f"{path}.1")
@@ -66,7 +81,7 @@ def write_log(path, kept):
     if kept["MessageAttributes"]:
         extras.append("attributes=" + json.dumps(kept["MessageAttributes"], sort_keys=True))
     try:
-        message = json.dumps(json.loads(kept["Message"]), indent=2, ensure_ascii=False)
+        message = json.dumps(_unnest(json.loads(kept["Message"])), indent=2, ensure_ascii=False)
     except (TypeError, ValueError):
         message = str(kept["Message"])
     header = " ".join([kept["Timestamp"], kept["Service"], "→", kept["Topic"], *extras])
