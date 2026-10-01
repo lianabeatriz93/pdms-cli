@@ -287,7 +287,7 @@ function closeLogs() {
 
 // ---------------------------------------------------------------------------- restart and up
 
-const launch = { path: null, confirmed: false, after: null, run: false };
+const launch = { path: null, confirmed: false, after: null, run: false, service: "" };
 
 function options(select, names, current, label = (name) => name) {
   select.replaceChildren(...names.map((name) => el("option", name === current ? { value: name, selected: "" } : { value: name }, label(name))));
@@ -299,8 +299,8 @@ function dbLabel(name) {
 }
 
 // The user, database and install of a restart or a stack's up, asking again before a protected database.
-function openLaunch({ title, key, hint, user, db, path, go, after, broker = false, run = false }) {
-  Object.assign(launch, { path, after, run, confirmed: false });
+function openLaunch({ title, key, hint, user, db, path, go, after, broker = false, run = false, service = "" }) {
+  Object.assign(launch, { path, after, run, service, confirmed: false });
   $("run-picker").hidden = $("run-port-label").hidden = !run;
   $("run-consumer").hidden = true;
   $("restart-broker-label").hidden = !broker;
@@ -403,6 +403,7 @@ async function submitLaunch(event) {
   const install = { auto: null, force: true, skip: false }[$("restart-form").install.value];
   const body = { user: $("restart-user").value, db: $("restart-db").value, install, confirmed: launch.confirmed };
   if (!$("restart-broker-label").hidden) body.broker = $("restart-broker").checked;
+  if (launch.service) Object.assign(body, { service: launch.service, port: null });
   if (launch.run) {
     const picked = $("run-services").querySelector("input:checked");
     if (!picked) {
@@ -969,6 +970,9 @@ function paintEvents() {
   $("events-start").hidden = up || busy;
   $("events-stop").hidden = !up || busy;
   $("events-send").hidden = !up;
+  const brokerRow = up && !busy ? brokerQueue() : null;
+  $("events-broker").hidden = !brokerRow || !brokerRow.consumer || Boolean(brokerRow.running) || Boolean(consumerJob(brokerRow.consumer))
+    || state.instances.some((i) => i.queue === brokerRow.name && i.status !== "stopped");
 
   const card = $("events-info");
   const data = eventsView.queues;
@@ -998,6 +1002,7 @@ function paintEvents() {
   $("events-queues").hidden = eventsView.tab !== "queues";
   $("events-types").hidden = eventsView.tab !== "types";
   $("events-sns").hidden = eventsView.tab !== "sns";
+  if (eventsView.tab === "queues") paintQueues(); // a consumer's start shows as it goes
   syncSns();
 }
 
@@ -1044,13 +1049,48 @@ function count(value) {
     : el("td", { class: `num ${value ? "count-on" : "muted"}` }, String(value));
 }
 
+// The job starting a consumer (pdms keys a consumer service by its folder: lead/lead-sqs-consumer → lead-sqs-consumer@sqs).
+function consumerJob(service) {
+  return service ? state.jobs[`${service.slice(service.lastIndexOf("/") + 1)}@sqs`] || null : null;
+}
+
+function openConsumerStart(service, what = "consumer") {
+  openLaunch({
+    title: "Start", key: service, go: "Start", path: "/api/run", service, user: state.user, db: state.db,
+    hint: `The ${what} reads its queue from the local ElasticMQ, in the background like pdms run -b.`,
+    after: (_install, data) => { toast(`Starting ${data.job}…`, "info"); loadQueues(); },
+  });
+}
+
+function brokerQueue() {
+  const data = eventsView.queues;
+  return data && data.queues.find((queue) => queue.broker) || null;
+}
+
+// A live instance of the queue's consumer reading another queue (a service that consumes two, like a retry queue).
+function consumerElsewhere(queue) {
+  if (!queue.consumer || queue.running) return null;
+  return state.instances.find((i) => i.queue && i.status !== "stopped" && slashes(i.service).endsWith(`/${queue.consumer}`)) || null;
+}
+
 function queueRow(queue) {
+  const elsewhere = consumerElsewhere(queue);
+  const job = queue.running || elsewhere ? null : consumerJob(queue.consumer);
   const consumer = queue.running
     ? button(queue.running, () => showLogs(queue.running), { class: "btn tiny link", title: `Logs of ${queue.running}` })
+    : elsewhere ? el("span", {}, button(elsewhere.key, () => showLogs(elsewhere.key), { class: "btn tiny link", title: `Logs of ${elsewhere.key}` }),
+      el("span", { class: "muted" }, ` reads ${elsewhere.queue}`))
     : queue.sns ? el("span", { class: "muted" }, "local SNS: every publish")
       : queue.broker ? el("span", { class: "muted" }, `${queue.consumer || "broker"} (not running)`)
         : el("span", { class: "muted" }, queue.consumer || "-");
   const actions = el("td", { class: "row-actions" });
+  if (job) {
+    actions.append(job.error
+      ? button("Start failed", () => showLogs(job.log_key || job.key, job.installed ? "install" : "current"), { class: "btn small bad", title: job.error })
+      : el("span", { class: "st starting" }, PHASES[job.phase] || job.phase));
+  } else if (queue.consumer && !queue.running && !elsewhere && eventsView.queues.up) {
+    actions.append(button("Start", () => openConsumerStart(queue.consumer, queue.broker ? "broker" : "consumer"), { class: "btn small primary" }));
+  }
   if (queue.visible !== null) {
     actions.append(button("Messages", () => openPeek(queue.name)));
     if (!queue.sns) actions.append(button("Send", () => openSend(queue.name)));
@@ -1489,6 +1529,7 @@ $("route-refresh").addEventListener("click", loadRoutes);
 $("events-start").addEventListener("click", openEventsUp);
 $("events-stop").addEventListener("click", stopEvents);
 $("events-send").addEventListener("click", () => openSend());
+$("events-broker").addEventListener("click", () => openConsumerStart(brokerQueue().consumer, "broker"));
 for (const tab of $("events-tabs").children) tab.addEventListener("click", () => showEventsTab(tab.dataset.tab));
 $("queue-filter").addEventListener("input", paintQueues);
 $("queue-busy").addEventListener("change", paintQueues);
