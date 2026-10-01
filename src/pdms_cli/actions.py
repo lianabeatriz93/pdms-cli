@@ -8,10 +8,12 @@ the action again with the answer. Problems no answer can fix raise :class:`Actio
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 
 from . import events, installer, instances, proxy, repos, routes, runner
 from .config import Config, Database, DevUser, Stack
@@ -208,6 +210,32 @@ def plan_service(
         service, user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], host, port, reload, setup, cmd,
         queue=consumer[0].name if consumer else "",
     )
+
+
+def install_wanted(cfg: Config, install: bool | None) -> bool:
+    """Whether to install at all: True forces it, False skips it, None follows the settings."""
+    return install is True or (install is None and cfg.defaults.install)
+
+
+def needs_install(cfg: Config, service: Path, install: bool | None) -> bool:
+    """Whether to run ``poetry lock && poetry install`` now; by default (smart) only if something changed."""
+    if not install_wanted(cfg, install):
+        return False
+    return not (install is None and cfg.defaults.smart_install and runner.poetry_python(service)
+                and installer.is_up_to_date(service))
+
+
+def install_service(service: Path, output: IO[str] | None = None) -> None:
+    """Install the service's dependencies (see :func:`runner.install`) and remember what got installed."""
+    try:
+        runner.ensure_poetry()
+        runner.install(service, output)
+    except RuntimeError as exc:
+        raise ActionError(str(exc)) from exc
+    except subprocess.CalledProcessError as exc:
+        raise ActionError(_("{cmd} failed (exit code {code}).", cmd=" ".join(map(str, exc.cmd)),
+                            code=exc.returncode)) from exc
+    installer.remember(service)
 
 
 def installed_parts(service: Path) -> dict[str, str] | None:

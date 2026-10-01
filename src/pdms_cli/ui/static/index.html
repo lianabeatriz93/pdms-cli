@@ -20,15 +20,56 @@
   <a class="soon" aria-disabled="true">Events</a>
 </nav>
 <main class="main">
-  <div class="bar"><h1>Services</h1><span class="muted" id="summary"></span></div>
+  <div class="bar">
+    <h1>Services</h1><span class="muted" id="summary"></span>
+    <button class="btn ghost push" id="clean" type="button" hidden>Forget stopped</button>
+  </div>
   <div class="tbl">
     <table>
-      <thead><tr><th>Instance</th><th>Status</th><th>URL</th><th>Repo</th><th>User</th><th>DB</th><th>Uptime</th></tr></thead>
+      <thead><tr><th>Instance</th><th>Status</th><th>URL</th><th>Repo</th><th>User</th><th>DB</th><th>Uptime</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <p class="empty" id="empty" hidden>No background services. Start one with <code>pdms run -b</code> or <code>pdms up</code>.</p>
   </div>
-  <p class="muted note">Read-only for now: starting, stopping and logs come to this screen next. The CLI keeps working alongside; both read the same state.</p>
+
+  <section class="logs" id="logs" hidden>
+    <div class="logs-bar">
+      <b class="mono" id="logs-key"></b>
+      <div class="tabs" id="logs-tabs" role="tablist">
+        <button type="button" role="tab" data-which="current">Current</button>
+        <button type="button" role="tab" data-which="previous">Previous run</button>
+        <button type="button" role="tab" data-which="install">Install</button>
+      </div>
+      <span class="muted" id="logs-note"></span>
+      <button class="btn ghost push" id="logs-clear" type="button">Clear</button>
+      <button class="btn ghost" id="logs-close" type="button" aria-label="Close the logs">✕</button>
+    </div>
+    <pre class="logs-text" id="logs-text" tabindex="0"></pre>
+  </section>
+  <p class="muted note">The CLI keeps working alongside: both read and change the same state.</p>
 </main>
+
+<dialog id="restart">
+  <form method="dialog" id="restart-form">
+    <h2>Restart <span class="mono" id="restart-key"></span></h2>
+    <p class="muted">Same port. Change the user or the database if you need to.</p>
+    <label>User <select id="restart-user"></select></label>
+    <label>Database <select id="restart-db"></select></label>
+    <fieldset>
+      <legend>Install dependencies</legend>
+      <label class="inline"><input type="radio" name="install" value="auto" checked> Only if something changed</label>
+      <label class="inline"><input type="radio" name="install" value="force"> Always</label>
+      <label class="inline"><input type="radio" name="install" value="skip"> Never</label>
+    </fieldset>
+    <p class="warn" id="restart-warn" hidden></p>
+    <p class="error" id="restart-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="restart-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="restart-go">Restart</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
 </body>
 </html>

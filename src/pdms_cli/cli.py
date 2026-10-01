@@ -326,13 +326,11 @@ def confirm_protected(cfg: Config, prof: Profile, yes: bool) -> None:
 
 
 def poetry_install(service: Path) -> None:
+    console.rule("poetry lock && poetry install")
     try:
-        runner.ensure_poetry()
-        console.rule("poetry lock && poetry install")
-        runner.install(service)
-    except (RuntimeError, subprocess.CalledProcessError) as exc:
-        fail(str(exc))
-    installer.remember(service)
+        actions.install_service(service)
+    except actions.ActionError as exc:
+        fail(exc.message)
 
 
 def install_label(cfg: Config, install: Optional[bool], each: bool = False) -> str:
@@ -345,19 +343,17 @@ def install_label(cfg: Config, install: Optional[bool], each: bool = False) -> s
 
 def ensure_installed(cfg: Config, service: Path, install: Optional[bool]) -> None:
     """Install according to the flag: True forces it, False skips it, None follows the settings (smart by default)."""
-    if install is False or (install is None and not cfg.defaults.install):
+    if actions.needs_install(cfg, service, install):
+        poetry_install(service)
+    elif actions.install_wanted(cfg, install):
+        console.print("[green]✓[/] " + _(
+            "{name}: dependencies up to date (nothing changed since the last install), skipping.", name=service.name
+        ))
+    else:
         try:
             runner.ensure_poetry()
         except RuntimeError as exc:
             fail(str(exc))
-        return
-    if install is None and cfg.defaults.smart_install and runner.poetry_python(service) \
-            and installer.is_up_to_date(service):
-        console.print("[green]✓[/] " + _(
-            "{name}: dependencies up to date (nothing changed since the last install), skipping.", name=service.name
-        ))
-        return
-    poetry_install(service)
 
 
 EVENTS_HELP = _("Where the service publishes SQS events: auto, local (pdms events broker) or aws.")
@@ -1725,8 +1721,8 @@ def ui_cmd(
         console.print(_("[dim]Port {port} is in use; using {free}.[/]", port=busy.port, free=busy.free))
         port = busy.free
     token = ui_server.new_token()
-    hub = ui_server.Hub()
-    server = ui_server.make_server("127.0.0.1", port, token, hub)
+    hub, jobs = ui_server.make_app()
+    server = ui_server.make_server("127.0.0.1", port, token, hub, jobs)
     url = f"http://127.0.0.1:{port}/?token={token}"
     console.print("[green]✓[/] " + _("pdms ui is running at {url}", url=url), highlight=False, soft_wrap=True)
     console.print(_("[dim]Only this machine can open it, and only with this link. Ctrl+C to stop it.[/]"))
