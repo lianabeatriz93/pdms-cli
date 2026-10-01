@@ -238,6 +238,21 @@ pdms proxy routes -f tp    # which service handles each route and where it would
   It shows up in `pdms ps` as `proxy@<port>`, its requests go to a log file (`pdms logs proxy`) and
   `pdms stop proxy` (or `pdms stop --all`) stops it and puts `frontend/.env.local` back.
 
+## Web interface: `pdms ui` (preview)
+
+```bash
+pdms ui                    # opens http://127.0.0.1:8765 in the browser; Ctrl+C to stop it
+pdms ui --no-browser -p 9000
+```
+
+A page with the background services, the proxy and the local events, updated live from the same files the CLI
+uses, so both can be used at the same time. For now it only shows them; starting, stopping, logs, stacks and the proxy
+come in the next releases.
+
+It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the
+session, which the browser keeps as a cookie. Requests from other web pages are rejected, and database passwords are
+never sent to the page.
+
 ## Events (local SQS)
 
 PDMS services publish SQS events to the **broker** queue (`SQS_EVENT_BROKER_URL`); the `broker-sqs-event` Lambda
@@ -404,6 +419,7 @@ do it later).
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |
+| `pdms ui` | Web interface with the services, the proxy and the events, live (preview) |
 | `pdms events` | Local SQS: map, ElasticMQ and broker (`map`, `up`, `status`, `send`, `peek`, `purge`, `down`) |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |

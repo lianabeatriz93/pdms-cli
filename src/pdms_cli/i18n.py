@@ -475,6 +475,16 @@ ES: dict[str, str] = {
     "'{alias}' is already the current repo.": "'{alias}' ya es el repo actual.",
     "Forget a registered repo (nothing is deleted from disk).": "Olvida un repo registrado (no se borra nada del disco).",
     "Choose the current one": "Elegir el actual",
+    # ------------------------------------------------------------------ ui
+    "Open the pdms web interface (local only; Ctrl+C to stop it).":
+        "Abre la interfaz web de pdms (solo en local; Ctrl+C para pararla).",
+    "Port to listen on (the next free one if it is in use).": "Puerto en el que escuchar (el siguiente libre si está en uso).",
+    "Open it in the browser.": "Abrirla en el navegador.",
+    "[dim]Port {port} is in use; using {free}.[/]": "[dim]El puerto {port} está en uso; uso el {free}.[/]",
+    "pdms ui is running at {url}": "pdms ui está corriendo en {url}",
+    "[dim]Only this machine can open it, and only with this link. Ctrl+C to stop it.[/]":
+        "[dim]Solo se puede abrir desde esta máquina y solo con este enlace. Ctrl+C para pararla.[/]",
+    "pdms ui stopped.": "pdms ui parada.",
     # ------------------------------------------------------------------ proxy
     "Local API gateway: one port for every service, local instances first, the remote API otherwise.":
         "Gateway local: un solo puerto para todos los servicios; primero las instancias locales, si no la API remota.",

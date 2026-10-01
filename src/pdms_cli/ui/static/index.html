@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pdms</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="titlebar">
+  <span class="brand">pdms</span>
+  <span class="live" id="live" title="Connecting…"></span>
+  <div class="ctx" id="ctx"></div>
+</header>
+<nav class="side">
+  <a class="on" href="#services">Services <span id="count"></span></a>
+  <a class="soon" aria-disabled="true">Stacks</a>
+  <a class="soon" aria-disabled="true">Proxy</a>
+  <a class="soon" aria-disabled="true">Events</a>
+</nav>
+<main class="main">
+  <div class="bar"><h1>Services</h1><span class="muted" id="summary"></span></div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Instance</th><th>Status</th><th>URL</th><th>Repo</th><th>User</th><th>DB</th><th>Uptime</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="empty" id="empty" hidden>No background services. Start one with <code>pdms run -b</code> or <code>pdms up</code>.</p>
+  </div>
+  <p class="muted note">Read-only for now: starting, stopping and logs come to this screen next. The CLI keeps working alongside; both read the same state.</p>
+</main>
+</body>
+</html>
