@@ -218,6 +218,15 @@ def tail(path: str, lines: int = 20) -> str:
         return ""
 
 
+def contains(path: str, marker: str) -> bool:
+    """Whether a line of the file has ``marker``, reading only until the first one that does."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return any(marker in line for line in fh)
+    except FileNotFoundError:
+        return False
+
+
 # --------------------------------------------------------------------------- health
 
 # uvicorn logs these once the app imported fine (also after every --reload).
@@ -265,7 +274,8 @@ def health(instance: Instance) -> Health:
     if not instance.alive():
         return Health("stopped")
     if instance.is_consumer:  # no HTTP: ready once the poller listens on its queue
-        return Health("ok") if POLLER_READY in tail(instance.log, 200) else Health("starting")
+        # Written once at the top of the log (each run starts a new one), then buried by the service's own output.
+        return Health("ok") if contains(instance.log, POLLER_READY) else Health("starting")
     if responds(instance.host, instance.port):
         return Health("ok")
     error = startup_error(instance.log)

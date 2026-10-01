@@ -54,6 +54,9 @@ def test_consumers_are_keyed_by_queue_and_report_ready_from_their_log(tmp_path):
     log.write_text("# pdms start\n10:00:00 [pdms-poller] Polling email-send-sqs-queue.fifo -> main.lambda_handler\n",
                    encoding="utf-8")
     assert instances.health(inst).state == "ok"
+    with log.open("a", encoding="utf-8") as fh:  # the service's DEBUG output pushes the line far up the log
+        fh.write("DEBUG botocore.endpoint Making request for OperationModel(name=ReceiveMessage)\n" * 5000)
+    assert instances.health(inst).state == "ok"
 
 
 def test_queue_of_service_and_poller_command():
