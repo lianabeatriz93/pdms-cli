@@ -17,7 +17,7 @@
   <a href="#services" data-view="services">Services <span id="count"></span></a>
   <a href="#stacks" data-view="stacks">Stacks <span id="stack-count"></span></a>
   <a href="#proxy" data-view="proxy">Proxy <span id="proxy-on"></span></a>
-  <a class="soon" aria-disabled="true">Events</a>
+  <a href="#events" data-view="events">Events <span id="events-on"></span></a>
 </nav>
 <main class="main">
 <section class="view" id="view-services">
@@ -69,7 +69,7 @@
   </div>
   <div class="card proxy-info" id="proxy-info"></div>
 
-  <div class="tabs" id="proxy-tabs" role="tablist">
+  <div class="tabs view-tabs" id="proxy-tabs" role="tablist">
     <button type="button" role="tab" data-tab="requests">Requests</button>
     <button type="button" role="tab" data-tab="routes">Routes</button>
   </div>
@@ -107,6 +107,77 @@
     </div>
   </div>
 </section>
+
+<section class="view" id="view-events" hidden>
+  <div class="bar">
+    <h1>Events</h1><span class="muted" id="events-summary"></span>
+    <div class="bar-actions push">
+      <button class="btn" id="events-send" type="button" hidden>Send event</button>
+      <button class="btn bad" id="events-stop" type="button" hidden>Stop</button>
+      <button class="btn primary" id="events-start" type="button" hidden>Start local events</button>
+    </div>
+  </div>
+  <div class="card proxy-info" id="events-info"></div>
+
+  <div class="tabs view-tabs" id="events-tabs" role="tablist">
+    <button type="button" role="tab" data-tab="queues">Queues</button>
+    <button type="button" role="tab" data-tab="types">Event types</button>
+    <button type="button" role="tab" data-tab="sns">SNS</button>
+  </div>
+
+  <div class="panel" id="events-queues">
+    <div class="bar">
+      <input type="search" id="queue-filter" placeholder="Filter by queue or consumer" aria-label="Filter queues" autocomplete="off">
+      <label class="inline"><input type="checkbox" id="queue-busy"> With messages only</label>
+      <span class="muted" id="queue-count"></span>
+      <button class="btn ghost push" id="queue-purge-all" type="button" hidden>Purge all</button>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Queue</th><th class="num">Waiting</th><th class="num">In flight</th><th>Consumer</th><th class="num" title="Event types the broker routes here">Types</th><th></th></tr></thead>
+        <tbody id="queue-rows"></tbody>
+      </table>
+      <p class="empty" id="queue-empty" hidden></p>
+    </div>
+
+    <section class="logs" id="peek" hidden>
+      <div class="logs-bar">
+        <b class="mono" id="peek-queue"></b>
+        <span class="muted" id="peek-note"></span>
+        <button class="btn ghost push" id="peek-refresh" type="button">Refresh</button>
+        <button class="btn ghost bad" id="peek-purge" type="button">Purge</button>
+        <button class="btn ghost" id="peek-close" type="button" aria-label="Close the messages">✕</button>
+      </div>
+      <div class="messages" id="peek-messages"></div>
+    </section>
+  </div>
+
+  <div class="panel" id="events-types" hidden>
+    <div class="bar">
+      <input type="search" id="type-filter" placeholder="Filter by event type, queue or consumer" aria-label="Filter event types" autocomplete="off">
+      <span class="muted" id="type-count"></span>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Event type</th><th>Queue</th><th>Consumer</th><th></th></tr></thead>
+        <tbody id="type-rows"></tbody>
+      </table>
+      <p class="empty" id="type-empty" hidden></p>
+    </div>
+  </div>
+
+  <div class="panel" id="events-sns" hidden>
+    <div class="bar">
+      <select id="sns-topic" aria-label="Topic"></select>
+      <input type="search" id="sns-filter" placeholder="Filter by service, attribute or message" aria-label="Filter publishes" autocomplete="off">
+      <span class="muted" id="sns-count"></span>
+      <button class="btn ghost push" id="sns-clear" type="button">Clear</button>
+    </div>
+    <div class="messages" id="sns-entries"></div>
+    <p class="empty card" id="sns-empty" hidden></p>
+    <p class="muted note">With local events, whatever a service publishes to SNS, to any topic, stays here (queue <code>pdms-sns</code>, <code>pdms logs sns</code>) instead of reaching AWS.</p>
+  </div>
+</section>
   <p class="muted note">The CLI keeps working alongside: both read and change the same state.</p>
 </main>
 
@@ -114,6 +185,7 @@
   <form method="dialog" id="restart-form">
     <h2><span id="restart-title">Restart</span> <span class="mono" id="restart-key"></span></h2>
     <p class="muted" id="restart-hint"></p>
+    <label class="inline" id="restart-broker-label" hidden><input type="checkbox" id="restart-broker" checked> Also run the broker (broker-sqs-event), which routes events to their queues as in AWS</label>
     <label>User <select id="restart-user"></select></label>
     <label>Database <select id="restart-db"></select></label>
     <fieldset>
@@ -146,6 +218,24 @@
     <div class="actions">
       <button class="btn ghost" type="button" id="proxy-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="proxy-go">Start</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="send">
+  <form method="dialog" id="send-form">
+    <h2>Send an event</h2>
+    <p class="muted">To an event type (through the broker, as a service would publish it) or straight to a queue.</p>
+    <label>Event type or queue <input id="send-target" list="send-targets" autocomplete="off" required></label>
+    <datalist id="send-targets"></datalist>
+    <label class="inline" id="send-direct-label"><input type="checkbox" id="send-direct"> Skip the broker: straight to its queue</label>
+    <label><span id="send-body-label">Event fields (JSON)</span> <textarea id="send-body" rows="12" spellcheck="false"></textarea></label>
+    <p class="error" id="send-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="send-template">Fill from the event class</button>
+      <span class="push"></span>
+      <button class="btn ghost" type="button" id="send-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="send-go">Send</button>
     </div>
   </form>
 </dialog>

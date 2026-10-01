@@ -8,6 +8,7 @@ import os
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -595,3 +596,163 @@ def test_the_state_shows_the_running_proxy(proxy_repo, machine, monkeypatch) -> 
         "remote": "", "as": "boss", "frontend": "/repo/frontend/.env.local", "started_at": "2026-10-01T10:00:00",
         "background": True, "status": "ok",
     }
+
+
+# --------------------------------------------------------------------------- local events
+
+
+@pytest.fixture
+def elasticmq(repo, machine, monkeypatch):
+    """The repo with a broker and an event map, and a fake local ElasticMQ: ``up``, its ``counts``, what was
+    ``sent``, ``purged`` and whether it was ``stopped``."""
+    from pdms_cli import events
+
+    broker = repo / "broker" / "broker-sqs-event"
+    broker.mkdir(parents=True)
+    (broker / "pyproject.toml").write_text("[tool.poetry]\n", encoding="utf-8")
+    (broker / "main.py").write_text("app = None\n", encoding="utf-8")
+    event_map = events.EventMap(
+        queues={"broker.fifo": events.Queue("broker.fifo"), "email.fifo": events.Queue("email.fifo")},
+        consumers={"broker.fifo": events.Consumer("broker/broker-sqs-event", "main.handler"),
+                   "email.fifo": events.Consumer("notification/email-notify", "main.handler")},
+        routes={"email-notify": "email.fifo", "sms-notify": "email.fifo"}, broker_queue="broker.fifo",
+    )
+    fake = {"up": True, "counts": {"broker.fifo": {"visible": 0, "in_flight": 0},
+                                   "email.fifo": {"visible": 2, "in_flight": 1},
+                                   "pdms-sns": {"visible": 5, "in_flight": 0}},
+            "sent": [], "purged": [], "stopped": False}
+    monkeypatch.setattr(events, "load_event_map", lambda root, env="dev": event_map)
+    monkeypatch.setattr(events, "is_up", lambda port: fake["up"])
+    monkeypatch.setattr(events, "running", lambda port: fake["up"])
+    monkeypatch.setattr(events, "queue_counts", lambda port: fake["counts"])
+    monkeypatch.setattr(events, "send", lambda port, queue, body, fifo=True: fake["sent"].append((queue, body, fifo)) or "m-123456789")
+    monkeypatch.setattr(events, "purge", lambda port, queue: fake["purged"].append(queue))
+    monkeypatch.setattr(events, "stop", lambda: fake.update(stopped=True) or True)
+    return fake
+
+
+def get(port: int, path: str):
+    response, raw, _conn = request(port, path, cookie(port))
+    return response.status, json.loads(raw)
+
+
+def test_events_queues_and_map(ui, elasticmq) -> None:
+    port, _hub, _states, _jobs = ui
+    status, data = get(port, "/api/events/queues")
+    assert status == 200 and data["up"] and data["broker"] == "broker.fifo" and data["broker_service"]
+    queues = {queue["name"]: queue for queue in data["queues"]}
+    assert list(queues) == ["broker.fifo", "email.fifo", "pdms-sns"]
+    assert queues["email.fifo"] == {
+        "name": "email.fifo", "fifo": True, "source": "terraform", "types": 2, "visible": 2, "in_flight": 1,
+        "consumer": "notification/email-notify", "running": "", "broker": False, "sns": False,
+    }
+    assert queues["pdms-sns"]["sns"] and not queues["pdms-sns"]["fifo"] and queues["broker.fifo"]["broker"]
+
+    elasticmq["up"] = False
+    _status, data = get(port, "/api/events/queues")
+    assert not data["up"] and [q["visible"] for q in data["queues"]] == [None, None]  # the repo's, without counts
+
+    assert get(port, "/api/events/map") == (200, {"broker": "broker.fifo", "types": [
+        {"type": "email-notify", "queue": "email.fifo", "consumer": "notification/email-notify"},
+        {"type": "sms-notify", "queue": "email.fifo", "consumer": "notification/email-notify"},
+    ]})
+
+
+def test_events_peek_and_template(ui, elasticmq, repo, monkeypatch) -> None:
+    port, _hub, _states, _jobs = ui
+    from pdms_cli import events
+
+    monkeypatch.setattr(events, "peek", lambda port, queue, limit: [{
+        "MessageId": "m1", "Body": '{"type": "email-notify"}',
+        "Attributes": {"ApproximateReceiveCount": "2", "SentTimestamp": "1790850000000"},
+    }])
+    assert get(port, "/api/events/peek?queue=email.fifo") == (200, {"queue": "email.fifo", "messages": [
+        {"id": "m1", "body": '{"type": "email-notify"}', "receives": 2, "sent": 1790850000000, "group": ""},
+    ]})
+    status, data = get(port, "/api/events/peek?queue=nope")
+    assert status == 400 and "Unknown queue 'nope'" in data["error"]
+
+    monkeypatch.setattr(events, "event_template", lambda root, event_type: {"to": "", "subject": ""})
+    assert get(port, "/api/events/template?type=email-notify") == (200, {"to": "", "subject": ""})
+    assert get(port, "/api/events/template?type=email.fifo")[0] == 400
+
+    elasticmq["up"] = False
+    status, data = get(port, "/api/events/peek?queue=email.fifo")
+    assert status == 400 and data["error"] == "ElasticMQ is not running. Start it with pdms events up."
+
+
+def test_events_send_and_purge(ui, elasticmq) -> None:
+    port, _hub, _states, _jobs = ui
+    status, data = post(port, "/api/events/send", {"target": "email-notify", "body": '{"to": "a@x.com"}'})
+    assert status == 200 and data == {"id": "m-123456789", "queue": "broker.fifo", "routed_to": "email.fifo",
+                                      "consumer": "notification/email-notify", "consumed": False}
+    queue, body, fifo = elasticmq["sent"][-1]
+    assert queue == "broker.fifo" and fifo and json.loads(body)["to"] == "a@x.com"
+
+    status, data = post(port, "/api/events/send", {"target": "email-notify", "body": "{}", "direct": True})
+    assert data["queue"] == "email.fifo" and data["routed_to"] == ""
+    assert post(port, "/api/events/send", {"target": "email-notify", "body": "{"})[0] == 400
+    assert post(port, "/api/events/send", {"target": ""})[0] == 400
+    assert post(port, "/api/events/send", {"target": "email.fifo", "body": {"a": 1}})[0] == 400
+
+    assert post(port, "/api/events/purge", {"queues": ["email.fifo"]}) == (200, {"purged": ["email.fifo"]})
+    assert post(port, "/api/events/purge", {"queues": []}) == (200, {"purged": ["email.fifo", "pdms-sns"]})
+    assert post(port, "/api/events/purge", {"queues": ["nope"]})[0] == 400
+    assert post(port, "/api/events/purge", {"queues": "email.fifo"})[0] == 400
+    assert elasticmq["purged"] == ["email.fifo", "email.fifo", "pdms-sns"]
+
+    elasticmq["up"] = False
+    status, data = post(port, "/api/events/send", {"target": "email-notify"})
+    assert status == 400 and "ElasticMQ is not running" in data["error"] and "[bold]" not in data["error"]
+
+
+def test_events_up_asks_before_a_protected_database_and_starts_the_broker(ui, elasticmq, repo, machine, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    started, launched = [], []
+    monkeypatch.setattr(actions, "start_events", lambda cfg, queues: started.append(sorted(queues)) or "created")
+    monkeypatch.setattr(actions, "plan_service", lambda cfg, service, **kw: SimpleNamespace(
+        service=service, port=0, **kw))
+    monkeypatch.setattr(actions, "start_service", lambda cfg, launch: launched.append(launch))
+    monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: False)
+
+    status, data = post(port, "/api/events/up", {"db": "shared"})
+    assert status == 409 and data == {"decision": "protected_database", "name": "shared"} and not started
+    assert post(port, "/api/events/up", {"broker": "yes"})[0] == 400
+
+    assert post(port, "/api/events/up", {"user": "boss", "db": "shared", "confirmed": True}) == (
+        202, {"job": "events:elasticmq"},
+    )
+    wait_until(lambda: launched and not jobs.snapshot())
+    assert started == [["broker.fifo", "email.fifo"]]
+    launch = launched[0]
+    assert launch.service == repo / "broker/broker-sqs-event" and launch.user_name == "boss"
+    assert launch.db_name == "shared" and launch.events_mode == "local"
+
+    launched.clear()
+    assert post(port, "/api/events/up", {"broker": False, "db": "shared"})[0] == 202  # no broker: no database asked
+    wait_until(lambda: len(started) == 2 and not jobs.snapshot())
+    assert not launched
+
+
+def test_events_up_failures_stay_on_the_page(ui, elasticmq, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+
+    def broken(cfg, queues):
+        raise actions.ActionError("Docker is not available: [bold]docker[/] not found")
+
+    monkeypatch.setattr(actions, "start_events", broken)
+    assert post(port, "/api/events/up", {"broker": False})[0] == 202
+    wait_until(lambda: jobs.snapshot().get("events:elasticmq", {}).get("error"))
+    assert post(port, "/api/events/dismiss") == (200, {}) and not jobs.snapshot()
+
+
+def test_events_down_stops_the_consumers_and_elasticmq(ui, elasticmq, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    registry = instances.load()
+    registry["svc@8081"].queue = "email.fifo"
+    instances.save(registry)
+    stopped = []
+    monkeypatch.setattr(actions, "stop_service", lambda inst: stopped.append(inst.key))
+    assert post(port, "/api/events/down") == (202, {"job": "events:elasticmq"})
+    wait_until(lambda: elasticmq["stopped"] and not jobs.snapshot())
+    assert stopped == ["svc@8081"]

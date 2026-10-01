@@ -138,9 +138,9 @@ function serviceItems() {
       detail: state.sns.status === "stopped" ? "the local ElasticMQ is not running: pdms events up" : "",
     });
   }
-  // A restart forgets the instance for a moment: keep its row while the job runs.
+  // A restart forgets the instance for a moment: keep its row while the job runs (stacks and events have their own).
   for (const key of Object.keys(state.jobs)) {
-    if (!key.startsWith("stack:") && !items.some((item) => item.key === key)) {
+    if (!key.includes(":") && !items.some((item) => item.key === key)) {
       items.push({ key, status: "stopped", placeholder: true, detail: "", url: "", repo: "", user: "", db: "" });
     }
   }
@@ -168,6 +168,10 @@ function paint(next) {
   paintServices();
   paintStacks();
   paintProxy();
+  const wasUp = eventsView.up;
+  eventsView.up = state.events.up;
+  paintEvents();
+  if (wasUp !== undefined && wasUp !== eventsView.up && currentView() === "events") showEventsTab(eventsView.tab);
   if (logs.key) paintLogTabs();
 }
 
@@ -280,8 +284,10 @@ function dbLabel(name) {
 }
 
 // The user, database and install of a restart or a stack's up, asking again before a protected database.
-function openLaunch({ title, key, hint, user, db, path, go, after }) {
+function openLaunch({ title, key, hint, user, db, path, go, after, broker = false }) {
   Object.assign(launch, { path, after, confirmed: false });
+  $("restart-broker-label").hidden = !broker;
+  $("restart-broker").checked = true;
   $("restart-title").textContent = title;
   $("restart-key").textContent = key;
   $("restart-hint").textContent = hint;
@@ -313,6 +319,7 @@ async function submitLaunch(event) {
   event.preventDefault();
   const install = { auto: null, force: true, skip: false }[$("restart-form").install.value];
   const body = { user: $("restart-user").value, db: $("restart-db").value, install, confirmed: launch.confirmed };
+  if (!$("restart-broker-label").hidden) body.broker = $("restart-broker").checked;
   $("restart-go").disabled = true;
   try {
     const { status, data } = await post(launch.path, body);
@@ -815,9 +822,436 @@ function resetProxyPort() {
   $("proxy-go").textContent = "Start";
 }
 
+// ---------------------------------------------------------------------------- events
+
+const EVENTS_JOB = "events:elasticmq";
+const SNS_LINES = 20000;
+const MAX_SNS = 2000;
+const SNS_HEADER = /^(\S+) (\S+) → (\S+)(.*)$/; // events' sitecustomize.write_log: when, who → topic, extras
+const eventsView = { tab: "queues", queues: null, map: null, peek: null, sns: [], snsStream: null, topics: "" };
+
+function eventsJob() {
+  return state.jobs[EVENTS_JOB] || null;
+}
+
+function eventsPath(verb) {
+  return `/api/events/${verb}`;
+}
+
+function paintEvents() {
+  const job = eventsJob();
+  const busy = job && !job.error;
+  const up = state.events.up;
+  $("events-on").textContent = up ? `:${state.events.port}` : "";
+  $("events-summary").textContent = busy ? `${job.phase}…` : up ? `ElasticMQ running on :${state.events.port}` : "off";
+  $("events-start").hidden = up || busy;
+  $("events-stop").hidden = !up || busy;
+  $("events-send").hidden = !up;
+
+  const card = $("events-info");
+  const data = eventsView.queues;
+  if (up) {
+    const consumers = state.instances.filter((i) => i.queue && i.status !== "stopped");
+    const broker = data && data.broker ? consumers.find((i) => i.queue === data.broker) : null;
+    const publishers = state.instances.filter((i) => i.events === "local" && i.status !== "stopped").length;
+    card.replaceChildren(
+      info("Endpoint", `http://localhost:${state.events.port}`),
+      info("Broker", !data ? "…" : broker ? broker.key : data.broker ? "not running" : "not in the repo"),
+      info("Consumers running", String(consumers.length)),
+      info("Publishing locally", `${publishers} service${publishers === 1 ? "" : "s"}`),
+      info("Last SNS publish", state.sns && state.sns.last_publish ? new Date(state.sns.last_publish).toLocaleTimeString() : "nothing yet"),
+    );
+  } else {
+    card.replaceChildren(el("p", { class: "muted note" }, busy ? "Starting the local ElasticMQ…"
+      : "Off: services publish to AWS. Start the local events to run a local ElasticMQ (Docker) with every queue of the repo and the broker; services started afterwards publish there and to a local SNS."));
+  }
+  if (job && job.error) {
+    card.append(el("p", { class: "error" }, `${job.action === "up" ? "start" : "stop"} failed: ${job.error}`));
+    const row = el("div", {});
+    if (job.log_key) row.append(button("Install log", () => showLogs(job.log_key, "install")));
+    row.append(button("Dismiss", () => act(eventsPath("dismiss")), { class: "btn small ghost" }));
+    card.append(row);
+  }
+  for (const tab of $("events-tabs").children) tab.setAttribute("aria-selected", String(tab.dataset.tab === eventsView.tab));
+  $("events-queues").hidden = eventsView.tab !== "queues";
+  $("events-types").hidden = eventsView.tab !== "types";
+  $("events-sns").hidden = eventsView.tab !== "sns";
+  syncSns();
+}
+
+function showEventsTab(tab) {
+  eventsView.tab = tab;
+  paintEvents();
+  if (tab === "queues") loadQueues();
+  if (tab === "types") loadMap();
+}
+
+function eventsVisible(tab) {
+  return currentView() === "events" && eventsView.tab === tab && !document.hidden;
+}
+
+async function getJson(path) {
+  try {
+    const response = await fetch(path);
+    const data = await response.json();
+    return response.ok ? { data } : { error: data.error || `pdms ui answered ${response.status}` };
+  } catch {
+    return { error: "pdms ui is not reachable: is it still running?" };
+  }
+}
+
+// ---- queues
+
+async function loadQueues() {
+  const { data, error } = await getJson(eventsPath("queues"));
+  if (error) {
+    eventsView.queues = null;
+    $("queue-rows").replaceChildren();
+    $("queue-count").textContent = "";
+    $("queue-empty").textContent = error;
+    $("queue-empty").hidden = false;
+    return;
+  }
+  eventsView.queues = data;
+  paintQueues();
+  paintEvents();
+}
+
+function count(value) {
+  return value === null ? el("td", { class: "num muted" }, "-")
+    : el("td", { class: `num ${value ? "count-on" : "muted"}` }, String(value));
+}
+
+function queueRow(queue) {
+  const consumer = queue.running
+    ? button(queue.running, () => showLogs(queue.running), { class: "btn tiny link", title: `Logs of ${queue.running}` })
+    : queue.sns ? el("span", { class: "muted" }, "local SNS: every publish")
+      : queue.broker ? el("span", { class: "muted" }, `${queue.consumer || "broker"} (not running)`)
+        : el("span", { class: "muted" }, queue.consumer || "-");
+  const actions = el("td", { class: "row-actions" });
+  if (queue.visible !== null) {
+    actions.append(button("Messages", () => openPeek(queue.name)));
+    if (!queue.sns) actions.append(button("Send", () => openSend(queue.name)));
+    if (queue.visible || queue.in_flight) actions.append(button("Purge", () => purge([queue.name]), { class: "btn small bad" }));
+  }
+  const tags = [queue.fifo ? "fifo" : "", queue.broker ? "broker" : "", queue.source === "elasticmq.conf" ? "elasticmq.conf only" : ""].filter(Boolean);
+  return el("tr", eventsView.peek === queue.name ? { class: "picked" } : {},
+    el("td", { class: "mono wrap" }, queue.name, tags.length ? el("span", { class: "tag" }, tags.join(" · ")) : ""),
+    count(queue.visible), count(queue.in_flight),
+    el("td", { class: "wrap" }, consumer),
+    el("td", { class: "num muted" }, queue.types ? String(queue.types) : ""),
+    actions,
+  );
+}
+
+function paintQueues() {
+  const data = eventsView.queues;
+  if (!data) return;
+  const text = $("queue-filter").value.trim().toLowerCase();
+  const busyOnly = $("queue-busy").checked;
+  const shown = data.queues.filter((queue) => (!busyOnly || queue.visible || queue.in_flight)
+    && (!text || `${queue.name} ${queue.consumer} ${queue.running}`.toLowerCase().includes(text)));
+  $("queue-rows").replaceChildren(...shown.map(queueRow));
+  const waiting = data.queues.reduce((sum, queue) => sum + (queue.visible || 0), 0);
+  $("queue-count").textContent = `${shown.length} of ${data.queues.length} queues` + (data.up ? ` · ${waiting} message${waiting === 1 ? "" : "s"} waiting` : "");
+  $("queue-purge-all").hidden = !data.up || !waiting;
+  $("queue-empty").textContent = data.up ? "No queue matches the filter." : "";
+  $("queue-empty").hidden = shown.length > 0 || !data.up;
+}
+
+async function purge(queues) {
+  const what = queues.length ? queues.join(", ") : "every queue";
+  if (!await confirmDialog(`Purge ${what}?`, "Every message waiting there is deleted; nothing consumes them.", "Purge")) return;
+  act(eventsPath("purge"), { queues }, (data) => {
+    toast(data.purged.length ? `Purged ${data.purged.join(", ")}.` : "Nothing to purge.", "info");
+    loadQueues();
+    if (eventsView.peek) openPeek(eventsView.peek);
+  });
+}
+
+// ---- messages of a queue (peek)
+
+function pretty(text) {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+function messageType(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? parsed.type || parsed.Topic || "" : "";
+  } catch {
+    return "";
+  }
+}
+
+async function openPeek(queue) {
+  eventsView.peek = queue;
+  $("peek").hidden = false;
+  $("peek-queue").textContent = queue;
+  $("peek-note").textContent = "reading…";
+  paintQueues();
+  const { data, error } = await getJson(`${eventsPath("peek")}?${new URLSearchParams({ queue })}`);
+  if (eventsView.peek !== queue) return;
+  if (error) {
+    $("peek-note").textContent = error;
+    $("peek-messages").replaceChildren();
+    return;
+  }
+  $("peek-note").textContent = data.messages.length
+    ? `${data.messages.length} waiting${data.messages.length >= 50 ? " (first 50)" : ""} · read without consuming them`
+    : "empty";
+  $("peek-messages").replaceChildren(...data.messages.map((message) => {
+    const kind = messageType(message.body);
+    return el("details", { class: "msg" },
+      el("summary", {},
+        el("span", { class: "mono muted" }, message.id.slice(0, 8)),
+        kind ? el("span", { class: "topic" }, kind) : "",
+        message.sent ? el("span", { class: "muted" }, new Date(message.sent).toLocaleString()) : "",
+        el("span", { class: "muted" }, `received ${message.receives} time${message.receives === 1 ? "" : "s"}`),
+      ),
+      el("pre", {}, pretty(message.body)),
+    );
+  }));
+  $("peek").scrollIntoView({ block: "nearest" });
+}
+
+function closePeek() {
+  eventsView.peek = null;
+  $("peek").hidden = true;
+  paintQueues();
+}
+
+// ---- event types
+
+async function loadMap() {
+  const { data, error } = await getJson(eventsPath("map"));
+  if (error) {
+    $("type-rows").replaceChildren();
+    $("type-empty").textContent = error;
+    $("type-empty").hidden = false;
+    return;
+  }
+  eventsView.map = data;
+  paintMap();
+}
+
+function paintMap() {
+  const data = eventsView.map;
+  if (!data) return;
+  const text = $("type-filter").value.trim().toLowerCase();
+  const shown = data.types.filter((item) => !text || `${item.type} ${item.queue} ${item.consumer}`.toLowerCase().includes(text));
+  $("type-rows").replaceChildren(...shown.map((item) => el("tr", {},
+    el("td", { class: "mono" }, item.type),
+    el("td", { class: "mono" }, item.queue),
+    item.consumer ? el("td", { class: "mono" }, item.consumer) : el("td", { class: "target-missing" }, "none"),
+    el("td", { class: "row-actions" }, state.events.up ? button("Send", () => openSend(item.type)) : ""),
+  )));
+  $("type-count").textContent = `${shown.length} of ${data.types.length} event types · broker ${data.broker || "not found"}`;
+  $("type-empty").textContent = data.types.length ? "No event type matches the filter." : "The broker routes no event types.";
+  $("type-empty").hidden = shown.length > 0;
+}
+
+// ---- local SNS: sns.log, followed while the tab is open
+
+function syncSns() {
+  const wanted = currentView() === "events" && eventsView.tab === "sns";
+  if (wanted && !eventsView.snsStream) {
+    const stream = eventsView.snsStream = new EventSource(`/api/logs/stream?${new URLSearchParams({ key: "sns", lines: SNS_LINES })}`);
+    stream.onopen = () => { eventsView.sns = []; paintSns(); };
+    stream.addEventListener("lines", (event) => addSns(JSON.parse(event.data)));
+    stream.addEventListener("reset", () => { eventsView.sns = []; paintSns(); }); // the log rotated
+  } else if (!wanted && eventsView.snsStream) {
+    eventsView.snsStream.close();
+    eventsView.snsStream = null;
+  }
+}
+
+function parseSnsHeader(line) {
+  const match = SNS_HEADER.exec(line);
+  if (!match) return null;
+  let rest = match[4];
+  let attributes = {};
+  const at = rest.indexOf(" attributes={");
+  if (at >= 0) {
+    try { attributes = JSON.parse(rest.slice(at + " attributes=".length)); } catch { /* shown without them */ }
+    rest = rest.slice(0, at);
+  }
+  let subject = "";
+  const sj = rest.indexOf(" subject=");
+  if (sj >= 0) { subject = rest.slice(sj + " subject=".length); rest = rest.slice(0, sj); }
+  const g = rest.indexOf(" group=");
+  const group = g >= 0 ? rest.slice(g + " group=".length).trim() : "";
+  return { time: match[1], service: match[2], topic: match[3], subject, group, attributes, body: [] };
+}
+
+function addSns(lines) {
+  for (const line of lines) {
+    const last = eventsView.sns[eventsView.sns.length - 1];
+    if (line.startsWith("  ") && last) last.body.push(line.slice(2));
+    else if (!line.startsWith(" ")) {
+      const entry = parseSnsHeader(line);
+      if (entry) eventsView.sns.push(entry);
+    }
+  }
+  if (eventsView.sns.length > MAX_SNS * 1.2) eventsView.sns = eventsView.sns.slice(-MAX_SNS);
+  paintSns();
+}
+
+function snsShown(entry, topic, text) {
+  if (topic && entry.topic !== topic) return false;
+  if (!text) return true;
+  const attrs = Object.entries(entry.attributes).map(([key, value]) => `${key}=${typeof value === "object" ? JSON.stringify(value) : value}`).join(" ");
+  return `${entry.service} ${entry.topic} ${entry.subject} ${entry.group} ${attrs} ${entry.body.join("\n")}`.toLowerCase().includes(text);
+}
+
+function snsEntry(entry) {
+  const attrs = Object.entries(entry.attributes).map(([key, value]) =>
+    el("span", { class: "attr" }, `${key}=${typeof value === "object" ? JSON.stringify(value) : value}`));
+  return el("details", { class: "msg" },
+    el("summary", {},
+      el("span", { class: "mono muted" }, new Date(entry.time).toLocaleTimeString()),
+      el("span", { class: "topic" }, entry.topic),
+      el("span", { class: "muted" }, `from ${entry.service}`),
+      entry.subject ? el("span", {}, entry.subject) : "",
+      entry.group ? el("span", { class: "muted" }, `group ${entry.group}`) : "",
+      ...attrs,
+    ),
+    el("pre", {}, entry.body.join("\n")),
+  );
+}
+
+function paintTopics() {
+  const counts = {};
+  for (const entry of eventsView.sns) counts[entry.topic] = (counts[entry.topic] || 0) + 1;
+  const topics = Object.keys(counts).sort();
+  const signature = topics.map((topic) => `${topic}:${counts[topic]}`).join("|");
+  if (signature === eventsView.topics) return;
+  eventsView.topics = signature;
+  const current = $("sns-topic").value;
+  $("sns-topic").replaceChildren(
+    el("option", { value: "" }, `All topics (${eventsView.sns.length})`),
+    ...topics.map((topic) => el("option", topic === current ? { value: topic, selected: "" } : { value: topic }, `${topic} (${counts[topic]})`)),
+  );
+}
+
+function paintSns() {
+  paintTopics();
+  const topic = $("sns-topic").value;
+  const text = $("sns-filter").value.trim().toLowerCase();
+  const open = new Set([...$("sns-entries").querySelectorAll("details[open]")].map((node) => node.dataset.at));
+  const shown = [];
+  for (let i = eventsView.sns.length - 1; i >= 0 && shown.length < 300; i--) {
+    if (snsShown(eventsView.sns[i], topic, text)) shown.push([i, eventsView.sns[i]]);
+  }
+  $("sns-entries").replaceChildren(...shown.map(([i, entry]) => {
+    const node = snsEntry(entry);
+    node.dataset.at = `${entry.time}|${i}`;
+    if (open.has(node.dataset.at)) node.open = true;
+    return node;
+  }));
+  const total = eventsView.sns.length;
+  $("sns-count").textContent = total ? `${shown.length < 300 ? shown.length : "latest 300"} of ${total} publishes` : "";
+  $("sns-empty").textContent = !total
+    ? state && state.events.up ? "Nothing was published to the local SNS yet. Services started with local events publish here." : "Nothing published locally yet. Start the local events, then the services that publish."
+    : "No publish matches the filter.";
+  $("sns-empty").hidden = shown.length > 0;
+}
+
+// ---- start, stop and send
+
+function openEventsUp() {
+  const broker = !eventsView.queues || eventsView.queues.broker_service;
+  openLaunch({
+    title: "Start", key: "local events",
+    hint: "A local ElasticMQ (Docker) with every queue of the repo, like pdms events up. The broker runs as this user and database.",
+    user: state.user, db: state.db, go: "Start", path: eventsPath("up"), broker,
+    after: () => showEventsTab(eventsView.tab),
+  });
+}
+
+async function stopEvents() {
+  const consumers = state.instances.filter((i) => i.queue && i.status !== "stopped").map((i) => i.key);
+  const text = `Its messages are lost${consumers.length ? `, and the consumers stop too: ${consumers.join(", ")}` : ""}. Services keep running, but what they publish now fails until it starts again.`;
+  if (await confirmDialog("Stop the local events?", text, "Stop")) act(eventsPath("down"));
+}
+
+const sending = { types: new Set(), queues: new Set(), broker: "" };
+
+async function openSend(target = "") {
+  const [map, queues] = await Promise.all([
+    eventsView.map ? { data: eventsView.map } : getJson(eventsPath("map")),
+    eventsView.queues ? { data: eventsView.queues } : getJson(eventsPath("queues")),
+  ]);
+  if (map.error || queues.error) { toast(map.error || queues.error); return; }
+  eventsView.map = map.data;
+  eventsView.queues = queues.data;
+  sending.types = new Set(map.data.types.map((item) => item.type));
+  sending.queues = new Set(queues.data.queues.filter((queue) => !queue.sns).map((queue) => queue.name));
+  sending.broker = map.data.broker;
+  $("send-targets").replaceChildren(...[...sending.types, ...sending.queues].map((name) => el("option", { value: name })));
+  $("send-target").value = target;
+  $("send-direct").checked = false;
+  $("send-body").value = "{}";
+  $("send-error").hidden = true;
+  sendTargetChanged();
+  $("send").showModal();
+  if (sending.types.has(target)) fillTemplate();
+  else (target ? $("send-body") : $("send-target")).focus();
+}
+
+function sendTargetChanged() {
+  const target = $("send-target").value.trim();
+  const isType = sending.types.has(target);
+  $("send-direct-label").hidden = !isType || !sending.broker;
+  $("send-template").hidden = !isType;
+  $("send-body-label").textContent = isType ? "Event fields (JSON; event_id and type are added)" : "Message body (JSON)";
+}
+
+async function fillTemplate() {
+  const target = $("send-target").value.trim();
+  const { data, error } = await getJson(`${eventsPath("template")}?${new URLSearchParams({ type: target })}`);
+  if (error) {
+    $("send-error").textContent = error;
+    $("send-error").hidden = false;
+    return;
+  }
+  $("send-body").value = JSON.stringify(data, null, 2);
+  $("send-body").focus();
+}
+
+async function submitSend(event) {
+  event.preventDefault();
+  const body = { target: $("send-target").value.trim(), body: $("send-body").value, direct: $("send-direct").checked };
+  $("send-go").disabled = true;
+  $("send-error").hidden = true;
+  try {
+    const { status, data } = await post(eventsPath("send"), body);
+    if (status !== 200) {
+      $("send-error").textContent = data.error || `pdms ui answered ${status}`;
+      $("send-error").hidden = false;
+      return;
+    }
+    $("send").close();
+    let note = `Sent ${data.id.slice(0, 8)} to ${data.queue}.`;
+    if (data.routed_to) note += ` The broker routes it to ${data.routed_to} (consumer: ${data.consumer || "none"}).`;
+    if (!data.consumed) note += ` Nothing consumes ${data.queue} right now: it waits there.`;
+    toast(note, "info");
+    loadQueues();
+  } catch {
+    $("send-error").textContent = "pdms ui is not reachable: is it still running?";
+    $("send-error").hidden = false;
+  } finally {
+    $("send-go").disabled = false;
+  }
+}
+
 // ---------------------------------------------------------------------------- views
 
-const VIEWS = ["services", "stacks", "proxy"];
+const VIEWS = ["services", "stacks", "proxy", "events"];
 
 function currentView() {
   const view = location.hash.slice(1);
@@ -828,7 +1262,10 @@ function route() {
   const view = currentView();
   for (const section of document.querySelectorAll(".view")) section.hidden = section.id !== `view-${view}`;
   for (const link of document.querySelectorAll(".side a[data-view]")) link.classList.toggle("on", link.dataset.view === view);
-  if (state) paintProxy();
+  if (!state) return;
+  paintProxy();
+  paintEvents();
+  if (view === "events") showEventsTab(eventsView.tab);
 }
 
 // ---------------------------------------------------------------------------- wiring
@@ -856,6 +1293,25 @@ $("req-clear").addEventListener("click", () => { proxyView.requests = []; paintR
 $("route-filter").addEventListener("input", paintRoutes);
 $("route-local").addEventListener("change", paintRoutes);
 $("route-refresh").addEventListener("click", loadRoutes);
+$("events-start").addEventListener("click", openEventsUp);
+$("events-stop").addEventListener("click", stopEvents);
+$("events-send").addEventListener("click", () => openSend());
+for (const tab of $("events-tabs").children) tab.addEventListener("click", () => showEventsTab(tab.dataset.tab));
+$("queue-filter").addEventListener("input", paintQueues);
+$("queue-busy").addEventListener("change", paintQueues);
+$("queue-purge-all").addEventListener("click", () => purge([]));
+$("peek-refresh").addEventListener("click", () => openPeek(eventsView.peek));
+$("peek-purge").addEventListener("click", () => purge([eventsView.peek]));
+$("peek-close").addEventListener("click", closePeek);
+$("type-filter").addEventListener("input", paintMap);
+$("sns-topic").addEventListener("change", paintSns);
+$("sns-filter").addEventListener("input", paintSns);
+$("sns-clear").addEventListener("click", () => { eventsView.sns = []; paintSns(); });
+$("send-form").addEventListener("submit", submitSend);
+$("send-cancel").addEventListener("click", () => $("send").close());
+$("send-template").addEventListener("click", fillTemplate);
+$("send-target").addEventListener("input", sendTargetChanged);
+setInterval(() => { if (eventsVisible("queues") && state && state.events.up) loadQueues(); }, 3000);
 window.addEventListener("hashchange", route);
 route();
 $("restart-cancel").addEventListener("click", () => $("restart").close());

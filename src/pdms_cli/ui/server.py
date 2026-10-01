@@ -49,7 +49,9 @@ SECURITY_HEADERS = {
 }
 MAX_BODY = 64 * 1024
 LOG_LINES = 200
+MAX_LOG_LINES = 20000  # the local SNS log: a publish takes a line per line of its JSON
 LOG_POLL = 0.25
+PEEK_LIMIT = 50
 
 
 class Hub:
@@ -287,6 +289,8 @@ def make_handler(
                 self.services()
             elif url.path in ("/api/proxy/options", "/api/proxy/routes"):
                 self.proxy_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
+            elif url.path in ("/api/events/queues", "/api/events/map", "/api/events/peek", "/api/events/template"):
+                self.events_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
             elif url.path in ("/api/logs", "/api/logs/stream"):
                 self.logs(parse_qs(url.query), live=url.path.endswith("/stream"))
             else:
@@ -343,7 +347,62 @@ def make_handler(
                 return
             self.reply_json(200, data)
 
+        def events_info(self, which: str, query: dict[str, list[str]]) -> None:
+            def arg(name: str) -> str:
+                return query.get(name, [""])[0]
+
+            try:
+                cfg = Config.load()
+                if which == "queues":
+                    data: object = ui_jobs.events_queues(cfg)
+                elif which == "map":
+                    data = ui_jobs.events_map(cfg)
+                elif which == "template":
+                    data = ui_jobs.events_template(cfg, arg("type"))
+                else:
+                    try:
+                        limit = max(1, min(int(arg("limit") or PEEK_LIMIT), PEEK_LIMIT))
+                    except ValueError:
+                        limit = PEEK_LIMIT
+                    data = {"queue": arg("queue"), "messages": ui_jobs.events_peek(cfg, arg("queue"), limit)}
+            except actions.ActionError as exc:
+                self.reply_json(400, {"error": plain(exc.message)})
+                return
+            except OSError as exc:  # ElasticMQ went away in the middle
+                self.reply_json(502, {"error": f"ElasticMQ: {exc}"})
+                return
+            self.reply_json(200, data)
+
+        def act_on_events(self, verb: str, body: dict) -> tuple[int, dict]:
+            cfg = Config.load()
+            if verb == "up":
+                broker = body.get("broker", True)
+                if not isinstance(broker, bool):
+                    raise actions.ActionError("broker must be true or false")
+                return 202, {"job": jobs.events_up(broker=broker, **launch_options(body)).key}
+            if verb == "down":
+                return 202, {"job": jobs.events_down().key}
+            if verb == "send":
+                target, message = body.get("target"), body.get("body")
+                if not isinstance(target, str) or not target or not isinstance(message, (str, type(None))):
+                    raise actions.ActionError("target must be an event type or a queue, body a JSON text")
+                return 200, ui_jobs.events_send(cfg, target, message, direct=body.get("direct") is True)
+            if verb == "purge":
+                queues = body.get("queues")
+                if not isinstance(queues, list) or not all(isinstance(name, str) for name in queues):
+                    raise actions.ActionError("queues must be a list of queue names ([] for every queue)")
+                return 200, {"purged": ui_jobs.events_purge(cfg, queues)}
+            if verb == "dismiss":
+                jobs.dismiss(ui_jobs.EVENTS_KEY)
+                return 200, {}
+            return 404, {"error": "not found"}
+
         def act(self, path: str, body: dict) -> tuple[int, dict]:
+            if path.startswith("/api/events/") and path.count("/") == 3:
+                try:
+                    return self.act_on_events(path.rsplit("/", 1)[-1], body)
+                except OSError as exc:  # ElasticMQ went away in the middle
+                    return 502, {"error": f"ElasticMQ: {exc}"}
             if path == "/api/clean":
                 return 200, {"forgotten": ui_jobs.forget_stopped()}
             if path == "/api/proxy/start":
@@ -410,7 +469,7 @@ def make_handler(
             key = query.get("key", [""])[0]
             which = query.get("which", ["current"])[0]
             try:
-                lines = max(1, min(int(query.get("lines", [LOG_LINES])[0]), 5000))
+                lines = max(1, min(int(query.get("lines", [LOG_LINES])[0]), MAX_LOG_LINES))
             except ValueError:
                 lines = LOG_LINES
             path = self.log_file(key, which)

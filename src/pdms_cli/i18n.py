@@ -672,6 +672,9 @@ ES: dict[str, str] = {
     "⚠ Configure a user and a database to run the broker (pdms user add, pdms db add), then: pdms run {service} -b":
         "⚠ Configura un usuario y una base de datos para levantar el broker (pdms user add, pdms db add), y luego: "
         "pdms run {service} -b",
+    "Configure a user and a database to run the broker (pdms user add, pdms db add), or start the events without it.":
+        "Configura un usuario y una base de datos para levantar el broker (pdms user add, pdms db add), o arranca los "
+        "eventos sin él.",
     "⚠ The broker did not start; see pdms logs {name}": "⚠ El broker no arrancó; mira pdms logs {name}",
     "{key} is consuming {queue} (pid {pid})": "{key} está consumiendo {queue} (pid {pid})",
     "{key} is an event consumer: it has no web page. See its logs: pdms logs {key}":

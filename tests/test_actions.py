@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -274,3 +275,68 @@ def test_local_events_give_each_service_its_own_sns_topics(cfg, monkeypatch):
         "arn:aws:sns:us-east-1:000000000000:sns-account-publish.fifo"
     assert "SNS_ACCOUNT_PUBLISH_ARN" not in env("lead-tp-list", "local")
     assert "SNS_ACCOUNT_PUBLISH_ARN" not in env("account-publish-ev", "aws")  # AWS mode keeps the real topic
+
+
+# --------------------------------------------------------------------------- local events
+
+
+def event_map() -> events.EventMap:
+    return events.EventMap(
+        queues={"broker.fifo": events.Queue("broker.fifo"), "email.fifo": events.Queue("email.fifo"),
+                "plain": events.Queue("plain", fifo=False)},
+        consumers={"email.fifo": events.Consumer("notification/email-notify", "main.handler")},
+        routes={"email-notify": "email.fifo"}, broker_queue="broker.fifo",
+    )
+
+
+def test_plan_send_goes_through_the_broker_unless_direct() -> None:
+    queue, message = actions.plan_send(event_map(), "email-notify", '{"to": "a@x.com"}')
+    body = json.loads(message)
+    assert queue == "broker.fifo" and body["type"] == "email-notify" and body["to"] == "a@x.com" and body["event_id"]
+    assert actions.plan_send(event_map(), "email-notify", None, direct=True)[0] == "email.fifo"
+    assert actions.plan_send(event_map(), "plain", "[1, 2]") == ("plain", "[1, 2]")  # a queue gets the body as is
+    assert actions.plan_send(event_map(), "plain", None) == ("plain", "{}")
+
+
+@pytest.mark.parametrize(("target", "raw", "error"), [
+    ("email", None, "Did you mean: email-notify, email.fifo"),
+    ("nothing", None, "pdms events map"),
+    ("email-notify", "{", "Invalid JSON"),
+    ("email-notify", "[]", "must be a JSON object"),
+    ("plain", "not json", "Invalid JSON"),
+])
+def test_plan_send_says_what_is_wrong(target, raw, error) -> None:
+    with pytest.raises(actions.ActionError, match=error):
+        actions.plan_send(event_map(), target, raw)
+
+
+def test_start_events_checks_docker_and_the_port(cfg, ports, monkeypatch) -> None:
+    monkeypatch.setattr(actions.events, "docker_available", lambda: (False, "Cannot connect to the Docker daemon"))
+    with pytest.raises(actions.ActionError, match="Docker is not available: Cannot connect"):
+        actions.start_events(cfg, event_map().queues)
+
+    monkeypatch.setattr(actions.events, "docker_available", lambda: (True, "27.0"))
+    monkeypatch.setattr(actions.events, "container_state", lambda: None)
+    ports["busy"].add(cfg.defaults.events_port)
+    with pytest.raises(actions.ActionError, match="in use by something else"):
+        actions.start_events(cfg, event_map().queues)
+
+    ports["busy"].clear()
+    started = []
+    monkeypatch.setattr(actions.events, "start", lambda queues, port: started.append(sorted(queues)) or "created")
+    answers = iter([False, True])
+    monkeypatch.setattr(actions.events, "is_up", lambda port: next(answers))
+    monkeypatch.setattr(actions.time, "sleep", lambda seconds: None)
+    assert actions.start_events(cfg, event_map().queues) == "created"
+    assert started == [["broker.fifo", "email.fifo", "plain"]]
+
+    monkeypatch.setattr(actions.events, "is_up", lambda port: False)
+    with pytest.raises(actions.ActionError, match="did not answer"):
+        actions.start_events(cfg, event_map().queues, wait=0)
+
+    def broken(queues, port):
+        raise RuntimeError("pull access denied")
+
+    monkeypatch.setattr(actions.events, "start", broken)
+    with pytest.raises(actions.ActionError, match="Could not start ElasticMQ: pull access denied"):
+        actions.start_events(cfg, event_map().queues)
