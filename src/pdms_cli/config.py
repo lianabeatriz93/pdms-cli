@@ -14,6 +14,10 @@ from urllib.parse import quote
 
 import tomlkit
 
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+# Where services publish SQS events (see ``Defaults.events``).
+EVENTS_MODES = ("auto", "local", "aws")
+
 
 def config_path() -> Path:
     if custom := os.environ.get("PDMS_CONFIG"):

@@ -1,5 +1,5 @@
-"""What pdms does with services, stacks, the proxy and the local events, without prompting or printing: shared by
-the CLI and ``pdms ui``.
+"""What pdms does with services, stacks, the proxy, the local events and the configuration (databases, users,
+defaults), without prompting or printing: shared by the CLI and ``pdms ui``.
 
 An action never asks. When it needs a decision it raises a :class:`Decision` (a busy port, a protected database,
 the local ElasticMQ not running, pointing the frontend to the proxy); each front end answers it its own way (a questionary prompt, a dialog) and calls
@@ -11,15 +11,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import re
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO
 
-from . import events, installer, instances, proxy, repos, routes, runner
-from .config import Config, Database, DevUser, Stack
-from .i18n import _
+from . import events, installer, instances, proxy, repos, routes, runner, userimport
+from .config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack
+from .i18n import LANGUAGES, _
 
 
 class ActionError(Exception):
@@ -28,6 +29,14 @@ class ActionError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+
+
+class InvalidValue(ActionError):
+    """A value the user gave is not valid; ``field`` is its config key, so a form can point to it."""
+
+    def __init__(self, field: str, reason: str) -> None:
+        super().__init__(f"{field}: {reason}")
+        self.field, self.reason = field, reason
 
 
 class Decision(Exception):
@@ -626,3 +635,152 @@ def stop_proxy(running: dict | None = None) -> str | None:
     if running:
         proxy.stop(running)
     return proxy.restore_frontend_change()
+
+
+# --------------------------------------------------------------------------- databases, users and defaults
+
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def check_alias(name: str, taken: Iterable[str]) -> str:
+    """``name`` without surrounding spaces, if it can be the alias of a new database, user or stack."""
+    name = name.strip()
+    if not name:
+        raise InvalidValue("name", _("Required field"))
+    if name in set(taken):
+        raise InvalidValue("name", _("That name already exists"))
+    if not all(c.isalnum() or c in "-_" for c in name):
+        raise InvalidValue("name", _("Use only letters, numbers, '-' or '_'"))
+    return name
+
+
+def _alias(items: dict, kind: str, name: str, new: bool) -> str:
+    return check_alias(name, items) if new else require(items, kind, name)
+
+
+def _required(field: str, value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise InvalidValue(field, _("Required field"))
+    return value
+
+
+def _number(field: str, value: int | str, low: int, high: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = None
+    if number is None or not low <= number <= high:
+        raise InvalidValue(field, _("Must be a number between {low} and {high}", low=low, high=high))
+    return number
+
+
+def _one_of(field: str, value: str, choices: Iterable[str]) -> str:
+    if value not in choices:
+        raise InvalidValue(field, _("Must be one of: {choices}", choices=", ".join(choices)))
+    return value
+
+
+def save_db(cfg: Config, name: str, db: Database, new: bool = False) -> str:
+    """Create (``new``) or replace the database ``name``; returns its alias. The password is stored as given."""
+    name = _alias(cfg.dbs, _("database"), name, new)
+    cfg.dbs[name] = replace(
+        db, host=_required("host", db.host), port=_number("port", db.port, 1, 65535),
+        database=_required("database", db.database), user=_required("user", db.user),
+    )
+    cfg.save()
+    return name
+
+
+def remove_db(cfg: Config, name: str) -> list[str]:
+    """Delete a database; the stacks that used it ask for one again when they start (returns their names)."""
+    del cfg.dbs[require(cfg.dbs, _("database"), name)]
+    stacks = [stack_name for stack_name, stack in cfg.stacks.items() if stack.db == name]
+    for stack_name in stacks:
+        cfg.stacks[stack_name].db = ""
+    if cfg.last_db == name:
+        cfg.last_db = ""
+    cfg.save()
+    return stacks
+
+
+def check_connection(db: Database, timeout: int) -> str:
+    """The server version, e.g. ``PostgreSQL 16.4``; :class:`ActionError` with the driver's message otherwise."""
+    try:
+        return runner.test_connection(db, timeout).split(",")[0]
+    except Exception as exc:  # noqa: BLE001 - any driver error is the answer
+        raise ActionError(str(exc).strip() or type(exc).__name__) from exc
+
+
+def save_user(cfg: Config, name: str, user: DevUser, new: bool = False) -> str:
+    """Create (``new``) or replace the development user ``name``; returns its alias."""
+    name = _alias(cfg.users, _("user"), name, new)
+    cfg.users[name] = DevUser(
+        user_id=_required("user_id", user.user_id), username=_required("username", user.username),
+        first_name=user.first_name.strip(), last_name=user.last_name.strip(), roles=user.roles.strip(),
+    )
+    cfg.save()
+    return name
+
+
+def remove_user(cfg: Config, name: str) -> list[str]:
+    """Delete a user; the stacks that used it ask for one again when they start (returns their names)."""
+    del cfg.users[require(cfg.users, _("user"), name)]
+    stacks = [stack_name for stack_name, stack in cfg.stacks.items() if stack.user == name]
+    for stack_name in stacks:
+        cfg.stacks[stack_name].user = ""
+    if cfg.last_user == name:
+        cfg.last_user = ""
+    cfg.save()
+    return stacks
+
+
+def read_db_users(
+    cfg: Config, db_name: str, mapping: dict[str, str], search: str = "", role: str = "", inactive: bool = False,
+    limit: int = 200,
+) -> list[userimport.DbUser]:
+    """The users of the ``pdms_user`` table of a database, to choose which ones to import."""
+    database = cfg.dbs[require(cfg.dbs, _("database"), db_name)]
+    try:
+        return userimport.fetch_users(
+            database, search=search, role=role, include_inactive=inactive, limit=limit,
+            timeout=cfg.defaults.db_timeout, mapping=mapping,
+        )
+    except Exception as exc:  # noqa: BLE001 - show any driver error to the user
+        raise ActionError(_("Could not read the users from {name}: {error}", name=db_name,
+                            error=str(exc).strip())) from exc
+
+
+def import_users(
+    cfg: Config, picked: list[userimport.DbUser], mapping: dict[str, str],
+) -> tuple[list[str], list[str]]:
+    """Add the picked users (updating the ones already imported); returns the added and the updated aliases."""
+    cfg.users, added, updated = userimport.merge_users(cfg.users, picked, mapping)
+    cfg.save()
+    return added, updated
+
+
+def save_defaults(cfg: Config, defaults: Defaults) -> None:
+    """Replace the defaults, after checking every value. Applying the language is up to the front end."""
+    for key in defaults.env:
+        if not ENV_NAME.fullmatch(key):
+            raise InvalidValue("env", _("'{name}' is not a valid variable name", name=key))
+    cfg.defaults = replace(
+        defaults,
+        language=_one_of("language", defaults.language, LANGUAGES),
+        host=_required("host", defaults.host),
+        port=_number("port", defaults.port, 1, 65535),
+        logging_level=_one_of("logging_level", defaults.logging_level, LOG_LEVELS),
+        events=_one_of("events", defaults.events, EVENTS_MODES),
+        events_port=_number("events_port", defaults.events_port, 1, 65535),
+        db_timeout=_number("db_timeout", defaults.db_timeout, 1, 600),
+        env=dict(defaults.env),
+    )
+    cfg.save()
+
+
+def set_language(cfg: Config, lang: str) -> None:
+    if lang not in LANGUAGES:
+        raise ActionError(_("Unknown language '{lang}'. Available: {codes}", lang=lang, codes=", ".join(LANGUAGES)))
+    cfg.defaults.language = lang
+    cfg.save()

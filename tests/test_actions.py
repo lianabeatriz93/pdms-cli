@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from pdms_cli import actions, events
-from pdms_cli.config import Config, Database, DevUser, Stack
+from pdms_cli.config import Config, Database, Defaults, DevUser, Stack
 from pdms_cli.instances import Instance
 
 
@@ -202,6 +202,103 @@ def test_save_and_remove_stack_validate_first(cfg) -> None:
     assert "ok" not in cfg.stacks
     with pytest.raises(actions.ActionError):
         actions.remove_stack(cfg, "ok")
+
+
+# --------------------------------------------------------------------------- databases, users and defaults
+
+
+@pytest.mark.parametrize("name, reason", [
+    ("  ", "Required field"), ("local", "That name already exists"), ("a b", "Use only letters, numbers, '-' or '_'"),
+])
+def test_check_alias_says_what_is_wrong(name, reason) -> None:
+    with pytest.raises(actions.InvalidValue) as invalid:
+        actions.check_alias(name, ["local"])
+    assert (invalid.value.field, invalid.value.reason) == ("name", reason)
+    assert actions.check_alias(" new-db_2 ", ["local"]) == "new-db_2"
+
+
+def test_save_db_checks_every_field_and_the_alias(cfg) -> None:
+    with pytest.raises(actions.InvalidValue) as invalid:
+        actions.save_db(cfg, "local", Database("localhost"), new=True)
+    assert invalid.value.field == "name"
+    with pytest.raises(actions.ActionError):
+        actions.save_db(cfg, "nope", Database("localhost", user="pdm"))  # editing one that does not exist
+    for db, field in [
+        (Database(" ", user="pdm"), "host"), (Database("h", user=""), "user"), (Database("h", database="", user="pdm"),
+         "database"), (Database("h", port=70000, user="pdm"), "port"), (Database("h", port="x", user="pdm"), "port"),
+    ]:
+        with pytest.raises(actions.InvalidValue) as invalid:
+            actions.save_db(cfg, "new", db, new=True)
+        assert invalid.value.field == field
+    assert actions.save_db(cfg, " new ", Database(" h ", port="5433", user=" pdm ", password=" s3cret "), new=True) == "new"
+    assert cfg.dbs["new"] == Database("h", port=5433, user="pdm", password=" s3cret ")
+
+
+def test_remove_db_and_user_let_the_stacks_ask_again(cfg) -> None:
+    cfg.stacks = {"lead": Stack(["lead/a"], user="agent", db="local"), "other": Stack(["lead/b"], db="shared")}
+    cfg.last_db, cfg.last_user = "local", "agent"
+    assert actions.remove_db(cfg, "local") == ["lead"]
+    assert (cfg.stacks["lead"].db, cfg.stacks["other"].db, cfg.last_db) == ("", "shared", "")
+    assert actions.remove_user(cfg, "agent") == ["lead"]
+    assert (cfg.stacks["lead"].user, cfg.last_user) == ("", "")
+    assert "local" not in cfg.dbs and "agent" not in cfg.users
+    with pytest.raises(actions.ActionError):
+        actions.remove_user(cfg, "agent")
+
+
+def test_check_connection_gives_the_version_or_the_driver_error(monkeypatch) -> None:
+    monkeypatch.setattr(actions.runner, "test_connection", lambda db, timeout: "PostgreSQL 16.4, compiled by gcc")
+    assert actions.check_connection(Database("h"), 5) == "PostgreSQL 16.4"
+
+    def refuse(db, timeout):
+        raise OSError("connection refused\n")
+
+    monkeypatch.setattr(actions.runner, "test_connection", refuse)
+    with pytest.raises(actions.ActionError, match="^connection refused$"):
+        actions.check_connection(Database("h"), 5)
+
+
+def test_save_user_needs_its_id_and_username(cfg) -> None:
+    with pytest.raises(actions.InvalidValue) as invalid:
+        actions.save_user(cfg, "new", DevUser(" ", "n@x.com"), new=True)
+    assert invalid.value.field == "user_id"
+    with pytest.raises(actions.InvalidValue) as invalid:
+        actions.save_user(cfg, "new", DevUser("u3", ""), new=True)
+    assert invalid.value.field == "username"
+    actions.save_user(cfg, "agent", DevUser(" u2 ", "a@x.com", roles=" TPR.Agent "))
+    assert cfg.users["agent"] == DevUser("u2", "a@x.com", roles="TPR.Agent")
+
+
+def test_read_db_users_reports_the_driver_error(cfg, monkeypatch) -> None:
+    def fetch(db, **kwargs):
+        raise OSError("timeout")
+
+    monkeypatch.setattr(actions.userimport, "fetch_users", fetch)
+    with pytest.raises(actions.ActionError, match="Could not read the users from local: timeout"):
+        actions.read_db_users(cfg, "local", {})
+    with pytest.raises(actions.ActionError):
+        actions.read_db_users(cfg, "nope", {})
+
+
+@pytest.mark.parametrize("change, field", [
+    ({"language": "fr"}, "language"), ({"host": ""}, "host"), ({"port": 0}, "port"),
+    ({"logging_level": "TRACE"}, "logging_level"), ({"events": "sqs"}, "events"), ({"events_port": "x"}, "events_port"),
+    ({"db_timeout": 0}, "db_timeout"), ({"env": {"BAD-NAME": "1"}}, "env"),
+])
+def test_save_defaults_rejects_bad_values(cfg, change, field) -> None:
+    with pytest.raises(actions.InvalidValue) as invalid:
+        actions.save_defaults(cfg, Defaults(**change))
+    assert invalid.value.field == field
+    assert cfg.defaults == Defaults()
+
+
+def test_save_defaults_and_set_language(cfg) -> None:
+    actions.save_defaults(cfg, Defaults(language="es", port="9000", env={"FEATURE_X": "on"}))
+    assert (cfg.defaults.language, cfg.defaults.port, cfg.defaults.env) == ("es", 9000, {"FEATURE_X": "on"})
+    actions.set_language(cfg, "en")
+    assert cfg.defaults.language == "en"
+    with pytest.raises(actions.ActionError):
+        actions.set_language(cfg, "fr")
 
 
 # --------------------------------------------------------------------------- proxy

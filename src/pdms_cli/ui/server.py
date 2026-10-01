@@ -330,6 +330,8 @@ def make_handler(
                 return
             try:
                 status, data = self.act(urlsplit(self.path).path, body)
+            except actions.InvalidValue as invalid:
+                status, data = 400, {"error": plain(invalid.reason), "field": invalid.field}
             except actions.ActionError as exc:
                 status, data = 400, {"error": plain(exc.message)}
             except actions.Decision as decision:

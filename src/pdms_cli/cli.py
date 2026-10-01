@@ -98,6 +98,13 @@ def print_users(cfg: Config) -> None:
 # --------------------------------------------------------------------------- CRUD helpers
 
 
+def print_removed(name: str, stacks: list[str]) -> None:
+    console.print("[green]✓[/] " + _("'{name}' deleted.", name=name))
+    if stacks:
+        console.print("[dim]" + _("These stacks will ask for it again when they start: {names}",
+                                  names=", ".join(stacks)) + "[/]")
+
+
 def pick(cfg_items: dict, kind: str, name: Optional[str], default: str = "") -> str:
     if name:
         if name not in cfg_items:
@@ -117,8 +124,8 @@ def pick(cfg_items: dict, kind: str, name: Optional[str], default: str = "") -> 
 def add_db(cfg: Config) -> str:
     prompts.require_tty()
     name = prompts.ask_name(_("database"), cfg.dbs)
-    cfg.dbs[name] = prompts.ask_database()
-    cfg.save()
+    database = prompts.ask_database()
+    settle(lambda: actions.save_db(cfg, name, database, new=True))
     console.print("[green]✓[/] " + _("Database '{name}' saved.", name=name))
     if questionary.confirm(_("Test the connection now?"), default=True).unsafe_ask():
         check_db(name, cfg.dbs[name], cfg.defaults.db_timeout)
@@ -128,8 +135,8 @@ def add_db(cfg: Config) -> str:
 def add_user(cfg: Config) -> str:
     prompts.require_tty()
     name = prompts.ask_name(_("user"), cfg.users)
-    cfg.users[name] = prompts.ask_user()
-    cfg.save()
+    user = prompts.ask_user()
+    settle(lambda: actions.save_user(cfg, name, user, new=True))
     console.print("[green]✓[/] " + _("User '{name}' saved.", name=name))
     return name
 
@@ -140,11 +147,11 @@ def check_db(name: str, db: Database, timeout: int) -> bool:
         timeout=timeout,
     )):
         try:
-            version = runner.test_connection(db, timeout)
-        except Exception as exc:  # noqa: BLE001 - show any driver error to the user
-            console.print(f"[red]✗[/] {name}: {str(exc).strip()}")
+            version = actions.check_connection(db, timeout)
+        except actions.ActionError as exc:
+            console.print(f"[red]✗[/] {name}: {exc.message}")
             return False
-    console.print(f"[green]✓[/] {name}: {version.split(',')[0]}")
+    console.print(f"[green]✓[/] {name}: {version}")
     return True
 
 
@@ -1255,8 +1262,8 @@ def db_edit(name: Optional[str] = typer.Argument(None, autocompletion=completion
     cfg = Config.load()
     prompts.require_tty()
     name = pick(cfg.dbs, _("database"), name)
-    cfg.dbs[name] = prompts.ask_database(cfg.dbs[name])
-    cfg.save()
+    database = prompts.ask_database(cfg.dbs[name])
+    settle(lambda: actions.save_db(cfg, name, database))
     console.print("[green]✓[/] " + _("Database '{name}' updated.", name=name))
 
 
@@ -1265,9 +1272,7 @@ def db_remove(name: Optional[str] = typer.Argument(None, autocompletion=completi
     cfg = Config.load()
     name = pick(cfg.dbs, _("database"), name)
     if questionary.confirm(_("Delete '{name}'?", name=name), default=False).unsafe_ask():
-        del cfg.dbs[name]
-        cfg.save()
-        console.print("[green]✓[/] " + _("'{name}' deleted.", name=name))
+        print_removed(name, actions.remove_db(cfg, name))
 
 
 @db_app.command("test", help=_("Test the connection to one or all databases."))
@@ -1309,8 +1314,8 @@ def user_edit(name: Optional[str] = typer.Argument(None, autocompletion=completi
     cfg = Config.load()
     prompts.require_tty()
     name = pick(cfg.users, _("user"), name)
-    cfg.users[name] = prompts.ask_user(cfg.users[name])
-    cfg.save()
+    user = prompts.ask_user(cfg.users[name])
+    settle(lambda: actions.save_user(cfg, name, user))
     console.print("[green]✓[/] " + _("User '{name}' updated.", name=name))
 
 
@@ -1319,9 +1324,7 @@ def user_remove(name: Optional[str] = typer.Argument(None, autocompletion=comple
     cfg = Config.load()
     name = pick(cfg.users, _("user"), name)
     if questionary.confirm(_("Delete '{name}'?", name=name), default=False).unsafe_ask():
-        del cfg.users[name]
-        cfg.save()
-        console.print("[green]✓[/] " + _("'{name}' deleted.", name=name))
+        print_removed(name, actions.remove_user(cfg, name))
 
 
 @user_app.command("import", help=_("Create user profiles from the pdms_user table of a database."))
@@ -1347,13 +1350,9 @@ def user_import(
     if search is None and interactive and not yes:
         search = questionary.text(_("Search by email or name (empty = all):")).unsafe_ask().strip()
     with console.status(_("Reading users from {name}...", name=db_name)):
-        try:
-            found = userimport.fetch_users(
-                cfg.dbs[db_name], search=search or "", role=role or "", include_inactive=inactive, limit=limit,
-                timeout=cfg.defaults.db_timeout, mapping=mapping,
-            )
-        except Exception as exc:  # noqa: BLE001 - show any driver error to the user
-            fail(_("Could not read the users from {name}: {error}", name=db_name, error=str(exc).strip()))
+        found = settle(lambda: actions.read_db_users(
+            cfg, db_name, mapping, search=search or "", role=role or "", inactive=inactive, limit=limit,
+        ))
     if not found:
         fail(_("No users match."))
     if len(found) == limit:
@@ -1380,8 +1379,7 @@ def user_import(
         console.print(_("Nothing selected."))
         return
 
-    cfg.users, added, updated = userimport.merge_users(cfg.users, picked, mapping)
-    cfg.save()
+    added, updated = actions.import_users(cfg, picked, mapping)
     table = Table(_("Name"), "DEV_USERNAME", "DEV_ROLES", "")
     for alias in added + updated:
         u = cfg.users[alias]
@@ -2041,8 +2039,8 @@ def config_main(ctx: typer.Context) -> None:
 def config_defaults() -> None:
     prompts.require_tty()
     cfg = Config.load()
-    cfg.defaults = prompts.ask_defaults(cfg.defaults)
-    cfg.save()
+    defaults = prompts.ask_defaults(cfg.defaults)
+    settle(lambda: actions.save_defaults(cfg, defaults))
     i18n.set_language(cfg.defaults.language)
     console.print("[green]✓[/] " + _("Defaults saved."))
 
@@ -2057,10 +2055,7 @@ def config_language(
     if lang is None:
         prompts.require_tty()
         lang = prompts.ask_language(cfg.defaults.language)
-    if lang not in i18n.LANGUAGES:
-        fail(_("Unknown language '{lang}'. Available: {codes}", lang=lang, codes=", ".join(i18n.LANGUAGES)))
-    cfg.defaults.language = lang
-    cfg.save()
+    settle(lambda: actions.set_language(cfg, lang))
     i18n.set_language(lang)
     console.print("[green]✓[/] " + _("Language set to {name}.", name=i18n.LANGUAGES[lang]))
 
@@ -2280,8 +2275,7 @@ def setup_import() -> list[str]:
 
 def setup_language() -> None:
     cfg = Config.load()
-    cfg.defaults.language = prompts.ask_language(cfg.defaults.language)
-    cfg.save()
+    actions.set_language(cfg, prompts.ask_language(cfg.defaults.language))
     i18n.set_language(cfg.defaults.language)
 
 
