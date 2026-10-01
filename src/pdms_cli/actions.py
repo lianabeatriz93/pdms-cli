@@ -496,6 +496,7 @@ def remove_stack(cfg: Config, name: str) -> None:
 # --------------------------------------------------------------------------- proxy
 
 PROXY_HOST = "0.0.0.0"
+MAX_PROXY_TIMEOUT = 3600
 
 
 def proxy_remote(cfg: Config, root: Path, remote: str | None, no_remote: bool) -> tuple[str | None, bool]:
@@ -540,6 +541,7 @@ class ProxyLaunch:
     user_name: str | None
     user: DevUser | None
     frontend: bool  # point frontend/.env.local to the proxy while it runs
+    timeout: int = 300  # seconds to wait for each answer
 
     @property
     def url(self) -> str:
@@ -564,8 +566,12 @@ def plan_proxy(
     remote: str | None = None,
     user_name: str | None = None,
     frontend: bool | None = None,
+    timeout: int | None = None,
 ) -> ProxyLaunch:
-    """Decide how the proxy runs. Raises :class:`PortBusy` or :class:`PointFrontend` for the user to answer."""
+    """Decide how the proxy runs. Raises :class:`PortBusy` or :class:`PointFrontend` for the user to answer.
+
+    ``timeout`` defaults to the ``proxy_timeout`` setting."""
+    timeout = _number("timeout", cfg.defaults.proxy_timeout if timeout is None else timeout, 1, MAX_PROXY_TIMEOUT)
     if user_name:
         require(cfg.users, _("user"), user_name)
     port = free_port(PROXY_HOST, port)
@@ -576,6 +582,7 @@ def plan_proxy(
         raise PointFrontend(url)
     return ProxyLaunch(
         root, env, repo_routes, port, remote, user_name, cfg.users[user_name] if user_name else None, frontend,
+        timeout,
     )
 
 
@@ -590,10 +597,12 @@ def point_frontend(plan: ProxyLaunch) -> str | None:
 def serve_proxy(plan: ProxyLaunch, log: Callable[[str, str, int, str, float], None]) -> None:
     """Run the proxy in this process until it is interrupted; ``log`` gets every request."""
     gateway = proxy.Gateway(
-        routes=plan.routes, backend=plan.root / "backend", remote=plan.remote, impersonate=plan.user, log=log,
+        routes=plan.routes, backend=plan.root / "backend", remote=plan.remote, impersonate=plan.user,
+        timeout=plan.timeout, log=log,
     )
     proxy.serve(gateway, PROXY_HOST, plan.port, {
         "repo": str(plan.root), "env": plan.env, "remote": plan.remote or "", "as": plan.user_name or "",
+        "timeout": plan.timeout,
     })
 
 
@@ -609,7 +618,7 @@ class ProxyStarted:
 def start_proxy(plan: ProxyLaunch) -> ProxyStarted:
     """Start the proxy in the background; waiting until it responds is up to the front end (:func:`proxy_state`)."""
     cmd = proxy.background_command(
-        plan.root, port=plan.port, env=plan.env, remote=plan.remote, user_name=plan.user_name,
+        plan.root, port=plan.port, env=plan.env, remote=plan.remote, user_name=plan.user_name, timeout=plan.timeout,
     )
     proc = instances.spawn(cmd, plan.root, dict(os.environ), proxy.log_path())
     return ProxyStarted(proc.pid, plan.port, proxy.log_path())
@@ -938,6 +947,7 @@ def save_defaults(cfg: Config, defaults: Defaults) -> None:
         events=_one_of("events", defaults.events, EVENTS_MODES),
         events_port=_number("events_port", defaults.events_port, 1, 65535),
         db_timeout=_number("db_timeout", defaults.db_timeout, 1, 600),
+        proxy_timeout=_number("proxy_timeout", defaults.proxy_timeout, 1, MAX_PROXY_TIMEOUT),
         env=dict(defaults.env),
     )
     cfg.save()

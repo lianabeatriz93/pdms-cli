@@ -89,6 +89,8 @@ class Defaults:
     update_check: bool = True
     # Seconds to wait when testing a database connection.
     db_timeout: int = 15
+    # Seconds the proxy waits for a service (or the remote API) to answer before replying 502.
+    proxy_timeout: int = 300
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 

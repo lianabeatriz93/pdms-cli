@@ -295,7 +295,7 @@ def test_read_db_users_reports_the_driver_error(cfg, monkeypatch) -> None:
 @pytest.mark.parametrize("change, field", [
     ({"language": "fr"}, "language"), ({"host": ""}, "host"), ({"port": 0}, "port"),
     ({"logging_level": "TRACE"}, "logging_level"), ({"events": "sqs"}, "events"), ({"events_port": "x"}, "events_port"),
-    ({"db_timeout": 0}, "db_timeout"), ({"env": {"BAD-NAME": "1"}}, "env"),
+    ({"db_timeout": 0}, "db_timeout"), ({"proxy_timeout": 0}, "proxy_timeout"), ({"env": {"BAD-NAME": "1"}}, "env"),
 ])
 def test_save_defaults_rejects_bad_values(cfg, change, field) -> None:
     with pytest.raises(actions.InvalidValue) as invalid:
@@ -339,6 +339,16 @@ def test_plan_proxy_asks_whether_to_point_the_frontend(cfg, ports, repo) -> None
     assert actions.point_frontend(plan) == str(repo / "frontend" / ".env.local")
     # Already pointing to the proxy (or no frontend at all): nothing to ask or change.
     assert not actions.plan_proxy(cfg, repo, [], port=8000).frontend
+
+
+def test_plan_proxy_takes_the_timeout_setting_unless_one_is_given(cfg, ports, repo) -> None:
+    cfg.defaults.proxy_timeout = 600
+    assert actions.plan_proxy(cfg, repo, [], port=8000, frontend=False).timeout == 600
+    assert actions.plan_proxy(cfg, repo, [], port=8000, frontend=False, timeout=90).timeout == 90
+    for wrong in (0, 3601):
+        with pytest.raises(actions.InvalidValue) as invalid:
+            actions.plan_proxy(cfg, repo, [], port=8000, frontend=False, timeout=wrong)
+        assert invalid.value.field == "timeout"
 
 
 def test_plan_proxy_rejects_an_unknown_user(cfg, ports, repo) -> None:
