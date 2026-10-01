@@ -153,6 +153,16 @@ def launch_options(body: dict) -> dict:
     }
 
 
+def run_options(body: dict) -> dict:
+    """The service, port, user, database, install choice and confirmation of starting one service."""
+    service, port = body.get("service"), body.get("port")
+    if not isinstance(service, str) or not service:
+        raise actions.ActionError("service must be a service path of the current repo")
+    if port is not None and (not isinstance(port, int) or isinstance(port, bool) or not 0 < port < 65536):
+        raise actions.ActionError("port must be a number between 1 and 65535, or null for the next free one")
+    return {"service": service, "port": port, **launch_options(body)}
+
+
 def env_name(value: object) -> str:
     env = str(value or "dev")
     if not ENV_NAME.match(env):
@@ -333,7 +343,7 @@ def make_handler(
             except actions.ActionError as exc:
                 self.reply_json(400, {"error": plain(exc.message)})
                 return
-            self.reply_json(200, {"root": str(root), "services": services})
+            self.reply_json(200, {"root": str(root), "services": services, "consumers": ui_jobs.repo_consumers(root)})
 
         def proxy_info(self, which: str, query: dict[str, list[str]]) -> None:
             try:
@@ -407,6 +417,8 @@ def make_handler(
                 return 200, {"forgotten": ui_jobs.forget_stopped()}
             if path == "/api/proxy/start":
                 return 202, {"job": jobs.start_proxy(**proxy_options(body)).key}
+            if path == "/api/run":
+                return 202, {"job": jobs.start(**run_options(body)).key}
             parts = path.split("/")
             if len(parts) != 5 or parts[:2] != ["", "api"] or parts[2] not in ("instances", "stacks"):
                 return 404, {"error": "not found"}

@@ -415,6 +415,47 @@ def test_down_stops_each_running_service(ui, repo, monkeypatch) -> None:
     assert stopped == ["svc@8081"]
 
 
+def test_start_one_service_asks_first_and_logs_the_install(ui, repo, machine, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    started = []
+    monkeypatch.setattr(actions, "start_service", lambda cfg, launch, install=None: started.append(launch))
+    monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: install is True)
+    monkeypatch.setattr(actions, "install_service", lambda service, output: output.write("installed\n"))
+    monkeypatch.setattr(actions, "port_available", lambda host, port, taken=None: port != 9100)
+    monkeypatch.setattr(actions.runner, "next_free_port", lambda host, port, taken=None: 9101)
+
+    assert post(port, "/api/run", {"service": "user/nope"}) == (
+        400, {"error": "Not services of the current repo: user/nope"},
+    )
+    assert post(port, "/api/run", {"service": "user/user-me", "port": "8080"})[0] == 400
+    assert post(port, "/api/run", {})[0] == 400
+    status, data = post(port, "/api/run", {"service": "user/user-me", "port": 9100})
+    assert status == 409 and data == {"decision": "port_busy", "port": 9100, "free": 9101}
+    status, data = post(port, "/api/run", {"service": "user/user-me", "port": 9101, "db": "shared"})
+    assert status == 409 and data == {"decision": "protected_database", "name": "shared"}
+    assert not started and not jobs.snapshot()
+
+    body = {"service": "user/user-me", "port": 9101, "user": "boss", "db": "shared", "confirmed": True, "install": True}
+    status, data = post(port, "/api/run", body)
+    assert status == 202 and data == {"job": "user-me@9101"}
+    wait_until(lambda: started and not jobs.snapshot())
+    launch = started[0]
+    assert (launch.service, launch.port, launch.user_name, launch.db_name) == (repo / "user/user-me", 9101, "boss", "shared")
+    assert machine.last_user == "boss" and machine.last_db == "shared"
+    assert ui_jobs.install_log("user-me@9101").read_text(encoding="utf-8") == "installed\n"
+
+
+def test_start_one_service_takes_the_next_free_port(ui, repo, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    started = []
+    monkeypatch.setattr(actions, "start_service", lambda cfg, launch, install=None: started.append(launch))
+    monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: False)
+    monkeypatch.setattr(actions, "suggested_port", lambda cfg, host: 9102)
+    assert post(port, "/api/run", {"service": "lead/lead-get"}) == (202, {"job": "lead-get@9102"})
+    wait_until(lambda: started and not jobs.snapshot())
+    assert started[0].user_name == "agent" and started[0].db_name == "local"  # the last ones, like pdms run
+
+
 def test_a_stale_stack_says_so_without_terminal_markup(ui, repo) -> None:
     port, _hub, _states, _jobs = ui
     (repo / "lead/lead-get/main.py").unlink()
@@ -426,7 +467,9 @@ def test_a_stale_stack_says_so_without_terminal_markup(ui, repo) -> None:
 def test_save_and_remove_stacks(ui, repo, machine) -> None:
     port, _hub, _states, _jobs = ui
     _response, raw, _conn = request(port, "/api/services", cookie(port))
-    assert json.loads(raw) == {"root": str(repo), "services": ["lead/lead-get", "lead/lead-list", "user/user-me"]}
+    assert json.loads(raw) == {
+        "root": str(repo), "services": ["lead/lead-get", "lead/lead-list", "user/user-me"], "consumers": [],
+    }
 
     def save(name, services, new=True, **extra):
         return post(port, f"/api/stacks/{name}/save", {"services": services, "new": new, **extra})

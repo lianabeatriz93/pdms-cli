@@ -29,7 +29,7 @@ def install_log(key: str) -> Path:
 @dataclass
 class Job:
     key: str
-    action: str  # stop | restart | up | down
+    action: str  # start | stop | restart | up | down
     phase: str  # stopping | installing | starting, with the service for a stack ("installing lead-tp-list")
     started: float
     error: str = ""
@@ -134,6 +134,37 @@ class Jobs:
             actions.restart_service(cfg, inst, user_name=user, db_name=db, confirmed=True, install=install_step)
 
         return self.run(inst.key, "restart", "stopping", work)
+
+    def start(
+        self, service: str, *, port: int | None = None, user: str | None = None, db: str | None = None,
+        install: bool | None = None, confirmed: bool = False,
+    ) -> Job:
+        """Start one service of the current repo in the background, like ``pdms run -b``. Without ``port`` it takes
+        the next free one; a busy ``port``, a protected database or a stopped local ElasticMQ (for a consumer) are
+        raised before anything starts."""
+        cfg = Config.load()
+        root, known = repo_services(cfg)
+        if service not in known:
+            raise actions.ActionError(_("Not services of the current repo: {names}", names=service))
+        path = root / service
+        user, db = user or cfg.last_user, db or cfg.last_db
+        actions.require(cfg.users, _("user"), user)
+        actions.require(cfg.dbs, _("database"), db)
+        launch = actions.plan_service(
+            cfg, path, user_name=user, db_name=db, port=port or actions.suggested_port(cfg, cfg.defaults.host),
+        )
+        actions.check_database(cfg, db, confirmed)
+        key = instances.make_key(launch.service, launch.port)
+        if self.busy(key):
+            raise actions.ActionError(_("{key} is busy.", key=key))
+        actions.remember_profile(cfg, user, db)
+
+        def work(job: Job) -> None:
+            self.install(cfg, job, launch.service, key, install)
+            self.phase(job, "starting")
+            actions.start_service(cfg, launch)
+
+        return self.run(key, "start", "starting", work)
 
     def install(self, cfg: Config, job: Job, service: Path, key: str, install: bool | None, label: str = "") -> None:
         """Install ``service`` if needed, writing the output to the install log of instance ``key``."""
@@ -421,6 +452,15 @@ def repo_services(cfg: Config) -> tuple[Path, list[str]]:
     """The backend folder and every service in it, as the stacks write them (``lead/lead-tp-list``)."""
     root = backend(cfg)
     return root, [path.relative_to(root).as_posix() for path in runner.find_services_below(root)]
+
+
+def repo_consumers(root: Path) -> list[str]:
+    """The services of the backend folder ``root`` that consume an SQS queue (they take no port)."""
+    try:
+        event_map = events.load_event_map(root.parent)
+    except Exception:  # noqa: BLE001 - a Terraform pdms cannot read only loses the hint
+        return []
+    return sorted({consumer.service for consumer in event_map.consumers.values()})
 
 
 def save_stack(name: str, services: list[str], user: str, db: str, new: bool) -> None:
