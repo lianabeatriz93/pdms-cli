@@ -24,7 +24,11 @@ from importlib import resources
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from rich.errors import MarkupError
+from rich.text import Text
+
 from .. import actions, instances, proxy
+from ..config import Config
 from ..logview import LogFollower
 from . import jobs as ui_jobs
 from .state import build_state
@@ -114,6 +118,14 @@ class Hub:
             return self.version, self.latest
 
 
+def plain(message: str) -> str:
+    """A CLI message without its Rich markup (``[bold]pdms up[/]`` → ``pdms up``)."""
+    try:
+        return Text.from_markup(message).plain
+    except MarkupError:
+        return message
+
+
 def decision_body(decision: actions.Decision) -> dict:
     if isinstance(decision, actions.ProtectedDatabase):
         return {"decision": "protected_database", "name": decision.name}
@@ -121,6 +133,17 @@ def decision_body(decision: actions.Decision) -> dict:
         return {"decision": "local_events_down", "port": decision.port,
                 "error": "The local ElasticMQ is not running: start it with pdms events up."}
     return {"decision": type(decision).__name__, "error": str(decision)}
+
+
+def launch_options(body: dict) -> dict:
+    """The user, database, install choice and confirmation of a restart or a stack's up."""
+    install = body.get("install")
+    if install not in (None, True, False):
+        raise actions.ActionError("install must be true, false or null")
+    return {
+        "user": str(body.get("user") or "") or None, "db": str(body.get("db") or "") or None,
+        "install": install, "confirmed": body.get("confirmed") is True,
+    }
 
 
 def make_handler(
@@ -235,6 +258,8 @@ def make_handler(
                 self.reply_json(200, json.loads(hub.latest) if hub.latest and hub.watchers else hub.build())
             elif url.path == "/api/stream":
                 self.stream()
+            elif url.path == "/api/services":
+                self.services()
             elif url.path in ("/api/logs", "/api/logs/stream"):
                 self.logs(parse_qs(url.query), live=url.path.endswith("/stream"))
             else:
@@ -265,35 +290,58 @@ def make_handler(
             try:
                 status, data = self.act(urlsplit(self.path).path, body)
             except actions.ActionError as exc:
-                status, data = 400, {"error": exc.message}
+                status, data = 400, {"error": plain(exc.message)}
             except actions.Decision as decision:
                 status, data = 409, decision_body(decision)
             hub.poke()
             self.reply_json(status, data)
 
+        def services(self) -> None:
+            try:
+                root, services = ui_jobs.repo_services(Config.load())
+            except actions.ActionError as exc:
+                self.reply_json(400, {"error": plain(exc.message)})
+                return
+            self.reply_json(200, {"root": str(root), "services": services})
+
         def act(self, path: str, body: dict) -> tuple[int, dict]:
             if path == "/api/clean":
                 return 200, {"forgotten": ui_jobs.forget_stopped()}
             parts = path.split("/")
-            if len(parts) != 5 or parts[:3] != ["", "api", "instances"]:
+            if len(parts) != 5 or parts[:2] != ["", "api"] or parts[2] not in ("instances", "stacks"):
                 return 404, {"error": "not found"}
+            if parts[2] == "stacks":
+                return self.act_on_stack(unquote(parts[3]), parts[4], body)
             key, verb = unquote(parts[3]), parts[4]
             if verb == "stop":
                 return 202, {"job": jobs.stop(key).key}
             if verb == "restart":
-                install = body.get("install")
-                if install not in (None, True, False):
-                    return 400, {"error": "install must be true, false or null"}
-                job = jobs.restart(
-                    key, user=str(body.get("user") or "") or None, db=str(body.get("db") or "") or None,
-                    install=install, confirmed=body.get("confirmed") is True,
-                )
+                job = jobs.restart(key, **launch_options(body))
                 return 202, {"job": job.key}
             if verb == "forget":
                 ui_jobs.forget(key)
                 return 200, {}
             if verb == "dismiss":
                 jobs.dismiss(key)
+                return 200, {}
+            return 404, {"error": "not found"}
+
+        def act_on_stack(self, name: str, verb: str, body: dict) -> tuple[int, dict]:
+            if verb in ("up", "down"):
+                job = jobs.up(name, **launch_options(body)) if verb == "up" else jobs.down(name)
+                return (202, {"job": job.key}) if job else (200, {"job": None})
+            if verb == "save":
+                services = body.get("services")
+                if not isinstance(services, list) or not all(isinstance(svc, str) for svc in services):
+                    raise actions.ActionError("services must be a list of service paths")
+                ui_jobs.save_stack(name, services, str(body.get("user") or ""), str(body.get("db") or ""),
+                                   new=body.get("new") is True)
+                return 200, {}
+            if verb == "remove":
+                ui_jobs.remove_stack(name)
+                return 200, {}
+            if verb == "dismiss":
+                jobs.dismiss(ui_jobs.stack_key(name))
                 return 200, {}
             return 404, {"error": "not found"}
 
@@ -305,8 +353,8 @@ def make_handler(
                 base = proxy.log_path()
             elif (inst := instances.load().get(key)) is not None:
                 base = Path(inst.log)
-            elif key in jobs.snapshot():  # being restarted: forgotten for a moment
-                base = instances.log_path(key)
+            elif key in (current := jobs.snapshot()) or any(job["log_key"] == key for job in current.values()):
+                base = instances.log_path(key)  # being restarted (forgotten for a moment) or not started yet
             else:
                 return None
             if which == "previous":

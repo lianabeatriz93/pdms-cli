@@ -249,7 +249,9 @@ A page with the background services, the proxy and the local events, updated liv
 uses, so both can be used at the same time. From the services screen you can follow a service's logs live (also the
 previous run's and the install's), open its Swagger docs, stop it, forget the stopped ones, and restart it with the
 same or another user and database: it asks before a protected database and installs only if something changed, like
-`pdms restart`. Starting new services, stacks and the proxy come in the next releases.
+`pdms restart`. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
+services run, and creates, edits and deletes stacks with a searchable list of the repo's services. Starting single
+new services and the proxy come in the next releases.
 
 It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the
 session, which the browser keeps as a cookie. Requests from other web pages are rejected, and database passwords are

@@ -490,6 +490,7 @@ ES: dict[str, str] = {
     "There is no instance {key}.": "No hay ninguna instancia {key}.",
     "{key} is running; stop it first.": "{key} está corriendo; párala primero.",
     "{cmd} failed (exit code {code}).": "{cmd} falló (código de salida {code}).",
+    "Not services of the current repo: {names}": "No son servicios del repo actual: {names}",
     # ------------------------------------------------------------------ proxy
     "Local API gateway: one port for every service, local instances first, the remote API otherwise.":
         "Gateway local: un solo puerto para todos los servicios; primero las instancias locales, si no la API remota.",

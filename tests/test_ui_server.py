@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from pdms_cli import actions, instances
-from pdms_cli.config import Config, Database, DevUser
+from pdms_cli.config import Config, Database, DevUser, Repo, Stack
 from pdms_cli.instances import Health, Instance
 from pdms_cli.ui import jobs as ui_jobs
 from pdms_cli.ui import server as ui_server
@@ -337,3 +337,125 @@ def test_needs_install_follows_the_flag_and_the_settings(monkeypatch, tmp_path) 
     assert actions.needs_install(cfg, tmp_path, None) is False  # nothing changed since the last install
     monkeypatch.setattr(actions.installer, "is_up_to_date", lambda service: False)
     assert actions.needs_install(cfg, tmp_path, None) is cfg.defaults.install
+
+
+# --------------------------------------------------------------------------- stacks
+
+
+@pytest.fixture
+def repo(machine, monkeypatch, tmp_path):
+    """The machine's config with a current repo of three services and a stack ``leads`` of two of them."""
+    backend = tmp_path / "pdms" / "backend"
+    for svc in ("lead/lead-list", "lead/lead-get", "user/user-me"):
+        (backend / svc).mkdir(parents=True)
+        (backend / svc / "pyproject.toml").write_text("[tool.poetry]\n", encoding="utf-8")
+        (backend / svc / "main.py").write_text("app = None\n", encoding="utf-8")
+    machine.repos = {"pdms": Repo(str(tmp_path / "pdms"))}
+    machine.current_repo = "pdms"
+    machine.stacks = {"leads": Stack(["lead/lead-list", "lead/lead-get"])}
+    monkeypatch.setattr(actions, "consumer_of", lambda cfg, service: None)
+    monkeypatch.setattr(actions.events, "running", lambda port: False)  # events go to AWS
+    return backend.resolve()
+
+
+def test_up_asks_before_a_protected_database_and_installs_each_service(ui, repo, machine, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    started = []
+    monkeypatch.setattr(actions, "start_service", lambda cfg, launch, install=None: started.append(launch))
+    monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: service.name == "lead-get")
+    monkeypatch.setattr(actions, "install_service", lambda service, output: output.write(f"installed {service.name}\n"))
+
+    status, data = post(port, "/api/stacks/leads/up", {"db": "shared"})
+    assert status == 409 and data == {"decision": "protected_database", "name": "shared"} and not started
+
+    assert post(port, "/api/stacks/leads/up", {"db": "shared", "confirmed": True})[0] == 202
+    wait_until(lambda: len(started) == 2 and not jobs.snapshot())
+    assert [launch.service for launch in started] == [repo / "lead/lead-list", repo / "lead/lead-get"]
+    assert {launch.user_name for launch in started} == {"agent"} and started[0].port != started[1].port
+    assert machine.last_db == "shared"
+    get = started[1]
+    log = ui_jobs.install_log(instances.make_key(get.service, get.port))
+    assert log.read_text(encoding="utf-8") == "installed lead-get\n"
+
+
+    def failing(service, output):
+        output.write("Because lead-get depends on boto3 (^9), version solving failed.\n")
+        raise actions.ActionError("poetry lock failed (exit code 1).")
+
+    started.clear()
+    monkeypatch.setattr(actions, "install_service", failing)
+    assert post(port, "/api/stacks/leads/up", {"db": "local"})[0] == 202
+    wait_until(lambda: jobs.snapshot().get("stack:leads", {}).get("error"))
+    job = jobs.snapshot()["stack:leads"]
+    assert job["error"] == "poetry lock failed (exit code 1)." and job["log_key"].startswith("lead-get@")
+    assert [launch.service.name for launch in started] == ["lead-list"]  # stopped at the failing service
+    _response, raw, _conn = request(port, f"/api/logs?key={job['log_key']}&which=install", cookie(port))
+    assert json.loads(raw)["lines"] == ["Because lead-get depends on boto3 (^9), version solving failed."]
+
+
+def test_up_and_down_with_nothing_to_do(ui, repo, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    monkeypatch.setattr(actions, "running_by_service",
+                        lambda: {str(repo / "lead/lead-list"): [8081], str(repo / "lead/lead-get"): [8082]})
+    assert post(port, "/api/stacks/leads/up") == (200, {"job": None})
+    monkeypatch.setattr(actions, "stack_instances", lambda cfg, name, root: [])
+    assert post(port, "/api/stacks/leads/down") == (200, {"job": None})
+    assert not jobs.snapshot()
+
+
+def test_down_stops_each_running_service(ui, repo, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    running = [instances.load()["svc@8081"]]
+    stopped = []
+    monkeypatch.setattr(actions, "stack_instances", lambda cfg, name, root: running if name == "leads" else [])
+    monkeypatch.setattr(actions, "stop_service", lambda inst: stopped.append(inst.key))
+    assert post(port, "/api/stacks/leads/down") == (202, {"job": "stack:leads"})
+    wait_until(lambda: stopped and not jobs.snapshot())
+    assert stopped == ["svc@8081"]
+
+
+def test_a_stale_stack_says_so_without_terminal_markup(ui, repo) -> None:
+    port, _hub, _states, _jobs = ui
+    (repo / "lead/lead-get/main.py").unlink()
+    status, data = post(port, "/api/stacks/leads/up")
+    assert status == 400 and "'lead/lead-get' is no longer a service" in data["error"]
+    assert "pdms stack edit" in data["error"] and "[bold]" not in data["error"]
+
+
+def test_save_and_remove_stacks(ui, repo, machine) -> None:
+    port, _hub, _states, _jobs = ui
+    _response, raw, _conn = request(port, "/api/services", cookie(port))
+    assert json.loads(raw) == {"root": str(repo), "services": ["lead/lead-get", "lead/lead-list", "user/user-me"]}
+
+    def save(name, services, new=True, **extra):
+        return post(port, f"/api/stacks/{name}/save", {"services": services, "new": new, **extra})
+
+    assert save("bad%20name", ["user/user-me"]) == (400, {"error": "Use only letters, numbers, '-' or '_'"})
+    assert save("leads", ["user/user-me"]) == (400, {"error": "That name already exists"})
+    assert save("me", ["user/nope"]) == (400, {"error": "Not services of the current repo: user/nope"})
+    assert save("me", [])[0] == 400
+    assert save("me", "user/user-me")[0] == 400
+    assert save("me", ["user/user-me"], user="ghost")[0] == 400
+    assert save("me", ["user/user-me", "lead/lead-get"], user="boss", db="shared") == (200, {})
+    assert machine.stacks["me"] == Stack(["user/user-me", "lead/lead-get"], user="boss", db="shared")
+
+    assert save("leads", ["lead/lead-list"], new=False) == (200, {})
+    assert machine.stacks["leads"] == Stack(["lead/lead-list"])
+    assert save("ghosts", ["lead/lead-list"], new=False)[0] == 400
+
+    assert post(port, "/api/stacks/me/remove") == (200, {})
+    assert "me" not in machine.stacks
+    assert post(port, "/api/stacks/me/remove")[0] == 400
+
+
+def test_the_state_shows_which_stack_services_run(repo, machine, monkeypatch) -> None:
+    registry = instances.load()
+    registry["svc@8081"].service = str(repo / "lead/lead-list")
+    instances.save(registry)
+    monkeypatch.setattr(ui_state.instances, "health_all",
+                        lambda items: {i.key: Health("ok" if i.alive() else "stopped") for i in items})
+    monkeypatch.setattr(ui_state.events, "is_up", lambda port: False)
+    assert ui_state.build_state(machine)["stacks"] == [{
+        "name": "leads", "user": "", "db": "",
+        "services": [{"path": "lead/lead-list", "running": ["svc@8081"]}, {"path": "lead/lead-get", "running": []}],
+    }]

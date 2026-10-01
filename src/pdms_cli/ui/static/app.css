@@ -116,6 +116,36 @@ dialog legend { font-size: .82rem; color: var(--muted); padding: 0 .3rem; }
 .toast { padding: .5rem .8rem; border-radius: 8px; font-size: .85rem; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 4px 14px rgb(0 0 0 / .15); }
 .toast.error { color: var(--bad); border-color: var(--bad); }
 
+.view { display: grid; gap: .8rem; align-content: start; min-width: 0; }
+.btn.bad-fill { background: var(--bad); border-color: var(--bad); }
+.btn.link { border-color: transparent; color: var(--accent); font-family: var(--mono); margin: 0; }
+.cards { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.stack { display: grid; gap: .5rem; padding: .8rem .9rem; align-content: start; }
+.stack header { display: flex; align-items: center; gap: .6rem; justify-content: space-between; }
+.stack h2 { margin: 0; font-size: .95rem; overflow-wrap: anywhere; }
+.stack-services { list-style: none; margin: 0; padding: 0; display: grid; gap: .15rem; font-size: .8rem; }
+.stack-services li { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.stack-services .mono { overflow-wrap: anywhere; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); flex: none; }
+.dot.on { background: var(--ok); }
+.stack .meta { margin: 0; font-size: .78rem; }
+.stack .error { margin: 0; font-size: .8rem; }
+.stack footer { display: flex; gap: .3rem; flex-wrap: wrap; }
+
+dialog input:not([type]), dialog input[type="search"] {
+  font: inherit; padding: .3rem .5rem; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+#editor { width: min(38rem, calc(100vw - 32px)); }
+.picker { border: 1px solid var(--line); border-radius: 6px; margin-bottom: .7rem; }
+.picker-bar { display: flex; gap: .6rem; align-items: center; padding: .4rem; border-bottom: 1px solid var(--line); }
+.picker-bar input { flex: 1; min-width: 0; }
+.picker-bar span { font-size: .78rem; white-space: nowrap; }
+.picker-list { max-height: 40vh; overflow: auto; padding: .3rem .2rem; }
+dialog label.pick { display: flex; align-items: center; gap: .45rem; margin: 0; padding: .15rem .4rem; color: var(--ink); font-size: .8rem; border-radius: 4px; }
+dialog label.pick:hover { background: var(--code); }
+dialog label.pick .muted { margin-left: auto; font-size: .75rem; white-space: nowrap; }
+
 @media (max-width: 640px) {
   body { grid-template: auto auto 1fr / 1fr; }
   .side { display: flex; overflow-x: auto; padding: .4rem; min-height: max-content; }

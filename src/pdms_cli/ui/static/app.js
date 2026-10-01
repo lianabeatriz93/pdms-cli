@@ -126,8 +126,8 @@ function serviceItems() {
     });
   }
   // A restart forgets the instance for a moment: keep its row while the job runs.
-  for (const [key, job] of Object.entries(state.jobs)) {
-    if (!items.some((item) => item.key === key)) {
+  for (const key of Object.keys(state.jobs)) {
+    if (!key.startsWith("stack:") && !items.some((item) => item.key === key)) {
       items.push({ key, status: "stopped", placeholder: true, detail: "", url: "", repo: "", user: "", db: "" });
     }
   }
@@ -150,9 +150,10 @@ function tickUptimes() {
 }
 
 function paint(next) {
-  state = { jobs: {}, users: [], dbs: [], ...next };
+  state = { jobs: {}, users: [], dbs: [], stacks: [], ...next };
   paintContext();
   paintServices();
+  paintStacks();
   if (logs.key) paintLogTabs();
 }
 
@@ -227,44 +228,66 @@ function closeLogs() {
   paintServices();
 }
 
-// ---------------------------------------------------------------------------- restart
+// ---------------------------------------------------------------------------- restart and up
 
-const restart = { item: null, confirmed: false };
+const launch = { path: null, confirmed: false, after: null };
 
 function options(select, names, current, label = (name) => name) {
   select.replaceChildren(...names.map((name) => el("option", name === current ? { value: name, selected: "" } : { value: name }, label(name))));
 }
 
-function openRestart(item) {
-  Object.assign(restart, { item, confirmed: false });
-  $("restart-key").textContent = item.key;
-  options($("restart-user"), state.users, item.user);
-  const protectedDbs = new Set(state.dbs.filter((db) => db.protected).map((db) => db.name));
-  options($("restart-db"), state.dbs.map((db) => db.name), item.db, (name) => protectedDbs.has(name) ? `${name} (protected)` : name);
+function dbLabel(name) {
+  const db = state.dbs.find((item) => item.name === name);
+  return db && db.protected ? `${name} (protected)` : name;
+}
+
+// The user, database and install of a restart or a stack's up, asking again before a protected database.
+function openLaunch({ title, key, hint, user, db, path, go, after }) {
+  Object.assign(launch, { path, after, confirmed: false });
+  $("restart-title").textContent = title;
+  $("restart-key").textContent = key;
+  $("restart-hint").textContent = hint;
+  options($("restart-user"), state.users, user);
+  options($("restart-db"), state.dbs.map((item) => item.name), db, dbLabel);
   $("restart-warn").hidden = $("restart-error").hidden = true;
-  $("restart-go").textContent = "Restart";
+  $("restart-go").textContent = launch.go = go;
   $("restart-form").install.value = "auto";
   $("restart").showModal();
 }
 
-async function submitRestart(event) {
+function openRestart(item) {
+  openLaunch({
+    title: "Restart", key: item.key, hint: "Same port. Change the user or the database if you need to.",
+    user: item.user, db: item.db, go: "Restart", path: `/api/instances/${encodeURIComponent(item.key)}/restart`,
+    after: (install) => { if (logs.key === item.key) openLogs(item.key, install === false ? "current" : logs.which); },
+  });
+}
+
+function openUp(stack) {
+  openLaunch({
+    title: "Start", key: stack.name, hint: "Starts the services that are not running yet, each on a free port.",
+    user: stack.user || state.user, db: stack.db || state.db, go: "Start", path: `/api/stacks/${encodeURIComponent(stack.name)}/up`,
+    after: (_install, data) => { if (!data.job) toast(`The whole stack '${stack.name}' is already running.`, "info"); },
+  });
+}
+
+async function submitLaunch(event) {
   event.preventDefault();
   const install = { auto: null, force: true, skip: false }[$("restart-form").install.value];
-  const body = { user: $("restart-user").value, db: $("restart-db").value, install, confirmed: restart.confirmed };
-  const key = restart.item.key;
+  const body = { user: $("restart-user").value, db: $("restart-db").value, install, confirmed: launch.confirmed };
   $("restart-go").disabled = true;
   try {
-    const { status, data } = await post(`/api/instances/${encodeURIComponent(key)}/restart`, body);
-    if (status === 202) {
+    const { status, data } = await post(launch.path, body);
+    if (status === 200 || status === 202) {
       $("restart").close();
-      if (logs.key === key) openLogs(key, install === false ? "current" : logs.which);
+      if (launch.after) launch.after(install, data);
       return;
     }
     if (status === 409 && data.decision === "protected_database") {
-      restart.confirmed = true;
-      $("restart-warn").textContent = `'${data.name}' is a protected database. Restart on it anyway?`;
+      launch.confirmed = true;
+      $("restart-warn").textContent = `'${data.name}' is a protected database. Use it anyway?`;
       $("restart-warn").hidden = false;
-      $("restart-go").textContent = "Restart on the protected DB";
+      $("restart-go").textContent = `${launch.go} on the protected DB`;
       return;
     }
     $("restart-error").textContent = data.error || `pdms ui answered ${status}`;
@@ -278,9 +301,189 @@ async function submitRestart(event) {
 }
 
 function resetConfirmation() {
-  restart.confirmed = false;
+  launch.confirmed = false;
   $("restart-warn").hidden = true;
-  $("restart-go").textContent = "Restart";
+  $("restart-go").textContent = launch.go;
+}
+
+// ---------------------------------------------------------------------------- stacks
+
+const ASK = "(ask when starting)";
+
+function stackPath(name) {
+  return `/api/stacks/${encodeURIComponent(name)}`;
+}
+
+function showLogs(key, which = "current") {
+  location.hash = "#services";
+  openLogs(key, which);
+}
+
+function stackCard(stack) {
+  const job = state.jobs[`stack:${stack.name}`];
+  const busy = job && !job.error;
+  const total = stack.services.length;
+  const up = stack.services.filter((svc) => svc.running.length).length;
+  const status = busy
+    ? el("span", { class: "st starting" }, `${job.phase}…`)
+    : el("span", { class: `st ${up === total ? "ok" : up ? "starting" : "stopped"}` },
+      up === total ? "running" : up ? `${up} of ${total} running` : "stopped");
+
+  const list = el("ul", { class: "stack-services" }, ...stack.services.map((svc) => el("li", {},
+    el("span", { class: `dot ${svc.running.length ? "on" : ""}` }),
+    el("span", { class: "mono" }, svc.path),
+    ...svc.running.map((key) => button(key.slice(key.indexOf("@")), () => showLogs(key), {
+      class: "btn tiny link", title: `Logs of ${key}`,
+    })),
+  )));
+
+  const card = el("article", { class: "card stack" },
+    el("header", {}, el("h2", { class: "mono" }, stack.name), status),
+    list,
+    el("p", { class: "muted meta" }, `user ${stack.user || ASK} · db ${stack.db || ASK}`),
+  );
+  if (job && job.error) {
+    card.append(el("p", { class: "error" }, `${job.action} failed: ${job.error}`));
+  }
+  const footer = el("footer", {});
+  if (job && job.log_key) footer.append(button("Install log", () => showLogs(job.log_key, "install")));
+  if (job && job.error) footer.append(button("Dismiss", () => act(`${stackPath(stack.name)}/dismiss`)));
+  if (!busy) {
+    if (up < total) footer.append(button("Start", () => openUp(stack), { class: "btn small primary" }));
+    if (up) footer.append(button("Stop", () => act(`${stackPath(stack.name)}/down`), { class: "btn small bad" }));
+    footer.append(button("Edit", () => openEditor(stack)));
+    footer.append(button("Delete", () => removeStack(stack), { class: "btn small ghost" }));
+  }
+  card.append(footer);
+  return card;
+}
+
+function paintStacks() {
+  $("stacks").replaceChildren(...state.stacks.map(stackCard));
+  $("stacks-empty").hidden = state.stacks.length > 0;
+  const running = state.stacks.filter((stack) => stack.services.some((svc) => svc.running.length)).length;
+  $("stack-count").textContent = state.stacks.length || "";
+  $("stack-summary").textContent = `${state.stacks.length} stacks · ${running} running`;
+}
+
+function confirmDialog(title, text, yes) {
+  $("confirm-title").textContent = title;
+  $("confirm-text").textContent = text;
+  $("confirm-yes").textContent = yes;
+  $("confirm").returnValue = "";
+  $("confirm").showModal();
+  return new Promise((resolve) => {
+    $("confirm").addEventListener("close", () => resolve($("confirm").returnValue === "yes"), { once: true });
+  });
+}
+
+async function removeStack(stack) {
+  if (await confirmDialog(`Delete stack ${stack.name}?`, "Only the stack goes; its services keep running if they are.", "Delete")) {
+    act(`${stackPath(stack.name)}/remove`, {}, () => toast(`Stack '${stack.name}' deleted.`, "info"));
+  }
+}
+
+// ---------------------------------------------------------------------------- stack editor
+
+const editor = { name: null, order: [], picked: new Set() };
+
+function slashes(path) {
+  return path.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+async function openEditor(stack = null) {
+  let found;
+  try {
+    const response = await fetch("/api/services");
+    found = await response.json();
+    if (!response.ok) { toast(found.error || `pdms ui answered ${response.status}`); return; }
+  } catch {
+    toast("pdms ui is not reachable: is it still running?");
+    return;
+  }
+  const root = slashes(found.root);
+  const runningOn = {};
+  for (const inst of state.instances) {
+    if (inst.status === "stopped") continue;
+    const path = slashes(inst.service);
+    if (path.startsWith(`${root}/`)) (runningOn[path.slice(root.length + 1)] ||= []).push(inst.port);
+  }
+  // Like pdms stack edit: the stack's services first, then the running ones, then the rest.
+  const current = stack ? stack.services.map((svc) => svc.path) : [];
+  const rest = found.services.filter((svc) => !current.includes(svc));
+  editor.order = [...current, ...rest.filter((svc) => runningOn[svc]), ...rest.filter((svc) => !runningOn[svc])];
+  editor.picked = new Set(current);
+  editor.name = stack ? stack.name : null;
+
+  $("editor-title").textContent = stack ? `Edit ${stack.name}` : "New stack";
+  $("editor-name-label").hidden = Boolean(stack);
+  $("editor-name").required = !stack;
+  $("editor-name").value = "";
+  $("editor-filter").value = "";
+  $("editor-services").replaceChildren(...editor.order.map((svc) => {
+    const box = el("input", { type: "checkbox", value: svc });
+    box.checked = editor.picked.has(svc);
+    box.addEventListener("change", () => {
+      if (box.checked) editor.picked.add(svc); else editor.picked.delete(svc);
+      editorCount();
+    });
+    const ports = (runningOn[svc] || []).filter(Boolean);
+    return el("label", { class: "pick", "data-svc": svc.toLowerCase() }, box, el("span", { class: "mono" }, svc),
+      runningOn[svc] ? el("span", { class: "muted" }, ports.length ? `running on :${ports.join(", :")}` : "running") : "");
+  }));
+  options($("editor-user"), ["", ...state.users], stack ? stack.user : "", (name) => name || ASK);
+  options($("editor-db"), ["", ...state.dbs.map((item) => item.name)], stack ? stack.db : "", (name) => name ? dbLabel(name) : ASK);
+  $("editor-error").hidden = true;
+  editorCount();
+  $("editor").showModal();
+  (stack ? $("editor-filter") : $("editor-name")).focus();
+}
+
+function editorCount() {
+  $("editor-count").textContent = `${editor.picked.size} of ${editor.order.length} selected`;
+}
+
+function filterEditor() {
+  const text = $("editor-filter").value.trim().toLowerCase();
+  for (const item of $("editor-services").children) item.hidden = Boolean(text) && !item.dataset.svc.includes(text);
+}
+
+async function saveEditor(event) {
+  event.preventDefault();
+  const name = editor.name || $("editor-name").value.trim();
+  const body = {
+    services: editor.order.filter((svc) => editor.picked.has(svc)),
+    user: $("editor-user").value, db: $("editor-db").value, new: !editor.name,
+  };
+  if (!body.services.length) {
+    $("editor-error").textContent = "A stack needs at least one service.";
+    $("editor-error").hidden = false;
+    return;
+  }
+  $("editor-save").disabled = true;
+  try {
+    const { status, data } = await post(`${stackPath(name)}/save`, body);
+    if (status === 200) {
+      $("editor").close();
+      toast(`Stack '${name}' saved.`, "info");
+      return;
+    }
+    $("editor-error").textContent = data.error || `pdms ui answered ${status}`;
+    $("editor-error").hidden = false;
+  } catch {
+    $("editor-error").textContent = "pdms ui is not reachable: is it still running?";
+    $("editor-error").hidden = false;
+  } finally {
+    $("editor-save").disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------- views
+
+function route() {
+  const view = location.hash === "#stacks" ? "stacks" : "services";
+  for (const section of document.querySelectorAll(".view")) section.hidden = section.id !== `view-${view}`;
+  for (const link of document.querySelectorAll(".side a[data-view]")) link.classList.toggle("on", link.dataset.view === view);
 }
 
 // ---------------------------------------------------------------------------- wiring
@@ -289,7 +492,14 @@ $("logs-close").addEventListener("click", closeLogs);
 $("logs-clear").addEventListener("click", clearLog);
 for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => openLogs(logs.key, tab.dataset.which));
 $("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(`Forgot ${data.forgotten.length} stopped.`, "info")));
-$("restart-form").addEventListener("submit", submitRestart);
+$("restart-form").addEventListener("submit", submitLaunch);
+$("stack-new").addEventListener("click", () => openEditor());
+$("editor-form").addEventListener("submit", saveEditor);
+$("editor-cancel").addEventListener("click", () => $("editor").close());
+$("editor-filter").addEventListener("input", filterEditor);
+$("editor-filter").addEventListener("keydown", (event) => { if (event.key === "Enter") event.preventDefault(); });
+window.addEventListener("hashchange", route);
+route();
 $("restart-cancel").addEventListener("click", () => $("restart").close());
 $("restart-db").addEventListener("change", resetConfirmation);
 
