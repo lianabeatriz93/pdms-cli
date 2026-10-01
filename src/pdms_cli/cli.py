@@ -20,6 +20,7 @@ from typing import Callable, Optional, TypeVar
 from prompt_toolkit.keys import Keys
 import questionary
 import typer
+from rich.markup import escape
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
@@ -1731,9 +1732,16 @@ def proxy_routes(
 def ui_cmd(
     port: int = typer.Option(8765, "--port", "-p", help=_("Port to listen on (the next free one if it is in use).")),
     browser: bool = typer.Option(True, "--browser/--no-browser", help=_("Open it in the browser.")),
+    window: bool = typer.Option(
+        False, "--window", "-w", help=_("Open it in a window of its own instead of the browser (needs the desktop extra)."),
+    ),
 ) -> None:
     from .ui import server as ui_server
+    from .ui import window as ui_window
 
+    if window and not ui_window.available():
+        fail(_("The window needs pywebview, which comes with the desktop extra. Install it with:\n  {command}\n"
+               "or use pdms ui to open it in the browser.", command=escape(ui_window.install_command())))
     try:
         port = actions.free_port("127.0.0.1", port)
     except actions.PortBusy as busy:
@@ -1744,6 +1752,21 @@ def ui_cmd(
     server = ui_server.make_server("127.0.0.1", port, token, hub, jobs)
     url = f"http://127.0.0.1:{port}/?token={token}"
     console.print("[green]✓[/] " + _("pdms ui is running at {url}", url=url), highlight=False, soft_wrap=True)
+    if window:
+        console.print(_("[dim]Close the window (or Ctrl+C) to stop it; the link also opens it in a browser.[/]"))
+        thread = threading.Thread(target=ui_server.serve, args=(server, hub), name="pdms-ui", daemon=True)
+        thread.start()
+        try:
+            ui_window.open_window(url)
+        except KeyboardInterrupt:
+            pass
+        except Exception as exc:  # noqa: BLE001 - a missing system library of the GUI toolkit, no display...
+            server.shutdown()
+            fail(_("Could not open the window: {error}. pdms ui opens it in the browser.", error=escape(str(exc))))
+        server.shutdown()
+        thread.join(5)
+        console.print(f"[dim]{_('pdms ui stopped.')}[/]")
+        return
     console.print(_("[dim]Only this machine can open it, and only with this link. Ctrl+C to stop it.[/]"))
     if browser and not webbrowser.open(url):
         console.print(_("[yellow]Could not open a browser; open the URL manually.[/]"))

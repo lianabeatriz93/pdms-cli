@@ -486,6 +486,16 @@ ES: dict[str, str] = {
     "[dim]Only this machine can open it, and only with this link. Ctrl+C to stop it.[/]":
         "[dim]Solo se puede abrir desde esta máquina y solo con este enlace. Ctrl+C para pararla.[/]",
     "pdms ui stopped.": "pdms ui parada.",
+    "Open it in a window of its own instead of the browser (needs the desktop extra).":
+        "Abrirla en una ventana propia en vez del navegador (necesita el extra desktop).",
+    "The window needs pywebview, which comes with the desktop extra. Install it with:\n  {command}\n"
+    "or use pdms ui to open it in the browser.":
+        "La ventana necesita pywebview, que viene con el extra desktop. Instálalo con:\n  {command}\n"
+        "o usa pdms ui para abrirla en el navegador.",
+    "[dim]Close the window (or Ctrl+C) to stop it; the link also opens it in a browser.[/]":
+        "[dim]Cierra la ventana (o Ctrl+C) para pararla; el enlace también la abre en un navegador.[/]",
+    "Could not open the window: {error}. pdms ui opens it in the browser.":
+        "No se pudo abrir la ventana: {error}. pdms ui la abre en el navegador.",
     "{key} is busy ({phase}).": "{key} está ocupada ({phase}).",
     "{key} is busy.": "{key} está ocupada.",
     "There is no instance {key}.": "No hay ninguna instancia {key}.",

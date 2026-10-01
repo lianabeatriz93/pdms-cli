@@ -15,12 +15,18 @@ def test_versions_compare_numerically():
     assert update.parse_version("v1.2.3")[:3] == (1, 2, 3)
 
 
-def test_release_asset_urls():
+def test_release_asset_urls(monkeypatch):
     assert update.wheel_url("0.2.0") == (
         "https://github.com/lianabeatriz93/pdms-cli/releases/download/v0.2.0/pdms_cli-0.2.0-py3-none-any.whl"
     )
+    monkeypatch.setattr(update, "has_desktop", lambda: False)
     cmd = update.upgrade_command("0.2.0")
     assert cmd[1:4] == ["tool", "install", "--force"] and cmd[-1].endswith("pdms_cli-0.2.0-py3-none-any.whl")
+
+
+def test_an_update_keeps_the_desktop_extra(monkeypatch):
+    monkeypatch.setattr(update, "has_desktop", lambda: True)
+    assert update.upgrade_command("0.3.0")[-1] == f"pdms-cli[desktop] @ {update.wheel_url('0.3.0')}"
 
 
 def test_development_checkout_is_editable():

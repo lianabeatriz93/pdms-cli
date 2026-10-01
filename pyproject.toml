@@ -14,6 +14,13 @@ dependencies = [
     "psutil>=5.9",
 ]
 
+[project.optional-dependencies]
+# pdms ui --window. Linux uses the Qt backend: its wheels need no system packages to build, unlike GTK's PyGObject.
+desktop = [
+    "pywebview>=5",
+    "pywebview[qt]>=5; sys_platform == 'linux'",
+]
+
 [dependency-groups]
 dev = [
     "botocore>=1.29",

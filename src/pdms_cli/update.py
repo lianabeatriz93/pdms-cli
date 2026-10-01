@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import shutil
@@ -66,8 +67,14 @@ def install_kind() -> str:
     return "uv-tool" if "uv" in Path(sys.prefix).parts and "tools" in Path(sys.prefix).parts else "other"
 
 
+def has_desktop() -> bool:
+    """Whether the desktop extra (``pdms ui --window``) is installed, so an update keeps it."""
+    return importlib.util.find_spec("webview") is not None
+
+
 def upgrade_command(version: str) -> list[str]:
-    return [shutil.which("uv") or "uv", "tool", "install", "--force", wheel_url(version)]
+    source = f"pdms-cli[desktop] @ {wheel_url(version)}" if has_desktop() else wheel_url(version)
+    return [shutil.which("uv") or "uv", "tool", "install", "--force", source]
 
 
 def is_newer(candidate: str, current: str = __version__) -> bool:
