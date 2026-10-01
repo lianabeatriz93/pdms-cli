@@ -491,6 +491,8 @@ ES: dict[str, str] = {
     "{key} is running; stop it first.": "{key} está corriendo; párala primero.",
     "{cmd} failed (exit code {code}).": "{cmd} falló (código de salida {code}).",
     "Not services of the current repo: {names}": "No son servicios del repo actual: {names}",
+    "local SNS": "SNS local",
+    "every SNS publish · pdms events peek {queue}": "todo lo publicado a SNS · pdms events peek {queue}",
     # ------------------------------------------------------------------ proxy
     "Local API gateway: one port for every service, local instances first, the remote API otherwise.":
         "Gateway local: un solo puerto para todos los servicios; primero las instancias locales, si no la API remota.",

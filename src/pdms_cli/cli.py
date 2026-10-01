@@ -1871,19 +1871,24 @@ def events_status(
     counts = events.queue_counts(port)
     table = Table(_("Queue"), _("Waiting"), _("In flight"), _("Consumer"))
     for name, count in sorted(counts.items()):
+        if name == events.SNS_QUEUE:
+            continue  # shown last, always: it is the local SNS, not a queue of the repo
         if not all_ and not count["visible"] and not count["in_flight"]:
             continue
         consumer = event_map.consumers.get(name)
         running = next((i.key for i in instances.load().values() if i.is_consumer and i.queue == name and i.alive()), "")
         table.add_row(name, str(count["visible"]), str(count["in_flight"]),
                       f"[green]● {running}[/]" if running else (f"[dim]{consumer.service}[/]" if consumer else "-"))
+    repo_rows = table.row_count
+    sns = counts.get(events.SNS_QUEUE, {"visible": 0, "in_flight": 0})
+    table.add_row(f"{events.SNS_QUEUE} [dim]({_('local SNS')})[/]", str(sns["visible"]), str(sns["in_flight"]),
+                  f"[dim]{_('every SNS publish · pdms events peek {queue}', queue=events.SNS_QUEUE)}[/]")
     console.print("[green]●[/] " + _("ElasticMQ running at {url} · {count} queues", url=events.endpoint(port),
                                      count=len(counts)))
     publishers = [i.key for i in instances.load().values() if i.alive() and i.events == "local"]
     console.print("  " + _("Publishing to the local broker: {names}", names=", ".join(publishers) or _("none")))
-    if table.row_count:
-        console.print(table)
-    else:
+    console.print(table)
+    if not repo_rows:
         console.print("  [dim]" + _("All queues are empty (--all to list them).") + "[/]")
 
 
