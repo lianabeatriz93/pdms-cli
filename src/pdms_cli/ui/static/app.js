@@ -992,11 +992,27 @@ async function purge(queues) {
 
 const JSON_TOKEN = /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
 
-// Pretty JSON with its keys, strings, numbers and literals coloured; text that is not JSON stays as it is.
+// ``value`` with every string that holds a JSON object or list decoded, at any depth: an SNS message keeps the
+// published Message as a string, whose data is often a JSON string too (like sitecustomize._unnest for sns.log).
+function unnest(value) {
+  if (typeof value === "string" && /^\s*[[{]/.test(value)) {
+    try {
+      return unnest(JSON.parse(value));
+    } catch {
+      return value;
+    }
+  }
+  if (Array.isArray(value)) return value.map(unnest);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unnest(item)]));
+  return value;
+}
+
+// Pretty JSON with its keys, strings, numbers and literals coloured, JSON inside its strings decoded too; text that
+// is not JSON stays as it is.
 function jsonView(text) {
   let source;
   try {
-    source = JSON.stringify(JSON.parse(text), null, 2);
+    source = JSON.stringify(unnest(JSON.parse(text)), null, 2);
   } catch {
     return document.createTextNode(text);
   }
