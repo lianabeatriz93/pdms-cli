@@ -121,3 +121,23 @@ def test_install_force_reinstalls_the_copied_dependencies(tmp_path: Path, monkey
     assert [c[1] for c in calls] == ["lock", "install", "run"]
     assert "--force-reinstall" in calls[2] and "--no-deps" in calls[2]
     assert [Path(p).name for p in calls[2][-2:]] == ["core", "base"]
+
+
+def test_poetry_never_uses_the_virtualenv_pdms_runs_in(tmp_path: Path, monkeypatch) -> None:
+    """Under ``uv run`` (or an activated venv) poetry would install into pdms's own environment."""
+    from pdms_cli import runner
+    from pdms_cli.config import Database, Defaults, DevUser
+
+    monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "pdms-venv"))
+    monkeypatch.setenv("CONDA_PREFIX", str(tmp_path / "conda"))
+    monkeypatch.setenv("KEEP_ME", "1")
+    service = make_repo(tmp_path)
+    envs = []
+    monkeypatch.setattr(runner.subprocess, "run",
+                        lambda cmd, **kw: envs.append(kw["env"]) or runner.subprocess.CompletedProcess(cmd, 1, ""))
+    runner.install(service)
+    runner.poetry_python(service)
+    envs.append(runner.build_env(Defaults(), DevUser("u1", "a@x.com"), Database("localhost")))
+    assert len(envs) == 5
+    for env in envs:
+        assert "VIRTUAL_ENV" not in env and "CONDA_PREFIX" not in env and env["KEEP_ME"] == "1"

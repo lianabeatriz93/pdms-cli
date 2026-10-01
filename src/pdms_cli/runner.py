@@ -15,6 +15,9 @@ from .config import Database, Defaults, DevUser
 from .i18n import _
 
 SKIP_DIRS = {"node_modules", "__pycache__", "tests", "frontend", "infra", "templates"}
+# An active virtualenv (pdms under ``uv run`` or run from an activated venv) makes poetry use it instead of the
+# service's own: poetry install would fill pdms's environment and poetry run would start the service from it.
+ACTIVE_ENV = ("VIRTUAL_ENV", "CONDA_PREFIX")
 
 
 def is_service(path: Path) -> bool:
@@ -82,15 +85,21 @@ def service_env(
 def build_env(
     defaults: Defaults, user: DevUser, db: Database, extra: dict[str, str] | None = None
 ) -> dict[str, str]:
-    env = {**os.environ, **service_env(defaults, user, db, extra)}
+    env = {**poetry_environ(), **service_env(defaults, user, db, extra)}
     if extra and "PYTHONPATH" in extra and os.environ.get("PYTHONPATH"):
         env["PYTHONPATH"] = extra["PYTHONPATH"] + os.pathsep + os.environ["PYTHONPATH"]  # keep the user's entries
     return env
 
 
+def poetry_environ() -> dict[str, str]:
+    """This process's environment for poetry, without the virtualenv pdms itself may be running in."""
+    return {key: value for key, value in os.environ.items() if key not in ACTIVE_ENV}
+
+
 def poetry_python(service: Path) -> Path | None:
     """Interpreter of the service's poetry virtualenv, or None if it has not been created yet."""
-    result = subprocess.run([poetry(), "env", "info", "-e"], cwd=service, capture_output=True, text=True)
+    result = subprocess.run([poetry(), "env", "info", "-e"], cwd=service, capture_output=True, text=True,
+                            env=poetry_environ())
     python = Path(result.stdout.strip()) if result.returncode == 0 else None
     return python if python and python.exists() else None
 
@@ -108,16 +117,17 @@ def ensure_poetry() -> None:
 def install(service: Path, output: IO[str] | None = None) -> None:
     """``poetry lock && poetry install``, printing to the terminal or, with ``output``, writing everything there."""
     redirect = {"stdout": output, "stderr": subprocess.STDOUT, "stdin": subprocess.DEVNULL} if output else {}
+    env = poetry_environ()
     for cmd in ([poetry(), "lock"], [poetry(), "install"]):
         if output:
             output.write(f"$ {' '.join(cmd)}\n")
             output.flush()
-        subprocess.run(cmd, cwd=service, check=True, **redirect)
+        subprocess.run(cmd, cwd=service, env=env, check=True, **redirect)
     copied = installer.copied_dependencies(service)
     if copied:
         # poetry keeps a copied path dependency whose version did not change, even if its code did
         subprocess.run([poetry(), "run", "python", "-m", "pip", "install", "--quiet", "--no-deps", "--force-reinstall",
-                        *map(str, copied)], cwd=service, check=True, **redirect)
+                        *map(str, copied)], cwd=service, env=env, check=True, **redirect)
 
 
 def uvicorn_command(host: str, port: int, reload: bool) -> list[str]:
