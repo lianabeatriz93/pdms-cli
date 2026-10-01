@@ -287,7 +287,7 @@ function closeLogs() {
 
 // ---------------------------------------------------------------------------- restart and up
 
-const launch = { path: null, confirmed: false, after: null };
+const launch = { path: null, confirmed: false, after: null, run: false };
 
 function options(select, names, current, label = (name) => name) {
   select.replaceChildren(...names.map((name) => el("option", name === current ? { value: name, selected: "" } : { value: name }, label(name))));
@@ -299,8 +299,10 @@ function dbLabel(name) {
 }
 
 // The user, database and install of a restart or a stack's up, asking again before a protected database.
-function openLaunch({ title, key, hint, user, db, path, go, after, broker = false }) {
-  Object.assign(launch, { path, after, confirmed: false });
+function openLaunch({ title, key, hint, user, db, path, go, after, broker = false, run = false }) {
+  Object.assign(launch, { path, after, run, confirmed: false });
+  $("run-picker").hidden = $("run-port-label").hidden = !run;
+  $("run-consumer").hidden = true;
   $("restart-broker-label").hidden = !broker;
   $("restart-broker").checked = true;
   $("restart-title").textContent = title;
@@ -322,6 +324,72 @@ function openRestart(item) {
   });
 }
 
+// Ports of the running instances of each service, by its path in the repo (lead/lead-tp-list).
+function runningOn(root) {
+  const ports = {};
+  for (const inst of state.instances) {
+    if (inst.status === "stopped") continue;
+    const path = slashes(inst.service);
+    if (path.startsWith(`${root}/`)) (ports[path.slice(root.length + 1)] ||= []).push(inst.port);
+  }
+  return ports;
+}
+
+function runningNote(ports) {
+  if (!ports) return "";
+  const listening = ports.filter(Boolean);
+  return el("span", { class: "muted" }, listening.length ? `running on :${listening.join(", :")}` : "running");
+}
+
+async function fetchServices() {
+  try {
+    const response = await fetch("/api/services");
+    const found = await response.json();
+    if (response.ok) return found;
+    toast(found.error || `pdms ui answered ${response.status}`);
+  } catch {
+    toast("pdms ui is not reachable: is it still running?");
+  }
+  return null;
+}
+
+async function openRun() {
+  const found = await fetchServices();
+  if (!found) return;
+  const ports = runningOn(slashes(found.root));
+  const consumers = new Set(found.consumers || []);
+  $("run-filter").value = "";
+  $("run-port").value = "";
+  $("run-services").replaceChildren(...found.services.map((svc) => {
+    const radio = el("input", { type: "radio", name: "run-service", value: svc });
+    radio.addEventListener("change", () => {
+      const consumer = consumers.has(svc);
+      $("run-port-label").hidden = consumer;
+      $("run-consumer").hidden = !consumer;
+      resetConfirmation();
+    });
+    return el("label", { class: "pick", "data-svc": svc.toLowerCase() }, radio, el("span", { class: "mono" }, svc), runningNote(ports[svc]));
+  }));
+  $("run-count").textContent = `${found.services.length} services`;
+  openLaunch({
+    title: "Start a service", key: "", hint: "In the background, like pdms run -b. It keeps running when pdms ui stops.",
+    user: state.user, db: state.db, go: "Start", path: "/api/run", run: true,
+    after: (_install, data) => openLogs(data.job),
+  });
+  $("run-filter").focus();
+}
+
+function filterRun() {
+  const text = $("run-filter").value.trim().toLowerCase();
+  let shown = 0;
+  for (const item of $("run-services").children) {
+    item.hidden = Boolean(text) && !item.dataset.svc.includes(text);
+    if (!item.hidden) shown += 1;
+  }
+  const total = $("run-services").children.length;
+  $("run-count").textContent = text ? `${shown} of ${total}` : `${total} services`;
+}
+
 function openUp(stack) {
   openLaunch({
     title: "Start", key: stack.name, hint: "Starts the services that are not running yet, each on a free port.",
@@ -335,12 +403,30 @@ async function submitLaunch(event) {
   const install = { auto: null, force: true, skip: false }[$("restart-form").install.value];
   const body = { user: $("restart-user").value, db: $("restart-db").value, install, confirmed: launch.confirmed };
   if (!$("restart-broker-label").hidden) body.broker = $("restart-broker").checked;
+  if (launch.run) {
+    const picked = $("run-services").querySelector("input:checked");
+    if (!picked) {
+      $("restart-error").textContent = "Pick the service to start.";
+      $("restart-error").hidden = false;
+      return;
+    }
+    body.service = picked.value;
+    body.port = $("run-port-label").hidden || !$("run-port").value ? null : Number($("run-port").value);
+  }
+  $("restart-error").hidden = true;
   $("restart-go").disabled = true;
   try {
     const { status, data } = await post(launch.path, body);
     if (status === 200 || status === 202) {
       $("restart").close();
       if (launch.after) launch.after(install, data);
+      return;
+    }
+    if (status === 409 && data.decision === "port_busy") {
+      $("run-port").value = data.free;
+      $("restart-warn").textContent = `Port ${data.port} is in use. Start on ${data.free} instead?`;
+      $("restart-warn").hidden = false;
+      $("restart-go").textContent = `${launch.go} on ${data.free}`;
       return;
     }
     if (status === 409 && data.decision === "protected_database") {
@@ -489,26 +575,13 @@ function slashes(path) {
 }
 
 async function openEditor(stack = null) {
-  let found;
-  try {
-    const response = await fetch("/api/services");
-    found = await response.json();
-    if (!response.ok) { toast(found.error || `pdms ui answered ${response.status}`); return; }
-  } catch {
-    toast("pdms ui is not reachable: is it still running?");
-    return;
-  }
-  const root = slashes(found.root);
-  const runningOn = {};
-  for (const inst of state.instances) {
-    if (inst.status === "stopped") continue;
-    const path = slashes(inst.service);
-    if (path.startsWith(`${root}/`)) (runningOn[path.slice(root.length + 1)] ||= []).push(inst.port);
-  }
+  const found = await fetchServices();
+  if (!found) return;
+  const ports = runningOn(slashes(found.root));
   // Like pdms stack edit: the stack's services first, then the running ones, then the rest.
   const current = stack ? stack.services.map((svc) => svc.path) : [];
   const rest = found.services.filter((svc) => !current.includes(svc));
-  editor.order = [...current, ...rest.filter((svc) => runningOn[svc]), ...rest.filter((svc) => !runningOn[svc])];
+  editor.order = [...current, ...rest.filter((svc) => ports[svc]), ...rest.filter((svc) => !ports[svc])];
   editor.picked = new Set(current);
   editor.name = stack ? stack.name : null;
 
@@ -524,9 +597,7 @@ async function openEditor(stack = null) {
       if (box.checked) editor.picked.add(svc); else editor.picked.delete(svc);
       editorCount();
     });
-    const ports = (runningOn[svc] || []).filter(Boolean);
-    return el("label", { class: "pick", "data-svc": svc.toLowerCase() }, box, el("span", { class: "mono" }, svc),
-      runningOn[svc] ? el("span", { class: "muted" }, ports.length ? `running on :${ports.join(", :")}` : "running") : "");
+    return el("label", { class: "pick", "data-svc": svc.toLowerCase() }, box, el("span", { class: "mono" }, svc), runningNote(ports[svc]));
   }));
   options($("editor-user"), ["", ...state.users], stack ? stack.user : "", (name) => name || ASK);
   options($("editor-db"), ["", ...state.dbs.map((item) => item.name)], stack ? stack.db : "", (name) => name ? dbLabel(name) : ASK);
@@ -1392,6 +1463,10 @@ $("svc-filter").addEventListener("input", () => state && paintServices());
 $("svc-problems").addEventListener("change", () => state && paintServices());
 $("stack-filter").addEventListener("input", () => state && paintStacks());
 $("stack-running").addEventListener("change", () => state && paintStacks());
+$("run-new").addEventListener("click", () => state && openRun());
+$("run-filter").addEventListener("input", filterRun);
+$("run-filter").addEventListener("keydown", (event) => { if (event.key === "Enter") event.preventDefault(); });
+$("run-port").addEventListener("input", resetConfirmation);
 $("restart-form").addEventListener("submit", submitLaunch);
 $("stack-new").addEventListener("click", () => openEditor());
 $("editor-form").addEventListener("submit", saveEditor);

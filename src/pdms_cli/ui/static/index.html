@@ -23,7 +23,10 @@
 <section class="view" id="view-services">
   <div class="bar">
     <h1>Services</h1><span class="muted" id="summary"></span>
-    <button class="btn ghost push" id="clean" type="button" hidden>Forget stopped</button>
+    <div class="bar-actions push">
+      <button class="btn ghost" id="clean" type="button" hidden>Forget stopped</button>
+      <button class="btn primary" id="run-new" type="button">Start service</button>
+    </div>
   </div>
   <div class="bar filter">
     <input type="search" id="svc-filter" placeholder="Filter by instance, status, repo, user or DB" aria-label="Filter services" autocomplete="off">
@@ -35,7 +38,7 @@
       <thead><tr><th>Instance</th><th>Status</th><th>URL</th><th>Repo</th><th>User</th><th>DB</th><th>Uptime</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
-    <p class="empty" id="empty" hidden>No background services. Start one with <code>pdms run -b</code> or <code>pdms up</code>.</p>
+    <p class="empty" id="empty" hidden>No background services. Start one here, with <code>pdms run -b</code> or with a stack.</p>
     <p class="empty" id="svc-none" hidden>No service matches the filter.</p>
   </div>
 
@@ -197,6 +200,15 @@
   <form method="dialog" id="restart-form">
     <h2><span id="restart-title">Restart</span> <span class="mono" id="restart-key"></span></h2>
     <p class="muted" id="restart-hint"></p>
+    <div class="picker" id="run-picker" hidden>
+      <div class="picker-bar">
+        <input type="search" id="run-filter" placeholder="Filter services" aria-label="Filter services" autocomplete="off">
+        <span class="muted" id="run-count"></span>
+      </div>
+      <div class="picker-list" id="run-services" role="radiogroup" aria-label="Service"></div>
+    </div>
+    <label id="run-port-label" hidden>Port <input type="number" id="run-port" min="1" max="65535" placeholder="the next free one"></label>
+    <p class="muted" id="run-consumer" hidden>An SQS consumer: it reads its queue from the local ElasticMQ and takes no port.</p>
     <label class="inline" id="restart-broker-label" hidden><input type="checkbox" id="restart-broker" checked> Also run the broker (broker-sqs-event), which routes events to their queues as in AWS</label>
     <label>User <select id="restart-user"></select></label>
     <label>Database <select id="restart-db"></select></label>
