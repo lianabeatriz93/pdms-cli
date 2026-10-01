@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import http.client
 import socket
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlsplit
+
+import tomlkit
 
 from typer.testing import CliRunner
 
@@ -29,6 +34,7 @@ def test_the_install_command_fits_the_install(monkeypatch) -> None:
 
 def test_without_pywebview_it_says_how_to_add_it(monkeypatch) -> None:
     monkeypatch.setattr(ui_window, "available", lambda: False)
+    monkeypatch.setattr(ui_window, "installs_itself", lambda: False)  # Linux: Qt is the user's call
     monkeypatch.setattr(update, "install_kind", lambda: "editable")
     result = CliRunner().invoke(cli.app, ["ui", "--window"])
     assert result.exit_code == 1
@@ -74,3 +80,49 @@ def test_a_window_that_cannot_open_says_so(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(ui_window, "open_window", broken)
     result = CliRunner().invoke(cli.app, ["ui", "--window", "--port", str(free_port())])
     assert result.exit_code == 1 and "Could not open the window" in result.output and "xcb" in result.output
+
+
+def test_windows_and_macos_install_pywebview_by_themselves(monkeypatch) -> None:
+    for platform, itself in (("win32", True), ("darwin", True), ("linux", False)):
+        monkeypatch.setattr(ui_window.sys, "platform", platform)
+        assert ui_window.installs_itself() is itself
+
+
+def test_the_install_goes_into_pdms_own_environment(monkeypatch) -> None:
+    monkeypatch.setattr(ui_window.shutil, "which", lambda name: "/bin/uv")
+    assert ui_window.self_install_command() == ["/bin/uv", "pip", "install", "--python", sys.executable, "pywebview>=5"]
+    monkeypatch.setattr(ui_window.shutil, "which", lambda name: None)
+    monkeypatch.setattr(ui_window.importlib.util, "find_spec", lambda name: object())
+    assert ui_window.self_install_command() == [sys.executable, "-m", "pip", "install", "pywebview>=5"]
+
+
+def test_the_requirements_match_the_desktop_extra() -> None:
+    pyproject = tomlkit.parse((Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    extra = [req for req in pyproject["project"]["optional-dependencies"]["desktop"] if "sys_platform" not in req]
+    assert ui_window.DESKTOP_REQUIREMENTS == extra
+
+
+def test_a_missing_pywebview_is_installed_and_the_window_opens(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    installed = []
+    monkeypatch.setattr(ui_window, "installs_itself", lambda: True)
+    monkeypatch.setattr(ui_window, "available", lambda: bool(installed))
+    monkeypatch.setattr(ui_window, "self_install_command", lambda: ["uv", "pip", "install", "pywebview>=5"])
+    monkeypatch.setattr(ui_window.subprocess, "run", lambda cmd: installed.append(cmd) or SimpleNamespace(returncode=0))
+    opened = []
+    monkeypatch.setattr(ui_window, "open_window", opened.append)
+    result = CliRunner().invoke(cli.app, ["ui", "--window", "--port", str(free_port())])
+    assert result.exit_code == 0, result.output
+    assert installed == [["uv", "pip", "install", "pywebview>=5"]] and len(opened) == 1
+    assert "installing it" in result.output and "pywebview installed" in result.output
+
+
+def test_a_failed_install_says_how_to_do_it_by_hand(monkeypatch) -> None:
+    monkeypatch.setattr(ui_window, "installs_itself", lambda: True)
+    monkeypatch.setattr(ui_window, "available", lambda: False)
+    monkeypatch.setattr(ui_window, "self_install_command", lambda: ["uv"])
+    monkeypatch.setattr(ui_window.subprocess, "run", lambda cmd: SimpleNamespace(returncode=2))
+    monkeypatch.setattr(update, "install_kind", lambda: "editable")
+    result = CliRunner().invoke(cli.app, ["ui", "--window"])
+    assert result.exit_code == 1
+    assert "exit code 2" in result.output and "uv tool install -e '.[desktop]' --force" in result.output

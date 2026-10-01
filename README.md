@@ -276,7 +276,8 @@ only reaches the page when you click its eye to show it (in the table it hides a
 
 The window (`--window`) uses [pywebview](https://pywebview.flowrl.com/), which comes with the optional `desktop`
 extra: Edge WebView2 on Windows and WebKit on macOS (both part of the system), Qt on Linux (installed with the extra,
-about 210 MB to download). Add it to an install with `uv tool install --force 'pdms-cli[desktop] @ <wheel URL of the release>'`
+about 210 MB to download). On Windows and macOS `pdms ui --window` installs pywebview by itself the first time
+(into pdms's own environment, with `uv pip`); on Linux add it to an install with `uv tool install --force 'pdms-cli[desktop] @ <wheel URL of the release>'`
 (`pdms ui --window` prints the exact command), or `uv tool install -e '.[desktop]' --force` from a checkout;
 `pdms self-update` keeps it.
 

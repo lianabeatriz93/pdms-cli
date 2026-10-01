@@ -1739,6 +1739,15 @@ def ui_cmd(
     from .ui import server as ui_server
     from .ui import window as ui_window
 
+    if window and not ui_window.available() and ui_window.installs_itself():
+        console.print(_("The window needs pywebview; installing it (only this once)..."))
+        try:
+            ui_window.install_desktop()
+        except RuntimeError as exc:
+            fail(_("Could not install pywebview ({error}). Install it with:\n  {command}\n"
+                   "or use pdms ui to open it in the browser.", error=escape(str(exc)),
+                   command=escape(ui_window.install_command())))
+        console.print("[green]✓[/] " + _("pywebview installed."))
     if window and not ui_window.available():
         fail(_("The window needs pywebview, which comes with the desktop extra. Install it with:\n  {command}\n"
                "or use pdms ui to open it in the browser.", command=escape(ui_window.install_command())))
