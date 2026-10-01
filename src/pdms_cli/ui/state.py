@@ -43,13 +43,16 @@ def sns_state(cfg: Config, events_up: bool) -> dict:
             "last_publish": last}
 
 
-def proxy_state() -> dict | None:
+def proxy_state(cfg: Config) -> dict | None:
     running = proxy.running_proxy()
     if not running:
         return None
+    repo = running.get("repo", "")
     return {
-        "key": proxy.display_key(running), "port": running["port"], "repo": running.get("repo", ""),
-        "remote": running.get("remote", ""), "as": running.get("as", ""),
+        "key": proxy.display_key(running), "pid": running["pid"], "port": running["port"], "repo": repo,
+        "repo_alias": (repos.repo_of(cfg, repo) or "") if repo else "",
+        "env": running.get("env", ""), "remote": running.get("remote", ""), "as": running.get("as", ""),
+        "frontend": proxy.frontend_change(),
         "started_at": running.get("started_at", ""), "background": bool(running.get("background")),
         "status": "ok" if instances.responds("127.0.0.1", running["port"]) else "starting",
     }
@@ -75,7 +78,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) 
         "dbs": [{"name": name, "protected": db.protected} for name, db in cfg.dbs.items()],
         "instances": [instance_state(cfg, inst, healths[inst.key]) for inst in items],
         "stacks": stacks_state(cfg, live),
-        "proxy": proxy_state(),
+        "proxy": proxy_state(cfg),
         "events": {"port": cfg.defaults.events_port, "up": events_up},
         "sns": sns_state(cfg, events_up),
         "jobs": jobs or {},

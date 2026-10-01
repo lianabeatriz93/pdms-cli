@@ -514,6 +514,7 @@ ES: dict[str, str] = {
     "{path} restored; restart yarn dev to apply it.": "{path} restaurado; reinicia yarn dev para aplicarlo.",
     "{path} restored (left over by the previous proxy).": "{path} restaurado (lo dejó el proxy anterior).",
     "The proxy is already running on port {port} (pid {pid}).": "El proxy ya está corriendo en el puerto {port} (pid {pid}).",
+    "The proxy exited while starting: {line}": "El proxy terminó mientras arrancaba: {line}",
     "No Terraform for '{env}' in {path}.": "No hay Terraform para '{env}' en {path}.",
     "Reading the API routes from Terraform...": "Leyendo las rutas de la API desde Terraform...",
     "[dim]Remote API taken from frontend/.env and saved for '{alias}': {url}[/]":

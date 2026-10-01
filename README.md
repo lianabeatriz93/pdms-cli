@@ -251,8 +251,12 @@ uses, so both can be used at the same time. From the services screen (which also
 previous run's and the install's), open its Swagger docs, stop it, forget the stopped ones, and restart it with the
 same or another user and database: it asks before a protected database and installs only if something changed, like
 `pdms restart`. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
-services run, and creates, edits and deletes stacks with a searchable list of the repo's services. Starting single
-new services and the proxy come in the next releases.
+services run, and creates, edits and deletes stacks with a searchable list of the repo's services. The proxy screen
+starts the proxy in the background (like `pdms proxy -b`: it asks for another port when the one you chose is in use)
+and stops it, follows its requests live with where each one went, and opens the log of the local service that served
+a request with its lines marked. Its routes tab shows where each route goes now, like `pdms proxy routes`. A proxy
+started in a terminal shows there too, but its requests stay in that terminal. Starting single new services comes in
+a next release.
 
 It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the
 session, which the browser keeps as a cookie. Requests from other web pages are rejected, and database passwords are

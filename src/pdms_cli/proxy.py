@@ -60,6 +60,14 @@ def remember_frontend_change(change: dict) -> None:
     frontend_change_path().write_text(json.dumps(change), encoding="utf-8")
 
 
+def frontend_change() -> str:
+    """The ``frontend/.env.local`` pointed to the running proxy, if any."""
+    try:
+        return str(json.loads(frontend_change_path().read_text(encoding="utf-8"))["path"])
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return ""
+
+
 def restore_frontend_change() -> str | None:
     """Undo the recorded ``.env.local`` change, if any; returns the restored file."""
     try:
@@ -412,7 +420,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     # frontend/.env.local is put back by whoever stops it (pdms stop), or by the next proxy if it died.
     serve(gateway, "0.0.0.0", args.port, {
-        "repo": str(args.repo), "remote": args.remote, "as": args.user_name, "log": str(log_path()),
+        "repo": str(args.repo), "env": args.env, "remote": args.remote, "as": args.user_name, "log": str(log_path()),
         "background": True,
     })
 

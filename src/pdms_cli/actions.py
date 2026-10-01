@@ -506,7 +506,7 @@ def serve_proxy(plan: ProxyLaunch, log: Callable[[str, str, int, str, float], No
         routes=plan.routes, backend=plan.root / "backend", remote=plan.remote, impersonate=plan.user, log=log,
     )
     proxy.serve(gateway, PROXY_HOST, plan.port, {
-        "repo": str(plan.root), "remote": plan.remote or "", "as": plan.user_name or "",
+        "repo": str(plan.root), "env": plan.env, "remote": plan.remote or "", "as": plan.user_name or "",
     })
 
 

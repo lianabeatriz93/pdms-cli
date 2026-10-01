@@ -13,9 +13,11 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .. import actions, events, instances, proxy, repos, runner
+from .. import actions, events, instances, proxy, repos, routes, runner
 from ..config import Config, Stack
 from ..i18n import _
+
+PROXY_PORT = 8000  # pdms proxy's --port default
 
 
 def install_log(key: str) -> Path:
@@ -182,6 +184,81 @@ class Jobs:
                 actions.stop_service(inst)
 
         return self.run(stack_key(name), "down", "stopping", work)
+
+    # ------------------------------------------------------------------ proxy
+
+    def start_proxy(
+        self, *, port: int, env: str = "dev", remote: str | None = None, no_remote: bool = False,
+        user: str | None = None, frontend: bool | None = None,
+    ) -> Job:
+        """Start the proxy in the background, like ``pdms proxy -b``; raises the decisions (busy port, pointing the
+        frontend to it) before anything starts. The job ends once the proxy answers."""
+        if self.busy(proxy.KEY):
+            raise actions.ActionError(_("{key} is busy.", key=proxy.KEY))
+        actions.clear_proxy_leftovers()
+        cfg = Config.load()
+        root = repo_root(cfg)
+        repo_routes = actions.proxy_routes(root, env)
+        target, _detected = actions.proxy_remote(cfg, root, remote, no_remote)
+        plan = actions.plan_proxy(
+            cfg, root, repo_routes, port=port, env=env, remote=target, user_name=user, frontend=frontend,
+        )
+
+        def work(_job: Job) -> None:
+            actions.point_frontend(plan)
+            started = actions.start_proxy(plan)
+            if actions.wait_for_proxy(started) == "stopped":
+                actions.stop_proxy()
+                last = instances.tail(str(started.log), 1).strip()
+                raise actions.ActionError(_("The proxy exited while starting: {line}", line=last or "?"))
+
+        return self.run(proxy.KEY, "start", "starting", work)
+
+
+def proxy_options(cfg: Config) -> dict:
+    """What the start form offers: the environments with Terraform, the remote it would use, whether there is a
+    frontend to point to it. Reads only (the remote is saved when the proxy starts, as in the CLI)."""
+    root = repo_root(cfg)
+    environments = routes.terraform_dir(root, "dev").parent
+    envs = sorted(p.name for p in environments.iterdir() if p.is_dir()) if environments.is_dir() else []
+    return {
+        "port": PROXY_PORT, "env": "dev" if "dev" in envs or not envs else envs[0], "envs": envs,
+        "remote": repo_remote(cfg, root), "frontend": (root / "frontend").is_dir(),
+    }
+
+
+def proxy_routes(cfg: Config, env: str | None = None) -> dict:
+    """Where each route goes now, like ``pdms proxy routes``: the running proxy's repo, env and remote, or what a
+    proxy started now would use."""
+    running = proxy.running_proxy()
+    if running and running.get("repo"):
+        root, env, remote = Path(running["repo"]), env or running.get("env") or "dev", running.get("remote") or None
+    else:
+        root = repo_root(cfg)
+        env, remote = env or "dev", repo_remote(cfg, root) or None
+    gateway = proxy.Gateway(routes=actions.proxy_routes(root, env), backend=root / "backend", remote=remote)
+    live = gateway.local_instances()
+    items = []
+    for route in gateway.routes:
+        target = gateway.target(route, live)
+        items.append({
+            "method": route.method, "path": route.path, "service": route.service, "target": target.kind,
+            "key": target.instance.key if target.instance else "", "note": target.note,
+        })
+    return {"env": env, "remote": remote or "", "routes": items}
+
+
+def repo_remote(cfg: Config, root: Path) -> str:
+    """The remote API a proxy started now would use: the one saved for the repo, or the one in ``frontend/.env``."""
+    alias = repos.alias_of(cfg, root)
+    return (cfg.repos[alias].remote if alias in cfg.repos else "") or repos.remote_from_frontend(root) or ""
+
+
+def repo_root(cfg: Config) -> Path:
+    root = repos.active_root(cfg)
+    if root is None or not root.is_dir():
+        raise actions.ActionError(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
+    return root
 
 
 def stack_key(name: str) -> str:

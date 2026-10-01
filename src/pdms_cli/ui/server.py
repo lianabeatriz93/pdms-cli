@@ -35,6 +35,7 @@ from .state import build_state
 
 STATIC = resources.files("pdms_cli.ui") / "static"
 STATIC_NAME = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
+ENV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")  # a Terraform environment folder, never a path
 # Fixed, not from mimetypes: on Windows that reads the registry, which may call .js text/plain (blocked by nosniff).
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -132,6 +133,10 @@ def decision_body(decision: actions.Decision) -> dict:
     if isinstance(decision, actions.LocalEventsDown):
         return {"decision": "local_events_down", "port": decision.port,
                 "error": "The local ElasticMQ is not running: start it with pdms events up."}
+    if isinstance(decision, actions.PortBusy):
+        return {"decision": "port_busy", "port": decision.port, "free": decision.free}
+    if isinstance(decision, actions.PointFrontend):
+        return {"decision": "point_frontend", "url": decision.url}
     return {"decision": type(decision).__name__, "error": str(decision)}
 
 
@@ -143,6 +148,26 @@ def launch_options(body: dict) -> dict:
     return {
         "user": str(body.get("user") or "") or None, "db": str(body.get("db") or "") or None,
         "install": install, "confirmed": body.get("confirmed") is True,
+    }
+
+
+def env_name(value: object) -> str:
+    env = str(value or "dev")
+    if not ENV_NAME.match(env):
+        raise actions.ActionError(f"not an environment name: {env!r}")
+    return env
+
+
+def proxy_options(body: dict) -> dict:
+    """The port, env, remote, user and frontend choice of a proxy start."""
+    port, frontend = body.get("port", ui_jobs.PROXY_PORT), body.get("frontend")
+    if not isinstance(port, int) or isinstance(port, bool) or not 0 < port < 65536:
+        raise actions.ActionError("port must be a number between 1 and 65535")
+    if frontend not in (None, True, False):
+        raise actions.ActionError("frontend must be true, false or null")
+    return {
+        "port": port, "env": env_name(body.get("env")), "remote": str(body.get("remote") or "") or None,
+        "no_remote": body.get("no_remote") is True, "user": str(body.get("user") or "") or None, "frontend": frontend,
     }
 
 
@@ -260,6 +285,8 @@ def make_handler(
                 self.stream()
             elif url.path == "/api/services":
                 self.services()
+            elif url.path in ("/api/proxy/options", "/api/proxy/routes"):
+                self.proxy_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
             elif url.path in ("/api/logs", "/api/logs/stream"):
                 self.logs(parse_qs(url.query), live=url.path.endswith("/stream"))
             else:
@@ -304,9 +331,23 @@ def make_handler(
                 return
             self.reply_json(200, {"root": str(root), "services": services})
 
+        def proxy_info(self, which: str, query: dict[str, list[str]]) -> None:
+            try:
+                cfg = Config.load()
+                if which == "options":
+                    data = ui_jobs.proxy_options(cfg)
+                else:
+                    data = ui_jobs.proxy_routes(cfg, env_name(env) if (env := query.get("env", [""])[0]) else None)
+            except actions.ActionError as exc:
+                self.reply_json(400, {"error": plain(exc.message)})
+                return
+            self.reply_json(200, data)
+
         def act(self, path: str, body: dict) -> tuple[int, dict]:
             if path == "/api/clean":
                 return 200, {"forgotten": ui_jobs.forget_stopped()}
+            if path == "/api/proxy/start":
+                return 202, {"job": jobs.start_proxy(**proxy_options(body)).key}
             parts = path.split("/")
             if len(parts) != 5 or parts[:2] != ["", "api"] or parts[2] not in ("instances", "stacks"):
                 return 404, {"error": "not found"}
