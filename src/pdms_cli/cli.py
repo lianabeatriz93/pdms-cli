@@ -1638,13 +1638,15 @@ def proxy_port(port: int) -> int:
 
 
 def plan_proxy(cfg: Config, root: Path, repo_routes: list[routes.Route], port: int, env: str,
-               remote: Optional[str], as_user: Optional[str], frontend: Optional[bool]) -> actions.ProxyLaunch:
+               remote: Optional[str], as_user: Optional[str], frontend: Optional[bool],
+               timeout: Optional[int] = None) -> actions.ProxyLaunch:
     """Plan the proxy, answering in the terminal what it asks (a busy port, pointing the frontend to it)."""
     port = proxy_port(port)
     while True:
         try:
             return settle(lambda: actions.plan_proxy(
                 cfg, root, repo_routes, port=port, env=env, remote=remote, user_name=as_user, frontend=frontend,
+                timeout=timeout,
             ))
         except actions.PointFrontend:
             frontend = interactive_terminal() and questionary.confirm(
@@ -1677,6 +1679,10 @@ def proxy_main(
         None, "--background/--foreground", "-b/-f",
         help=_("Background (pdms ps, logs proxy, stop proxy) or foreground (asked if omitted)."),
     ),
+    timeout: Optional[int] = typer.Option(
+        None, "--timeout", "-t",
+        help=_("Seconds to wait for each answer before replying 502 (default: the proxy_timeout setting)."),
+    ),
 ) -> None:
     if ctx is not None and ctx.invoked_subcommand is not None:
         return
@@ -1690,7 +1696,7 @@ def proxy_main(
         as_user = pick(cfg.users, _("user"), as_user)
     if background is None:
         background = interactive_terminal() and prompts.ask_proxy_background()
-    plan = plan_proxy(cfg, root, repo_routes, port, env, target_remote, as_user, frontend)
+    plan = plan_proxy(cfg, root, repo_routes, port, env, target_remote, as_user, frontend, timeout)
 
     if changed := actions.point_frontend(plan):
         console.print("[green]✓[/] " + _("{path} points to the proxy until it stops; restart yarn dev to apply it.",
@@ -1700,6 +1706,7 @@ def proxy_main(
     summary.add_row(f"[bold]Docs[/]", f"{plan.url}/docs")
     summary.add_row(f"[bold]Repo[/]", f"{repos.alias_of(cfg, root) or root.name} ({env}, {len(repo_routes)} {_('routes')})")
     summary.add_row(f"[bold]{_('Remote')}[/]", target_remote or _("none (only local services)"))
+    summary.add_row(f"[bold]{_('Timeout')}[/]", _("{seconds} s per request", seconds=plan.timeout))
     summary.add_row(f"[bold]{_('Acting as')}[/]", f"{as_user} ({plan.user.roles})" if plan.user else _("each service's own profile"))
     console.print(summary)
 
@@ -2638,7 +2645,7 @@ def main_menu(first_run: bool = False) -> None:
             return
         actions = {
             "run": do_run, "ps": instances_menu, "stack": stack_menu,
-            "proxy": lambda: proxy_main(None, 8000, None, None, False, "dev", None, None),
+            "proxy": lambda: proxy_main(None, 8000, None, None, False, "dev", None, None, None),
             "events": events_menu, "db": db_menu, "user": user_menu,
             "defaults": settings_menu,
         }

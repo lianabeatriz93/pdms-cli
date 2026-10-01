@@ -157,6 +157,10 @@ def ask_defaults(current: Defaults) -> Defaults:
     db_timeout = questionary.text(
         _("Connection test timeout (seconds):"), default=str(current.db_timeout), validate=_is_int
     ).unsafe_ask()
+    proxy_timeout = questionary.text(
+        _("Proxy timeout: seconds to wait for a service (slow databases need more):"),
+        default=str(current.proxy_timeout), validate=_is_int,
+    ).unsafe_ask()
     env = dict(current.env)
     while questionary.confirm(
         _("Add/edit extra environment variables? (current: {current})", current=", ".join(env) or _("none")),
@@ -171,5 +175,5 @@ def ask_defaults(current: Defaults) -> Defaults:
     return Defaults(
         language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
         smart_install=smart_install if install else current.smart_install, update_check=update_check, events=events_mode, banner=banner,
-        db_timeout=int(db_timeout), env=env,
+        db_timeout=int(db_timeout), proxy_timeout=int(proxy_timeout), env=env,
     )

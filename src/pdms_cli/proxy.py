@@ -146,6 +146,7 @@ class Gateway:
     backend: Path
     remote: str | None  # e.g. https://<id>.execute-api.us-east-1.amazonaws.com/dev
     impersonate: DevUser | None = None
+    timeout: float = 300  # seconds to wait for the answer of a service or the remote API
     log: Callable[[str, str, int, str, float], None] = lambda *args: None
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -326,13 +327,15 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
             if body is not None:
                 headers["Content-Length"] = str(len(body))
             conn_class = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
-            conn = conn_class(host, port, timeout=120)
+            conn = conn_class(host, port, timeout=gateway.timeout)
             try:
                 conn.request(self.command, base + path, body=body, headers=headers)
                 response = conn.getresponse()
                 data = response.read()
             except (OSError, http.client.HTTPException) as exc:
-                self.reply_json(502, {"detail": f"pdms proxy: {label}: {exc}"}, label)
+                reason = _("no answer after {seconds} s (raise it with pdms proxy --timeout or the proxy_timeout "
+                           "default)", seconds=f"{gateway.timeout:g}") if isinstance(exc, TimeoutError) else exc
+                self.reply_json(502, {"detail": f"pdms proxy: {label}: {reason}"}, label)
                 gateway.log(self.command, bare, 502, label, time.monotonic() - started)
                 return
             finally:
@@ -391,9 +394,12 @@ def serve(gateway: Gateway, host: str, port: int, info: dict) -> None:
         forget(os.getpid())
 
 
-def background_command(root: Path, *, port: int, env: str, remote: str | None, user_name: str | None) -> list[str]:
+def background_command(
+    root: Path, *, port: int, env: str, remote: str | None, user_name: str | None, timeout: int = 300,
+) -> list[str]:
     """How ``pdms proxy --background`` runs the proxy: this module, in a process of its own (see :func:`main`)."""
-    cmd = [sys.executable, "-m", "pdms_cli.proxy", "--repo", str(root), "--port", str(port), "--env", env]
+    cmd = [sys.executable, "-m", "pdms_cli.proxy", "--repo", str(root), "--port", str(port), "--env", env,
+           "--timeout", str(timeout)]
     if remote:
         cmd += ["--remote", remote]
     if user_name:
@@ -409,19 +415,20 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--env", default="dev")
     parser.add_argument("--remote", default="")
     parser.add_argument("--as", dest="user_name", default="")
+    parser.add_argument("--timeout", type=int, default=300)
     args = parser.parse_args(argv)
     user = Config.load().users.get(args.user_name) if args.user_name else None
     repo_routes = load_routes(args.repo, args.env)
     print(f"# proxy :{args.port} · {args.repo} ({args.env}, {len(repo_routes)} routes) · "
-          f"remote {args.remote or '-'} · as {args.user_name or '-'}", flush=True)
+          f"remote {args.remote or '-'} · as {args.user_name or '-'} · timeout {args.timeout}s", flush=True)
     gateway = Gateway(
         routes=repo_routes, backend=args.repo / "backend", remote=args.remote or None, impersonate=user,
-        log=lambda *request: print(format_request(*request), flush=True),
+        timeout=args.timeout, log=lambda *request: print(format_request(*request), flush=True),
     )
     # frontend/.env.local is put back by whoever stops it (pdms stop), or by the next proxy if it died.
     serve(gateway, "0.0.0.0", args.port, {
         "repo": str(args.repo), "env": args.env, "remote": args.remote, "as": args.user_name, "log": str(log_path()),
-        "background": True,
+        "background": True, "timeout": args.timeout,
     })
 
 

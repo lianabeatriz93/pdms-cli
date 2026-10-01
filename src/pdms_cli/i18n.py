@@ -498,6 +498,14 @@ ES: dict[str, str] = {
     "Remote API for the proxy; '' to forget it.": "API remota del proxy; '' para olvidarla.",
     "[dim]The proxy still routes to '{old}': restart it (pdms proxy) to use '{new}'.[/]":
         "[dim]El proxy sigue enrutando a '{old}': reinícialo (pdms proxy) para usar '{new}'.[/]",
+    "Timeout": "Tiempo de espera",
+    "{seconds} s per request": "{seconds} s por petición",
+    "Seconds to wait for each answer before replying 502 (default: the proxy_timeout setting).":
+        "Segundos de espera por cada respuesta antes de devolver 502 (por defecto: el ajuste proxy_timeout).",
+    "Proxy timeout: seconds to wait for a service (slow databases need more):":
+        "Tiempo de espera del proxy: segundos que espera a un servicio (con bases de datos lentas hace falta más):",
+    "no answer after {seconds} s (raise it with pdms proxy --timeout or the proxy_timeout default)":
+        "sin respuesta tras {seconds} s (súbelo con pdms proxy --timeout o el ajuste proxy_timeout)",
     "No repos registered.": "No hay repos registrados.",
     "Use [bold]pdms repo add <path>[/].": "Usa [bold]pdms repo add <ruta>[/].",
     "Register a PDMS repo (defaults to the current folder).": "Registra un repo de PDMS (por defecto la carpeta actual).",

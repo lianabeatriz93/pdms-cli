@@ -501,6 +501,7 @@ banner = true                             # big PDMS banner when the menu opens 
 events = "auto"                           # auto | local | aws: where services publish SQS events
 events_port = 9324                        # local ElasticMQ (pdms events up)
 db_timeout = 15                           # seconds for `pdms db test` (or `pdms db test -t 30`)
+proxy_timeout = 300                       # seconds the proxy waits for an answer before a 502 (or `pdms proxy -t 600`)
 
 [defaults.env]
 # extra variables injected on every run

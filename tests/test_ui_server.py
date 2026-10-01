@@ -630,7 +630,7 @@ def test_the_proxy_is_started_only_once(ui, proxy_repo, monkeypatch) -> None:
 
 def test_the_state_shows_the_running_proxy(proxy_repo, machine, monkeypatch) -> None:
     running = {"pid": 7, "port": 8001, "repo": str(proxy_repo), "env": "qa", "remote": "", "as": "boss",
-               "started_at": "2026-10-01T10:00:00", "background": True}
+               "started_at": "2026-10-01T10:00:00", "background": True, "timeout": 300}
     monkeypatch.setattr(ui_state.proxy, "running_proxy", lambda: running)
     monkeypatch.setattr(ui_state.instances, "responds", lambda host, port: True)
     monkeypatch.setattr(ui_state.instances, "health_all", lambda items: {i.key: Health("ok") for i in items})
@@ -638,7 +638,7 @@ def test_the_state_shows_the_running_proxy(proxy_repo, machine, monkeypatch) -> 
     proxy.remember_frontend_change({"path": "/repo/frontend/.env.local", "proxy_url": "x", "previous": {}})
     assert ui_state.build_state(machine)["proxy"] == {
         "key": "proxy@8001", "pid": 7, "port": 8001, "repo": str(proxy_repo), "repo_alias": "pdms", "env": "qa",
-        "remote": "", "as": "boss", "frontend": "/repo/frontend/.env.local", "started_at": "2026-10-01T10:00:00",
+        "remote": "", "as": "boss", "timeout": 300, "frontend": "/repo/frontend/.env.local", "started_at": "2026-10-01T10:00:00",
         "background": True, "status": "ok",
     }
 

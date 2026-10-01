@@ -6,6 +6,7 @@ import http.client
 import json
 import os
 import threading
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -135,11 +136,11 @@ def gateway_url(repo):
     )})
     gateways = []
 
-    def make(remote_enabled=True, impersonate=None):
+    def make(remote_enabled=True, impersonate=None, timeout=300):
         gw = proxy.Gateway(
             routes=routes.load_routes(repo), backend=repo / "backend",
             remote=f"http://127.0.0.1:{remote.server_address[1]}/dev" if remote_enabled else None,
-            impersonate=impersonate,
+            impersonate=impersonate, timeout=timeout,
         )
         server = start(proxy.make_handler(gw), "proxy")
         gateways.append(server)
@@ -161,6 +162,27 @@ def call(port, method, path, headers=None, body=None):
     except ValueError:
         data = data.decode()
     return response, data
+
+
+def test_a_service_slower_than_the_timeout_gets_a_clear_502(gateway_url, monkeypatch):
+    answer = Echo.handle_any
+
+    def slow(self):
+        time.sleep(1)  # a slow database query
+        answer(self)
+
+    monkeypatch.setattr(Echo, "do_GET", slow)
+    response, data = call(gateway_url(timeout=0.3), "GET", "/dev/api/v1/leads/tp")
+    assert response.status == 502
+    assert data["detail"] == ("pdms proxy: lead-tp-list@1: no answer after 0.3 s "
+                              "(raise it with pdms proxy --timeout or the proxy_timeout default)")
+    response, data = call(gateway_url(timeout=5), "GET", "/dev/api/v1/leads/tp")
+    assert response.status == 200 and data["server"] == "local"
+
+
+def test_the_background_proxy_gets_the_timeout(repo):
+    cmd = proxy.background_command(repo, port=8000, env="dev", remote=None, user_name=None, timeout=600)
+    assert cmd[cmd.index("--timeout") + 1] == "600"
 
 
 def test_routes_are_read_from_terraform(repo):
