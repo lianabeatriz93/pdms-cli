@@ -34,6 +34,7 @@ from .. import actions, events, frontend, i18n, instances, proxy
 from ..config import Config
 from ..logview import LogFollower
 from . import instance as ui_instance
+from . import recent as ui_recent
 from . import jobs as ui_jobs
 from . import updates as ui_updates
 from .control import Control
@@ -61,10 +62,12 @@ PEEK_LIMIT = 50
 
 
 class Hub:
-    """The latest state, rebuilt every ``interval`` seconds while at least one stream is open."""
+    """The latest state, rebuilt every ``interval`` seconds while at least one stream is open, or always while
+    ``always()`` says so (the desktop notifications need it with no page open)."""
 
-    def __init__(self, build: Callable[[], dict] = build_state, interval: float = 2.0) -> None:
-        self.build, self.interval = build, interval
+    def __init__(self, build: Callable[[], dict] = build_state, interval: float = 2.0,
+                 always: Callable[[], bool] = lambda: False) -> None:
+        self.build, self.interval, self.always = build, interval, always
         self.latest = ""
         self.version = 0
         self.watchers = 0
@@ -102,7 +105,7 @@ class Hub:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            if self.watchers:
+            if self.watchers or self.always():
                 try:
                     self.refresh()
                 except Exception:  # noqa: BLE001, S110 - a bad tick (a config being saved) must not kill the hub
@@ -714,13 +717,18 @@ def make_app() -> tuple[Hub, ui_jobs.Jobs]:
     """The hub and the jobs of one ``pdms ui``: the state carries the jobs, and a job's change refreshes it."""
     hub: Hub
     jobs = ui_jobs.Jobs(lambda: hub.poke())
+    recent = ui_recent.Recent()
+    notify = {"on": Config.load().defaults.notify}
 
     def build() -> dict:
         state = build_state(jobs=jobs.snapshot(), doctor=jobs.doctor.summary())
         i18n.set_language(state["language"])  # the server's own messages follow a change made in the CLI too
+        notify["on"] = state["notify"]
+        recent.observe(state, notify=state["notify"])
+        state["recent"] = recent.items()
         return state
 
-    hub = Hub(build=build)
+    hub = Hub(build=build, always=lambda: notify["on"])
     return hub, jobs
 
 

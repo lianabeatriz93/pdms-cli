@@ -103,6 +103,8 @@ class Defaults:
     proxy_port: int = 28800
     # Look of pdms ui: "system" (light or dark like the computer), "light" or "dark".
     theme: str = "system"
+    # pdms ui tells the desktop when a service fails to load or stops by itself (while it runs, also in the tray).
+    notify: bool = True
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 

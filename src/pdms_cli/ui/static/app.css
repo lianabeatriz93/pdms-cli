@@ -376,7 +376,12 @@ td.wrap-detail .st { white-space: nowrap; }
 .tile-hint { margin: 0; font-size: .76rem; color: var(--warn); overflow-wrap: anywhere; }
 .tile.bad .tile-hint { color: var(--bad); }
 .tile footer { display: flex; flex-wrap: wrap; gap: .3rem; padding-top: .4rem; border-top: 1px solid var(--line); }
-.home-lower { display: grid; gap: .8rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.home-lower { display: grid; gap: .8rem; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
+.recent { list-style: none; margin: 0; padding: .3rem 0; font-size: .8rem; max-height: 18rem; overflow-y: auto; }
+.recent li { display: grid; grid-template-columns: 3.2rem minmax(0, 1fr); gap: .6rem; padding: .25rem .85rem; }
+.recent time { color: var(--muted); font: .74rem var(--mono); font-variant-numeric: tabular-nums; padding-top: 1px; }
+.recent li.bad b { color: var(--bad); }
+.recent small { display: block; color: var(--muted); overflow-wrap: anywhere; }
 .home-panel { min-width: 0; }
 .panel-head { display: flex; align-items: baseline; gap: .6rem; padding: .5rem .8rem; border-bottom: 1px solid var(--line); }
 .panel-head h2 { margin: 0; font-size: .85rem; }

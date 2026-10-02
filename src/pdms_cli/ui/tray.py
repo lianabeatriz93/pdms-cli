@@ -99,6 +99,9 @@ def _start_pystray(tray: Tray) -> bool:
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(_("Quit pdms ui"), lambda: tray.on_quit()),
     ))
+    from . import recent
+
+    recent.tray_notify = lambda title, message: icon.notify(message, title)  # Windows: no dialog, a toast
     if sys.platform == "darwin":
         icon.run_detached()  # AppKit: it joins the main loop that pywebview runs
     else:
