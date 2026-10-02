@@ -2591,7 +2591,7 @@ function paintSteps() {
 
 function tile({ title, status, kind = "", main, rows = [], hint = "", actions = [] }) {
   const list = el("dl", {});
-  for (const [label, value] of rows) list.append(el("dt", {}, label), el("dd", {}, value));
+  for (const [label, value] of rows) list.append(el("dt", {}, label), el("dd", typeof value === "string" ? { title: value } : {}, value));
   return el("article", { class: `card tile ${kind}`.trim() },
     el("header", {}, el("h2", {}, title), status),
     el("div", { class: "tile-main" }, main),
@@ -2618,7 +2618,7 @@ function servicesTile() {
   const dbs = [...new Set(alive.map((i) => i.db))];
   return tile({
     title: t("Services"), status, kind: failing.length ? "bad" : "",
-    main: alive.length ? t("{n} running", { n: alive.length }) : t("No background services"),
+    main: alive.length ? el("span", { class: "big" }, t("{n} running", { n: alive.length })) : el("span", { class: "muted" }, t("No background services")),
     rows: alive.length ? [[t("user"), users.join(", ")], [t("db"), dbs.join(", ")]] : [],
     hint: (state.strays || []).length ? t("{n} outside pdms", { n: state.strays.length }) : "",
     actions: [button(t("Start service"), () => openRun()), button(t("Open the list"), () => { location.hash = "#services"; })],
@@ -2637,7 +2637,7 @@ function proxyTile() {
     : busy ? [] : [button(t("Start proxy"), openProxyStart, { class: "btn small primary" })];
   return tile({
     title: t("Proxy"), status, kind: job && job.error ? "bad" : "",
-    main: running ? link(`http://localhost:${running.port}`, `http://localhost:${running.port}`) : t("Not running"),
+    main: running ? link(`http://localhost:${running.port}`, `http://localhost:${running.port}`) : el("span", { class: "muted" }, t("Not running")),
     rows: running ? [[t("Remote API"), running.remote || t("none")], [t("Timeout"), t("{seconds} s", { seconds: running.timeout })]] : [],
     hint: job && job.error ? failedText(job) : "",
     actions,
@@ -2668,7 +2668,7 @@ function frontendTile() {
   }
   return tile({
     title: t("Frontend"), status, kind: (job && job.error) || front.status === "error" ? "bad" : front.stale || problem ? "warn" : "",
-    main: front.running ? link(front.url, front.url) : t("PDMS web app (Vite, :{port})", { port: front.port }),
+    main: front.running ? link(front.url, front.url) : el("span", { class: "muted" }, t("PDMS web app (Vite, :{port})", { port: front.port })),
     rows, hint: job && job.error ? failedText(job) : front.stale ? staleText(front) : problem ? apiProblemTitle(problem) : front.detail,
     actions: problem && !busy ? [...apiFixButtons(problem), ...actions] : actions,
   });
@@ -2683,7 +2683,7 @@ function eventsTile() {
   const status = busy ? pill("starting", phaseLabel(job.phase)) : up ? pill("ok", t("on")) : pill(wanted ? "error" : "off", t("off"));
   return tile({
     title: t("Events"), status, kind: !up && wanted && !busy ? "warn" : "",
-    main: up ? `ElasticMQ :${state.events.port}` : t("Local SQS and SNS"),
+    main: up ? el("span", { class: "mono" }, `ElasticMQ :${state.events.port}`) : el("span", { class: "muted" }, t("Local SQS and SNS")),
     rows: up ? [[t("Consumers"), t("{n} running", { n: consumers })], ["SNS", state.sns ? state.sns.queue : "-"]] : [[t("Port"), String(state.events.port)]],
     hint: job && job.error ? failedText(job) : "",
     actions: up
@@ -2794,7 +2794,9 @@ function paintHome() {
     el("div", {}, el("b", {}, title), el("small", {}, detail || "")),
     el("div", { class: "attn-actions" }, ...actions),
   )));
-  $("home-ok").hidden = items.length > 0;
+  $("home-attn-card").hidden = !items.length;
+  $("home-attn-count").textContent = String(items.length);
+  $("home-attn-count").className = `st ${items.some((item) => item[0] === "bad") ? "fail" : "warn"}`;
 }
 
 async function startAll(confirmed = false) {

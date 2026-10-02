@@ -42,6 +42,11 @@
     <button class="btn bad push" id="home-stop" type="button" hidden>Stop everything</button>
   </div>
 
+  <section class="card home-panel attn-card" id="home-attn-card" aria-labelledby="home-attn-title" hidden>
+    <div class="panel-head"><h2 id="home-attn-title">Needs attention</h2><span class="st warn" id="home-attn-count"></span></div>
+    <ul class="attn" id="home-attn"></ul>
+  </section>
+
   <section class="card launch" aria-labelledby="launch-title">
     <div class="launch-head">
       <h2 id="launch-title">Start my setup</h2>
@@ -71,11 +76,6 @@
       <div class="panel-head"><h2 id="home-stacks-title">Stacks</h2><a class="push" href="#stacks">All stacks</a></div>
       <div class="tbl"><table><tbody id="home-stacks"></tbody></table></div>
       <p class="empty" id="home-stacks-empty" hidden>No stacks yet.</p>
-    </section>
-    <section class="card home-panel" aria-labelledby="home-attn-title">
-      <div class="panel-head"><h2 id="home-attn-title">Needs attention</h2></div>
-      <ul class="attn" id="home-attn"></ul>
-      <p class="all-good" id="home-ok" hidden>✓ Nothing needs attention.</p>
     </section>
   </div>
 </section>
