@@ -1,3 +1,16 @@
+## v0.3.2 (2026-10-02)
+
+### Feat
+
+- **ui**: Stacks as chips in two columns, Events explained while off, Doctor problems first
+- **ui**: Services grouped by stack, quick filters, and row actions as icons
+- **ui**: Home puts what needs attention first, with Start everything as joined steps
+- **ui**: icons and live state in the sidebar, narrow windows, and light or dark at will
+
+### Fix
+
+- **instances**: a service busy with a slow request shows as busy, not starting
+
 ## v0.3.1 (2026-10-02)
 
 ### Feat
