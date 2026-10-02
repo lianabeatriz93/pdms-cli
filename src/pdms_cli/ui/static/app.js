@@ -42,6 +42,7 @@ function phaseLabel(phase) {
 // An instance's status (also its CSS class), translated.
 function statusLabel(status) {
   if (status === "ok") return t("ok");
+  if (status === "busy") return t("busy");
   if (status === "starting") return t("starting");
   if (status === "error") return t("error");
   if (status === "stopped") return t("stopped");

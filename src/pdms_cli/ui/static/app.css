@@ -85,6 +85,8 @@ td.num { font-variant-numeric: tabular-nums; }
 .st { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; padding: .05rem .5rem; border-radius: 999px; }
 .st::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .st.ok { color: var(--ok); background: var(--ok-soft); }
+.st.busy { color: var(--ok); background: var(--ok-soft); }
+.st.busy::before { background: none; border: 2px solid currentColor; box-sizing: border-box; }
 .st.starting, .st.error { color: var(--warn); background: var(--warn-soft); }
 .st.stopped { color: var(--bad); background: var(--bad-soft); }
 .st.off { color: var(--muted); background: var(--code); }
