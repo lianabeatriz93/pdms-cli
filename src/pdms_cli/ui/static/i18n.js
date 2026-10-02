@@ -314,6 +314,7 @@ const CATALOG = {
     "Start service": "Levantar servicio",
     "Start the proxy": "Levantar el proxy",
     "starting": "arrancando",
+    "busy": "ocupado",
     "starting on :{port}": "arrancando en :{port}",
     "Starting the local ElasticMQ…": "Arrancando el ElasticMQ local…",
     "Starting the proxy…": "Arrancando el proxy…",

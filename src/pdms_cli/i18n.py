@@ -237,6 +237,8 @@ ES: dict[str, str] = {
     "Profile: {user} @ {db}": "Perfil: {user} @ {db}",
     # ------------------------------------------------------------------ instances
     "starting": "arrancando",
+    "busy": "ocupado",
+    "not answering while it works on a request": "no responde mientras atiende una petición",
     "stopped": "parado",
     "running": "corriendo",
     "Choose an instance:": "Elige instancia:",

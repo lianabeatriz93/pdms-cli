@@ -425,12 +425,16 @@ def adopt(stray: Stray, *, user: str, db: str) -> Instance:
 STARTED_MARKERS = ("Started server process", "Application startup complete")
 # ...and these when importing/starting the app failed. With --reload the process stays alive after them.
 FAILED_MARKERS = ("Traceback (most recent call last)", "Error loading ASGI app")
+# The app serves requests from this line on, until --reload restarts it (the new process imports the app first).
+# A traceback after it comes from a request that failed: the app goes on serving.
+SERVING_MARKER = "Application startup complete"
+RESTART_MARKERS = ("Reloading...", "Shutting down", "Finished server process", "Error loading ASGI app")
 EXCEPTION_LINE = re.compile(r"^[\w.]*(Error|Exception|Exit)\b.*")
 
 
 @dataclass
 class Health:
-    state: str  # ok | starting | error | stopped
+    state: str  # ok | busy | starting | error | stopped
     detail: str = ""
 
 
@@ -459,6 +463,33 @@ def startup_error(log: str, lines: int = 300) -> str:
     return exceptions[-1] if exceptions else _("app failed to load")
 
 
+def last_marker(path: str, markers: tuple[str, ...], limit: int = 8 << 20) -> str:
+    """The marker on the latest line of the file that has one (reading back from the end, at most ``limit`` bytes)."""
+    try:
+        with open(path, "rb") as fh:
+            end = fh.seek(0, os.SEEK_END)
+            start = max(0, end - limit)
+            pos, rest = end, b""
+            while pos > start:
+                step = min(1 << 16, pos - start)
+                pos -= step
+                fh.seek(pos)
+                lines = (fh.read(step) + rest).split(b"\n")
+                rest = lines.pop(0) if pos > start else b""
+                for line in reversed(lines):
+                    text = line.decode("utf-8", errors="replace")
+                    if found := next((m for m in markers if m in text), None):
+                        return found
+    except FileNotFoundError:
+        pass
+    return ""
+
+
+def serving(log: str) -> bool:
+    """Whether the app finished starting and has not been restarted since (it may be busy, not answering)."""
+    return last_marker(log, (SERVING_MARKER, *RESTART_MARKERS)) == SERVING_MARKER
+
+
 POLLER_READY = "[pdms-poller] Polling"
 
 
@@ -470,6 +501,8 @@ def health(instance: Instance) -> Health:
         return Health("ok") if contains(instance.log, POLLER_READY) else Health("starting")
     if responds(instance.host, instance.port):
         return Health("ok")
+    if serving(instance.log):  # e.g. a sync DB call inside an async endpoint blocks uvicorn's only event loop
+        return Health("busy", _("not answering while it works on a request"))
     error = startup_error(instance.log)
     return Health("error", error) if error else Health("starting")
 

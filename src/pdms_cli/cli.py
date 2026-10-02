@@ -459,7 +459,7 @@ def wait_until_ready(inst: instances.Instance, timeout: float = 90) -> None:
                 console.print("[green]✓[/] " + _("{key} is consuming {queue} (pid {pid})",
                                                  key=inst.key, queue=inst.queue, pid=inst.pid))
                 break
-            if health.state == "ok":
+            if health.state in ("ok", "busy"):  # busy: already serving a request that keeps it from answering
                 console.print(f"[green]✓[/] " + _(
                     "{key} is responding at http://localhost:{port} (pid {pid})",
                     key=inst.key, port=inst.port, pid=inst.pid,
@@ -723,6 +723,7 @@ def migrate(
 def status_text(state: str) -> str:
     return {
         "ok": "[green]● ok[/]",
+        "busy": f"[green]◌ {_('busy')}[/]",
         "starting": f"[cyan]… {_('starting')}[/]",
         "error": "[yellow]⚠ error[/]",
         "stopped": f"[red]✗ {_('stopped')}[/]",
