@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, events, i18n, instances, proxy
+from .. import actions, events, frontend, i18n, instances, proxy
 from ..config import Config
 from ..logview import LogFollower
 from . import jobs as ui_jobs
@@ -164,6 +164,19 @@ def run_options(body: dict) -> dict:
     if port is not None and (not isinstance(port, int) or isinstance(port, bool) or not 0 < port < 65536):
         raise actions.ActionError("port must be a number between 1 and 65535, or null for the next free one")
     return {"service": service, "port": port, **launch_options(body)}
+
+
+def frontend_options(body: dict) -> dict:
+    """The mode, port, install choice, rebuild and restart (stop the running one first) of a frontend start."""
+    mode, port, install = body.get("mode", "dev"), body.get("port"), body.get("install")
+    if mode not in frontend.MODES:
+        raise actions.ActionError(f"mode must be one of: {', '.join(frontend.MODES)}")
+    if port is not None and (not isinstance(port, int) or isinstance(port, bool) or not 0 < port < 65536):
+        raise actions.ActionError("port must be a number between 1 and 65535, or null for 3000")
+    if install not in (None, True, False):
+        raise actions.ActionError("install must be true, false or null")
+    return {"mode": mode, "port": port, "install": install, "rebuild": body.get("rebuild") is True,
+            "restart": body.get("restart") is True}
 
 
 def env_name(value: object) -> str:
@@ -302,6 +315,11 @@ def make_handler(
                 self.services()
             elif url.path == "/api/config":
                 self.reply_json(200, ui_jobs.settings(Config.load()))
+            elif url.path == "/api/frontend/options":
+                try:
+                    self.reply_json(200, ui_jobs.frontend_options(Config.load()))
+                except actions.ActionError as exc:
+                    self.reply_json(400, {"error": plain(exc.message)})
             elif url.path in ("/api/proxy/options", "/api/proxy/routes"):
                 self.proxy_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
             elif url.path in ("/api/events/queues", "/api/events/map", "/api/events/peek", "/api/events/template"):
@@ -426,6 +444,18 @@ def make_handler(
                 return 202, {"job": jobs.start_proxy(**proxy_options(body)).key}
             if path == "/api/run":
                 return 202, {"job": jobs.start(**run_options(body)).key}
+            if path == "/api/frontend/start":
+                return 202, {"job": jobs.start_frontend(**frontend_options(body)).key}
+            if path == "/api/setup/save":
+                return 200, {"setup": ui_jobs.save_setup(body)}
+            if path in ("/api/home/start", "/api/home/stop"):
+                if path.endswith("start"):
+                    options = launch_options(body)
+                    job = jobs.start_all(install=options["install"], confirmed=options["confirmed"])
+                else:
+                    job = jobs.stop_all()
+                return (202, {"job": job.key}) if job else (200, {"job": None})
+
             if path == "/api/defaults/save":
                 ui_jobs.save_defaults(body)
                 return 200, {}
@@ -485,6 +515,8 @@ def make_handler(
                 return 200, {"name": save(name, body, new=body.get("new") is True)}
             if verb == "remove":
                 return 200, {"stacks": (ui_jobs.remove_db if kind == "dbs" else ui_jobs.remove_user)(name)}
+            if verb == "rename" and kind == "users":
+                return 200, {"name": ui_jobs.rename_user(name, body)}
             if verb == "password" and kind == "dbs":
                 return 200, {"password": ui_jobs.db_password(name)}
             return 404, {"error": "not found"}
@@ -493,6 +525,9 @@ def make_handler(
 
         def log_file(self, key: str, which: str) -> Path | None:
             """The log ``which`` (current, previous or install) of an instance, the proxy or a job's instance."""
+            if frontend.is_key(key):
+                return {"current": frontend.log_path(), "previous": instances.previous_log_path(frontend.log_path()),
+                        "install": frontend.install_log_path(), "build": frontend.build_log_path()}.get(which)
             if proxy.is_key(key):
                 base = proxy.log_path()
             elif key == events.SNS_KEY:

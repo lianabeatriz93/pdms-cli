@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import __version__, events, instances, installer, migrations, proxy, repos, routes, runner, update
+from . import __version__, events, frontend, instances, installer, migrations, proxy, repos, routes, runner, update
 from .config import Config, config_path
 from .i18n import _
 
@@ -229,6 +229,39 @@ def check_ports(cfg: Config) -> list[Check]:
     return checks
 
 
+def check_frontend(cfg: Config) -> list[Check]:
+    """What ``pdms front`` needs: Node 22–24, yarn, node_modules up to date and its port."""
+    root = repos.active_root(cfg)
+    if not frontend.exists(root):
+        return []
+    section = _("Frontend")
+    checks = []
+    version = frontend.node_version()
+    if version is None:
+        checks.append(Check(section, "Node.js", FAIL, _("not found"), "nvm install 22"))
+    elif not frontend.node_supported(version):
+        checks.append(Check(section, "Node.js", FAIL, version, _("The frontend needs Node 22 to 24 (nvm use 22).")))
+    else:
+        checks.append(Check(section, "Node.js", OK, version))
+    tool = frontend.yarn()
+    checks.append(Check(section, "yarn", OK if tool else FAIL, tool or _("not found"),
+                        "" if tool else "npm install -g yarn"))
+    if tool:
+        fine = frontend.dependencies_ok(root)
+        checks.append(Check(section, "node_modules", OK if fine else WARN,
+                            _("up to date") if fine else _("missing or out of date"),
+                            "" if fine else _("pdms front installs them (yarn install) before starting.")))
+    current = frontend.running()
+    if current:
+        checks.append(Check(section, _("Port"), OK, _("{port} · used by the pdms frontend", port=current["port"])))
+    elif runner.port_is_free("127.0.0.1", frontend.PORT):
+        checks.append(Check(section, _("Port"), OK, _("{port} · free", port=frontend.PORT)))
+    else:
+        checks.append(Check(section, _("Port"), WARN, _("{port} · in use", port=frontend.PORT),
+                            _("Another program uses it; logging in to the app may only work on this port.")))
+    return checks
+
+
 def check_instances() -> list[Check]:
     section = _("Background services")
     items = list(instances.load().values())
@@ -254,4 +287,4 @@ def run_all(cfg: Config, *, databases: bool = True, timeout: int = 5) -> list[Ch
     checks = check_pdms() + check_tools() + check_config(cfg)
     if databases:
         checks += check_databases(cfg, timeout)
-    return checks + check_repo(cfg) + check_ports(cfg) + check_instances() + check_shell()
+    return checks + check_repo(cfg) + check_frontend(cfg) + check_ports(cfg) + check_instances() + check_shell()

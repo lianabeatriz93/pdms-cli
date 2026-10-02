@@ -132,6 +132,18 @@ class Repo:
 
 
 @dataclass
+class Setup:
+    """What "Start everything" starts (pdms ui's Home), in this order: events, the stack, the proxy, the frontend."""
+
+    stack: str = ""
+    proxy: bool = True
+    frontend: bool = True
+    # How the frontend runs: "dev" (yarn dev) or "build" (a production build, served by vite preview).
+    frontend_mode: str = "dev"
+    events: bool = False
+
+
+@dataclass
 class Config:
     defaults: Defaults = field(default_factory=Defaults)
     users: dict[str, DevUser] = field(default_factory=dict)
@@ -143,6 +155,7 @@ class Config:
     ignored_repos: list[str] = field(default_factory=list)
     last_user: str = ""
     last_db: str = ""
+    setup: Setup = field(default_factory=Setup)
 
     @property
     def repo(self) -> Repo | None:
@@ -161,6 +174,7 @@ class Config:
             ignored_repos=list(state.get("ignored_repos", [])),
             last_user=state.get("last_user", ""),
             last_db=state.get("last_db", ""),
+            setup=_from_dict(Setup, data.get("setup", {})),
         )
         # Before repos existed, the services folder was configured as defaults.backend_path.
         legacy = data.get("defaults", {}).get("backend_path")
@@ -182,6 +196,7 @@ class Config:
             "dbs": {k: asdict(v) for k, v in self.dbs.items()},
             "stacks": {k: asdict(v) for k, v in self.stacks.items()},
             "repos": {k: asdict(v) for k, v in self.repos.items()},
+            "setup": asdict(self.setup),
         }
 
     @classmethod

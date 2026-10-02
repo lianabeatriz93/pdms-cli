@@ -252,13 +252,10 @@ ES: dict[str, str] = {
     "[dim]Stopped ones keep their log (pdms logs <instance>). Remove them with pdms ps --clean.[/]":
         "[dim]Las paradas conservan su log (pdms logs <instancia>). Bórralas con pdms ps --clean.[/]",
     "Instance (or part of the service name).": "Instancia (o parte del nombre del servicio).",
-    "Instance (or part of the service name), or proxy.": "Instancia (o parte del nombre del servicio), o proxy.",
     "Follow the output live.": "Seguir la salida en vivo.",
     "Show the console of background services (Ctrl+C to exit).":
         "Muestra la consola de servicios en segundo plano (Ctrl+C para salir).",
     "Instances (or parts of the service name).": "Instancias (o partes del nombre del servicio).",
-    "Instances (or parts of the service name), proxy, or sns (what was published to SNS locally).":
-        "Instancias (o partes del nombre del servicio), proxy, o sns (lo publicado a SNS en local).",
     "All running instances, including ones started later.":
         "Todas las instancias corriendo, incluidas las que se levanten después.",
     "All instances of a stack.": "Todas las instancias de un stack.",
@@ -290,7 +287,6 @@ ES: dict[str, str] = {
     "Only endpoints whose path contains this text.": "Solo los endpoints cuya ruta contenga este texto.",
     "Show endpoints (URLs)": "Ver endpoints (URLs)",
     "Which instance do you want to see the logs of?": "¿De qué instancia quieres ver los logs?",
-    "Stop all, the proxy included.": "Parar todas, el proxy incluido.",
     "Stop background services.": "Para servicios en segundo plano.",
     "Which instances do you want to stop? (space to select)": "¿Qué instancias quieres parar? (espacio para marcar)",
     "Nothing to stop.": "No hay nada que parar.",
@@ -923,4 +919,95 @@ ES: dict[str, str] = {
     "👤 Users": "👤 Usuarios",
     "⚙  Settings": "⚙  Configuración",
     "✕  Exit": "✕  Salir",
+    # ------------------------------------------------------------------ frontend and Home
+    "  Log: [bold]pdms logs frontend[/]   Stop: [bold]pdms stop frontend[/]":
+        "  Log: [bold]pdms logs frontend[/]   Parar: [bold]pdms stop frontend[/]",
+    "API: {url}":
+        "API: {url}",
+    "Another program uses it; logging in to the app may only work on this port.":
+        "Otro programa lo usa; puede que el login de la app solo funcione en este puerto.",
+    "Background (pdms ps, logs frontend, stop frontend) or foreground (asked if omitted).":
+        "En segundo plano (pdms ps, logs frontend, stop frontend) o en primer plano (se pregunta si se omite).",
+    "Build again even if nothing changed since the last build.":
+        "Volver a construir aunque nada haya cambiado desde el último build.",
+    "Build it as in production and serve the build (yarn build + vite preview).":
+        "Construirla como en producción y servir el build (yarn build + vite preview).",
+    "Checking node, yarn and node_modules...":
+        "Comprobando node, yarn y node_modules...",
+    "Frontend":
+        "Frontend",
+    "Give a user another name (also in the stacks that use it).":
+        "Cambiar el nombre de un usuario (también en los stacks que lo usan).",
+    "Instance (or part of the service name), proxy or frontend.":
+        "Instancia (o parte del nombre del servicio), proxy o frontend.",
+    "Instances (or parts of the service name), proxy, frontend, or sns (what was published to SNS locally).":
+        "Instancias (o partes del nombre del servicio), proxy, frontend, o sns (lo publicado en SNS en local).",
+    "New name for '{name}':":
+        "Nuevo nombre para '{name}':",
+    "Node.js was not found. Install Node 22 or 24 (for example with nvm install 22).":
+        "No se encontró Node.js. Instala Node 22 o 24 (por ejemplo con nvm install 22).",
+    "Port {port} is in use. Use {free}? (logging in may only work on {port})":
+        "El puerto {port} está en uso. ¿Usar {free}? (puede que el login solo funcione en {port})",
+    "Run it in the background? (pdms logs frontend, pdms stop frontend)":
+        "¿Correrlo en segundo plano? (pdms logs frontend, pdms stop frontend)",
+    "Run the PDMS web app (frontend/): the yarn dev server, or a production build with --build.":
+        "Levanta la app web de PDMS (frontend/): el servidor de yarn dev, o un build de producción con --build.",
+    "Run yarn install first (by default only when node_modules is out of date).":
+        "Correr yarn install antes (por defecto solo si node_modules está desactualizado).",
+    "Starting the frontend...":
+        "Levantando el frontend...",
+    "Stop all, the proxy and the frontend included.":
+        "Parar todos, incluidos el proxy y el frontend.",
+    "The frontend exited while starting. Full log: {log}":
+        "El frontend terminó mientras arrancaba. Log completo: {log}",
+    "The frontend exited while starting: {line}":
+        "El frontend terminó mientras arrancaba: {line}",
+    "The frontend has no log. Start it in the background with [bold]pdms front -b[/].":
+        "El frontend no tiene log. Levántalo en segundo plano con [bold]pdms front -b[/].",
+    "The frontend is already running ({mode}) at {url}. Stop it first: pdms stop frontend":
+        "El frontend ya está corriendo ({mode}) en {url}. Páralo primero: pdms stop frontend",
+    "The frontend is not running.":
+        "El frontend no está corriendo.",
+    "The frontend is responding at {url}":
+        "El frontend responde en {url}",
+    "The frontend needs Node 22 to 24 (nvm use 22).":
+        "El frontend necesita Node 22 a 24 (nvm use 22).",
+    "The frontend needs Node 22 to 24 and this is Node {version} (nvm use 22).":
+        "El frontend necesita Node 22 a 24 y este es Node {version} (nvm use 22).",
+    "The last build is up to date; serving it (--rebuild to build again).":
+        "El último build está al día; se sirve ese (--rebuild para construir de nuevo).",
+    "The new name.":
+        "El nombre nuevo.",
+    "User '{name}' is now '{new}'.":
+        "El usuario '{name}' ahora es '{new}'.",
+    "missing or out of date":
+        "falta o está desactualizado",
+    "no build yet":
+        "todavía no hay build",
+    "pdms front installs them (yarn install) before starting.":
+        "pdms front las instala (yarn install) antes de arrancar.",
+    "the API URL changed":
+        "cambió la URL de la API",
+    "the code changed":
+        "cambió el código",
+    "the dependencies changed":
+        "cambiaron las dependencias",
+    "the proxy":
+        "el proxy",
+    "yarn build ({reason})":
+        "yarn build ({reason})",
+    "yarn build failed: {error}":
+        "yarn build falló: {error}",
+    "yarn install could not download the @alivi packages from AWS CodeArtifact. Log in with ./codeartifact-login.sh (in frontend/) and try again.":
+        "yarn install no pudo descargar los paquetes @alivi de AWS CodeArtifact. Inicia sesión con ./codeartifact-login.sh (en frontend/) y vuelve a intentarlo.",
+    "yarn install failed: {error}":
+        "yarn install falló: {error}",
+    "yarn was not found. Install it with: npm install -g yarn":
+        "No se encontró yarn. Instálalo con: npm install -g yarn",
+    "{path} has no frontend (frontend/package.json).":
+        "{path} no tiene frontend (frontend/package.json).",
+    "{port} · used by the pdms frontend":
+        "{port} · lo usa el frontend de pdms",
+    "⚠ The frontend is not responding yet; check its log.":
+        "⚠ El frontend todavía no responde; revisa su log.",
 }
