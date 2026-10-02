@@ -236,9 +236,9 @@ dialog label.pick .muted { margin-left: auto; font-size: .75rem; white-space: no
 .panel label.inline, .bar.filter label.inline { display: flex; gap: .35rem; align-items: center; font-size: .82rem; }
 .panel .tbl { max-height: 60vh; overflow: auto; }
 .panel thead th { position: sticky; top: 0; background: var(--surface); }
-td.code-ok { color: var(--ok); }
-td.code-warn { color: var(--warn); }
-td.code-bad { color: var(--bad); font-weight: 600; }
+td.code-ok, dd.code-ok { color: var(--ok); }
+td.code-warn, dd.code-warn { color: var(--warn); }
+td.code-bad, dd.code-bad { color: var(--bad); font-weight: 600; }
 td.method { font-family: var(--mono); font-size: .78rem; font-weight: 600; }
 td.target-remote, td.target-other { color: var(--muted); }
 td.target-missing { color: var(--bad); }
@@ -527,3 +527,21 @@ td .found-note { color: var(--muted); }
 .st.failed { color: var(--bad); background: var(--bad-soft); }
 .st.missing { color: var(--muted); background: var(--code); }
 .st.applied { color: var(--ok); background: var(--ok-soft); }
+
+/* proxy: a request's detail next to the list */
+.split { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: .8rem; align-items: start; }
+.split:has(> .req-detail:not([hidden])) td.req-path { white-space: normal; overflow-wrap: break-word; min-width: 10rem; }
+.split:has(> .req-detail[hidden]) { grid-template-columns: minmax(0, 1fr); }
+.req-detail { min-width: 0; position: sticky; top: .5rem; max-height: calc(100vh - 2rem); overflow: auto; }
+.req-detail .panel-head { align-items: center; }
+.req-detail .panel-head h2 { min-width: 0; overflow-wrap: anywhere; }
+.req-body { padding: .7rem .85rem; display: grid; gap: .3rem; }
+.req-body .sub { margin: .55rem 0 .1rem; font-size: .7rem; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.req-body .sub:first-child { margin-top: 0; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .2rem .8rem; font-size: .8rem; margin: 0; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: var(--mono); font-size: .76rem; overflow-wrap: anywhere; }
+.json { margin: 0; font: .76rem/1.55 var(--mono); background: var(--code); border-radius: 7px; padding: .55rem .7rem; overflow: auto; max-height: 22rem; white-space: pre; }
+.req-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .7rem; }
+#req-rows tr.picked td { background: var(--accent-soft); }
+@media (max-width: 1080px) { .split { grid-template-columns: minmax(0, 1fr); } .req-detail { position: static; max-height: none; } }

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
-from . import instances, repos
+from . import captures, instances, repos
 from .config import Config, DevUser
 from .i18n import _
 from .routes import Route, load_routes, match
@@ -147,7 +147,8 @@ class Gateway:
     remote: str | None  # e.g. https://<id>.execute-api.us-east-1.amazonaws.com/dev
     impersonate: DevUser | None = None
     timeout: float = 300  # seconds to wait for the answer of a service or the remote API
-    log: Callable[[str, str, int, str, float], None] = lambda *args: None
+    log: Callable[..., None] = lambda *args: None  # (method, path, status, target, seconds, capture id)
+    recorder: captures.Recorder | None = None  # the background proxy keeps each request for pdms ui
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     # ------------------------------------------------------------------ targets
@@ -283,8 +284,24 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
             if self.command != "HEAD":
                 self.wfile.write(body)
 
-        def reply_json(self, status: int, data: object, target: str) -> None:
-            self.reply(status, json.dumps(data).encode(), "application/json", {"X-Pdms-Target": target})
+        def reply_json(self, status: int, data: object, target: str) -> bytes:
+            body = json.dumps(data).encode()
+            self.reply(status, body, "application/json", {"X-Pdms-Target": target})
+            return body
+
+        def done(self, started: float, path: str, status: int, target: str, sent: bytes | None,
+                 answer_headers: list[tuple[str, str]], answer: bytes | None) -> None:
+            """Log the request (and keep it, in the background proxy) once it was answered."""
+            seconds, ident = time.monotonic() - started, ""
+            if gateway.recorder:
+                ident = captures.new_id()
+                headers = [(k, v) for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP]
+                try:
+                    gateway.recorder.record(captures.entry(ident, self.command, path, status, target, seconds,
+                                                           headers, sent, answer_headers, answer))
+                except OSError:
+                    ident = ""  # a full disk must not break the proxy
+            gateway.log(self.command, path.split("?", 1)[0], status, target, seconds, ident)
 
         def forward(self) -> None:
             started = time.monotonic()
@@ -309,8 +326,8 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                     if route is None else
                     _("{service} is not running locally. Start it with: pdms run {service} -b", service=route.service)
                 )
-                self.reply_json(503 if route else 404, {"detail": f"pdms proxy: {detail}"}, label)
-                gateway.log(self.command, bare, 503 if route else 404, label, time.monotonic() - started)
+                answer = self.reply_json(503 if route else 404, {"detail": f"pdms proxy: {detail}"}, label)
+                self.done(started, path, 503 if route else 404, label, body, [("Content-Type", "application/json")], answer)
                 return
 
             headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
@@ -335,8 +352,8 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
             except (OSError, http.client.HTTPException) as exc:
                 reason = _("no answer after {seconds} s (raise it with pdms proxy --timeout or the proxy_timeout "
                            "default)", seconds=f"{gateway.timeout:g}") if isinstance(exc, TimeoutError) else exc
-                self.reply_json(502, {"detail": f"pdms proxy: {label}: {reason}"}, label)
-                gateway.log(self.command, bare, 502, label, time.monotonic() - started)
+                answer = self.reply_json(502, {"detail": f"pdms proxy: {label}: {reason}"}, label)
+                self.done(started, path, 502, label, body, [("Content-Type", "application/json")], answer)
                 return
             finally:
                 conn.close()
@@ -351,14 +368,15 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(data)
-            gateway.log(self.command, bare, response.status, label, time.monotonic() - started)
+            self.done(started, path, response.status, label, body, response.getheaders(), data)
 
     return Handler
 
 
-def format_request(method: str, path: str, status: int, target: str, seconds: float) -> str:
-    """One line of the background proxy's log (the terminal shows the same, in colour)."""
-    return f"{datetime.now():%H:%M:%S} {method:<6} {path} {status} → {target}  {seconds * 1000:.0f}ms"
+def format_request(method: str, path: str, status: int, target: str, seconds: float, ident: str = "") -> str:
+    """One line of the background proxy's log (the terminal shows the same, in colour); ``#id`` names its capture."""
+    line = f"{datetime.now():%H:%M:%S} {method:<6} {path} {status} → {target}  {seconds * 1000:.0f}ms"
+    return f"{line} #{ident}" if ident else line
 
 
 class Server(ThreadingHTTPServer):
@@ -424,6 +442,7 @@ def main(argv: list[str] | None = None) -> None:
     gateway = Gateway(
         routes=repo_routes, backend=args.repo / "backend", remote=args.remote or None, impersonate=user,
         timeout=args.timeout, log=lambda *request: print(format_request(*request), flush=True),
+        recorder=captures.Recorder(),
     )
     # frontend/.env.local is put back by whoever stops it (pdms stop), or by the next proxy if it died.
     serve(gateway, "0.0.0.0", args.port, {

@@ -170,14 +170,23 @@
       <span class="muted" id="req-count"></span>
       <button class="btn ghost push" id="req-clear" type="button">Clear</button>
     </div>
-    <div class="tbl">
-      <table>
-        <thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>Went to</th><th class="num">Took</th></tr></thead>
-        <tbody id="req-rows"></tbody>
-      </table>
-      <p class="empty" id="req-empty"></p>
+    <div class="split" id="req-split">
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>Went to</th><th class="num">Took</th></tr></thead>
+          <tbody id="req-rows"></tbody>
+        </table>
+        <p class="empty" id="req-empty"></p>
+      </div>
+      <section class="card req-detail" id="req-detail" aria-labelledby="req-detail-title" hidden>
+        <div class="panel-head">
+          <h2 id="req-detail-title"><span class="method" id="req-d-method"></span> <span class="mono" id="req-d-path"></span></h2>
+          <button class="ibtn push" id="req-d-close" type="button" title="Close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-forget"/></svg></button>
+        </div>
+        <div class="req-body" id="req-d-body"></div>
+      </section>
     </div>
-    <p class="muted note">Click a request served locally to open that service's log at its line.</p>
+    <p class="muted note">Click a request to see what it sent and what came back.</p>
   </div>
 
   <div class="panel" id="proxy-routes" hidden>

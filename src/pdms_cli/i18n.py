@@ -244,6 +244,12 @@ ES: dict[str, str] = {
     "VS Code's code command was not found. In VS Code: Ctrl+Shift+P → Shell Command: Install 'code' command in PATH.":
         "No se encontró el comando code de VS Code. En VS Code: Ctrl+Shift+P → Shell Command: Install 'code' command in PATH.",
     "{path} is not a file of a registered repo.": "{path} no es un archivo de un repo registrado.",
+    "The proxy no longer keeps that request.": "El proxy ya no guarda esa petición.",
+    "the proxy is not running": "el proxy no está corriendo",
+    "This request cannot be sent again: {why}.": "Esta petición no se puede repetir: {why}.",
+    "The proxy did not answer: {error}": "El proxy no respondió: {error}",
+    "its body is binary": "su cuerpo es binario",
+    "its body is larger than {size} KB": "su cuerpo pasa de {size} KB",
     "stopped": "parado",
     "running": "corriendo",
     "Choose an instance:": "Elige instancia:",

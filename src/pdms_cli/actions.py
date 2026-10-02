@@ -8,6 +8,7 @@ the action again with the answer. Problems no answer can fix raise :class:`Actio
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import subprocess
@@ -23,7 +24,7 @@ from typing import IO
 from urllib.parse import unquote, urlsplit
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
-from . import vscode
+from . import captures, vscode
 from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -745,7 +746,7 @@ def point_frontend(plan: ProxyLaunch) -> str | None:
     return None
 
 
-def serve_proxy(plan: ProxyLaunch, log: Callable[[str, str, int, str, float], None]) -> None:
+def serve_proxy(plan: ProxyLaunch, log: Callable[..., None]) -> None:
     """Run the proxy in this process until it is interrupted; ``log`` gets every request."""
     gateway = proxy.Gateway(
         routes=plan.routes, backend=plan.root / "backend", remote=plan.remote, impersonate=plan.user,
@@ -789,6 +790,31 @@ def wait_for_proxy(started: ProxyStarted, timeout: float = 30) -> str:
     while (state := proxy_state(started)) == "starting" and time.monotonic() < deadline:
         time.sleep(0.2)
     return state
+
+
+def proxy_request(ident: str) -> dict:
+    """A request the background proxy kept: what it sent and got (secret headers hidden), as curl, and whether it
+    can be sent again (``replay`` says why not)."""
+    capture = captures.find(ident) if re.fullmatch(r"[0-9a-f]{8}", ident) else None
+    if not capture:
+        raise ActionError(_("The proxy no longer keeps that request."))
+    running = proxy.running_proxy()
+    why = captures.replayable(capture) or ("" if running else _("the proxy is not running"))
+    return {"request": captures.public(capture), "curl": captures.curl(capture, running["port"]) if running else "",
+            "replay": why}
+
+
+def replay_request(ident: str) -> dict:
+    """Send a kept request through the running proxy again, as it came (secret headers included)."""
+    data = proxy_request(ident)
+    if data["replay"]:
+        raise ActionError(_("This request cannot be sent again: {why}.", why=data["replay"]))
+    running = proxy.running_proxy()
+    try:
+        status, seconds = captures.replay(captures.find(ident) or {}, running["port"] if running else 0)
+    except (OSError, http.client.HTTPException) as exc:
+        raise ActionError(_("The proxy did not answer: {error}", error=exc)) from exc
+    return {"status": status, "ms": round(seconds * 1000)}
 
 
 def stop_proxy(running: dict | None = None) -> str | None:

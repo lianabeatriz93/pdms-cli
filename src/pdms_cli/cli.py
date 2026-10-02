@@ -1734,7 +1734,7 @@ def resolve_remote(cfg: Config, root: Path, remote: Optional[str], no_remote: bo
     return url
 
 
-def log_request(method: str, path: str, status: int, target: str, seconds: float) -> None:
+def log_request(method: str, path: str, status: int, target: str, seconds: float, ident: str = "") -> None:
     color = "green" if status < 400 else "yellow" if status < 500 else "red"
     where = "dim" if target in ("remote", "missing", "other-repo") else "cyan"
     console.print(Text.assemble(
