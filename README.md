@@ -302,8 +302,11 @@ or the next free one, and **Start frontend** the web app in dev or build mode (l
 its install and build logs, and **Rebuild**. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
 services run, and creates, edits and deletes stacks with a searchable list of the repo's services. The proxy screen
 starts the proxy in the background (like `pdms proxy -b`: it asks for another port when the one you chose is in use)
-and stops it, follows its requests live with where each one went, and opens the log of the local service that served
-a request with its lines marked. Its routes tab shows where each route goes now, like `pdms proxy routes`. A proxy
+and stops it, and follows its requests live with where each one went. A click on a request shows what it sent and
+what came back (headers, with `Authorization` and cookies hidden, and bodies up to 64 KB), with **Copy as curl**,
+**Replay** (sent through the proxy again, as it came) and **Open the log here** (the local service's log with its lines
+marked). The background proxy keeps them in `proxy-requests.jsonl` in the state folder, readable only by you and never
+more than a few MB. Its routes tab shows where each route goes now, like `pdms proxy routes`. A proxy
 started in a terminal shows there too, but its requests stay in that terminal. The events screen starts (like
 `pdms events up`, the broker included) and stops the local ElasticMQ, lists every queue with its waiting messages and
 consumer, shows a queue's messages without consuming them, purges them, and sends events (with the fields of the
@@ -324,6 +327,18 @@ migrations repo, remote API for the proxy) and removes repos, like `pdms repo ad
 the current repo: when services of the old one are running it asks, like `pdms repo use`, whether to keep them, stop
 them or restart them from the new repo with the same user, database and port. The repo chip in the title bar lists the
 repos to switch to.
+
+**From the page to the code.** A service that failed to load shows its traceback under its row (Home offers
+**See the error**); a line of a file of a registered repo opens VS Code at that line. **Debug** (the bug icon) stops
+the instance, writes its `.vscode/launch.json` configuration like `pdms debug` (same user, database and port, without
+`--reload`) and opens VS Code on the repo: F5 starts it under the debugger. VS Code's `code` command has to be
+installed (in VS Code: Shell Command: Install 'code' command in PATH). A service that started but does not answer for
+a moment shows as **busy**, not starting: the PDMS services call the database synchronously inside `async`
+endpoints, so a slow request keeps everything else to that service waiting until it ends. **Recent**, on Home, lists
+what failed, stopped, loaded again or finished while pdms ui runs, and **Desktop notifications** (Settings →
+Defaults, on by default) tell you when a service fails to load or stops by itself, also with pdms ui only in the tray.
+**Ctrl K** (⌘K on macOS), or the search box in the title bar, finds and runs any action (restart or debug a
+service, open its logs, start a stack, go to a screen...); `/` jumps to the filter of the screen you are on.
 
 **Doctor** (in the sidebar) runs the checks of `pdms doctor`, grouped by section, with a filter, "Problems only" and,
 if asked, the database connections. Where pdms ui can fix something the hint is a button (edit that database, set the
@@ -580,6 +595,7 @@ install = true
 smart_install = true                      # skip the install when nothing changed
 update_check = true                       # tell when a new pdms version is out
 ui_at_login = false                       # open pdms ui in the tray at login (pdms ui --at-login; an import keeps yours)
+notify = true                             # pdms ui tells the desktop when a service fails to load or stops by itself
 banner = true                             # big PDMS banner when the menu opens (or PDMS_NO_BANNER=1)
 events = "auto"                           # auto | local | aws: where services publish SQS events
 events_port = 9324                        # local ElasticMQ (pdms events up)

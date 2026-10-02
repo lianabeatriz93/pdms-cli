@@ -13,6 +13,7 @@
 <header class="titlebar">
   <span class="brand" translate="no"><img src="/static/icon.svg" alt="" width="20" height="20"> pdms</span>
   <span class="live" id="live" title="Connecting…"></span>
+  <button class="search" id="palette-open" type="button" aria-haspopup="dialog" aria-label="Search or run a command"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><span class="lbl">Search or run…</span><kbd id="palette-key">Ctrl K</kbd></button>
   <button class="chip update-chip" id="update-chip" type="button" hidden></button>
   <div class="ctx" id="ctx"></div>
   <div class="menu" id="repo-menu" role="menu" hidden></div>
@@ -31,6 +32,8 @@
   <symbol id="i-forget" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
   <symbol id="i-debug" viewBox="0 0 24 24"><rect x="7" y="8" width="10" height="12" rx="5"/><path d="M12 12v8M9.5 5.5L10.5 8M14.5 5.5L13.5 8M3.5 13H7M17 13h3.5M5 19l2.4-1.4M19 19l-2.4-1.4M5 7.5l2.4 1.4M19 7.5l-2.4 1.4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7.5 5l11 7-11 7z"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
 </svg>
 <nav class="side" aria-label="Views">
@@ -414,6 +417,12 @@
   </div>
 </section>
 </main>
+
+<dialog id="palette" class="palette" aria-label="Search or run">
+  <div class="palette-in"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input id="palette-input" type="text" placeholder="Start, restart, open logs, go to…" autocomplete="off" spellcheck="false" role="combobox" aria-controls="palette-list" aria-expanded="true" aria-label="Command"><kbd>Esc</kbd></div>
+  <ul id="palette-list" role="listbox" aria-label="Commands"></ul>
+  <div class="palette-foot"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> run</span><span><kbd>/</kbd> filter the current view</span></div>
+</dialog>
 
 <dialog id="restart">
   <form method="dialog" id="restart-form">
