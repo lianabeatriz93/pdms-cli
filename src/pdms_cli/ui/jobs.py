@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import __version__, actions, events, frontend, i18n, instances, proxy, repos, routes, runner, transfer, update
-from .. import userimport
+from .. import migrations, userimport
 from ..config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from ..i18n import _
 from . import updates as ui_updates
@@ -801,6 +801,20 @@ def save_repo(name: str, body: dict) -> str:
 
 def remove_repo(name: str) -> str:
     return actions.remove_repo(Config.load(), name)
+
+
+def migration_status(body: dict) -> dict:
+    """The Flyway migrations of the current repo against a database: applied, pending... (read-only)."""
+    cfg = Config.load()
+    name = actions.require(cfg.dbs, _("database"), _text(body, "db"))
+    repo = actions.current_migrations_repo(cfg)
+    try:
+        return {"db": name, **migrations.status(repo, cfg.dbs[name], cfg.defaults.db_timeout)}
+    except (OSError, ValueError) as exc:
+        raise actions.ActionError(_("Could not read {path}: {error}", path=repo, error=exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - the driver's errors (no VPN, wrong password...)
+        first = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
+        raise actions.ActionError(_("Could not query {name}: {error}", name=name, error=first)) from exc
 
 
 def _text(body: dict, key: str, default: str = "") -> str:

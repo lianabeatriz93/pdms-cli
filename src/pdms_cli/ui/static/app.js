@@ -1718,6 +1718,7 @@ function dbRow(db) {
   if (db.protected) name.append(el("span", { class: "tag protected" }, t("protected")));
   const actionsCell = el("td", { class: "row-actions" },
     button(t("Test"), () => testDb(db.name), test && test.busy ? { disabled: "" } : {}),
+    button(t("Migrations"), () => openFlyway(db.name)),
     button(t("Edit"), () => openDb(db)),
     button(t("Delete"), () => removeSetting("dbs", db.name, db.stacks), { class: "btn small bad" }),
   );
@@ -3083,6 +3084,71 @@ function submitSwitch(event) {
   useRepo(switching.name, $("switch-form").querySelector('input[name="running"]:checked').value);
 }
 
+// ---------------------------------------------------------------------------- migrations (Flyway), read-only
+
+const flywayView = { db: "", data: null };
+const FLYWAY_STATES = {
+  applied: N_("applied"), pending: N_("pending"), failed: N_("failed"), outdated: N_("changed: runs again"),
+  missing: N_("not in this checkout"),
+};
+const FLYWAY_TODO = new Set(["pending", "failed", "outdated"]);
+
+async function openFlyway(db) {
+  flywayView.db = db;
+  flywayView.data = null;
+  $("flyway-title").textContent = t("Migrations of {name}", { name: db });
+  $("flyway-repo").textContent = t("Reading the Flyway history…");
+  $("flyway-summary").replaceChildren();
+  $("flyway-rows").replaceChildren();
+  $("flyway-never").hidden = $("flyway-error").hidden = true;
+  if (!$("flyway-dialog").open) $("flyway-dialog").showModal();
+  $("flyway-refresh").disabled = true;
+  try {
+    const { status, data } = await post("/api/migrations/status", { db });
+    if (flywayView.db !== db) return;
+    if (status !== 200) {
+      $("flyway-repo").textContent = "";
+      $("flyway-error").textContent = data.error || t("pdms ui answered {status}", { status });
+      $("flyway-error").hidden = false;
+      return;
+    }
+    flywayView.data = data;
+    $("flyway-pending").checked = data.counts.pending + data.counts.failed + data.counts.outdated > 0;
+    paintFlyway();
+  } catch {
+    $("flyway-error").textContent = t("pdms ui is not reachable: is it still running?");
+    $("flyway-error").hidden = false;
+  } finally {
+    $("flyway-refresh").disabled = false;
+  }
+}
+
+function paintFlyway() {
+  const data = flywayView.data;
+  if (!data) return;
+  $("flyway-repo").textContent = data.branch ? `${data.repo} · ${data.branch}` : data.repo;
+  const pills = [];
+  for (const [state, label] of [["pending", t("{n} pending", { n: data.counts.pending })], ["outdated", t("{n} changed", { n: data.counts.outdated })],
+    ["failed", t("{n} failed", { n: data.counts.failed })], ["applied", t("{n} applied", { n: data.counts.applied })],
+    ["missing", t("{n} not in this checkout", { n: data.counts.missing })]]) {
+    if (data.counts[state] || state === "pending") pills.push(el("span", { class: `st ${state}` }, label));
+  }
+  $("flyway-summary").replaceChildren(...pills);
+  $("flyway-never").hidden = data.flyway;
+  $("flyway-never").textContent = data.flyway ? "" : t("Flyway has not run on this database yet (there is no {table}): every migration is pending.", { table: data.table });
+  const text = $("flyway-filter").value.trim().toLowerCase();
+  const onlyTodo = $("flyway-pending").checked;
+  const shown = data.migrations.filter((m) => (!onlyTodo || FLYWAY_TODO.has(m.state)) && matches(text, [m.version, m.description, m.script]));
+  $("flyway-rows").replaceChildren(...shown.map((m) => el("tr", {},
+    el("td", {}, el("span", { class: `st ${m.state}` }, t(FLYWAY_STATES[m.state]))),
+    el("td", { class: "mono" }, m.version || t("repeatable")),
+    el("td", { title: m.script }, m.description),
+    el("td", { class: "mono" }, m.installed_on ? new Date(m.installed_on).toLocaleString() : ""))));
+  $("flyway-count").textContent = t("{shown} of {total}", { shown: shown.length, total: data.migrations.length });
+  $("flyway-empty").hidden = shown.length > 0;
+  $("flyway-empty").textContent = onlyTodo && !text ? t("Nothing to run: the database is up to date with this checkout.") : t("No migration matches the filter.");
+}
+
 // ---------------------------------------------------------------------------- doctor
 
 const doctorView = { latest: null, at: null };
@@ -3355,6 +3421,10 @@ $("repo-form").addEventListener("input", (event) => event.target.removeAttribute
 $("switch-form").addEventListener("submit", submitSwitch);
 $("switch-cancel").addEventListener("click", () => $("switch-dialog").close());
 $("doctor-run").addEventListener("click", runDoctor);
+$("flyway-close").addEventListener("click", () => $("flyway-dialog").close());
+$("flyway-refresh").addEventListener("click", () => openFlyway(flywayView.db));
+$("flyway-filter").addEventListener("input", paintFlyway);
+$("flyway-pending").addEventListener("change", paintFlyway);
 $("doctor-copy").addEventListener("click", doctorReport);
 $("doctor-filter").addEventListener("input", paintDoctor);
 $("doctor-problems").addEventListener("change", paintDoctor);

@@ -484,6 +484,8 @@ def make_handler(
                 if control.pick_folder is None:
                     return 404, {"error": "only in the window"}
                 return 200, {"path": control.pick_folder(str(body.get("start") or ""))}
+            if path == "/api/migrations/status":
+                return 200, ui_jobs.migration_status(body)
             if path == "/api/repos/check":
                 return 200, ui_jobs.look_at_repo(body)
             if path == "/api/repos/add":

@@ -181,3 +181,29 @@ def test_doctor_problems_say_how_pdms_ui_fixes_them(tmp_path, monkeypatch) -> No
     checks = {c.name: c for c in diagnostics.check_config(Config())}
     assert checks["Users"].fix == "add_user" and checks["Databases"].fix == "add_db"
     assert diagnostics.check_repo(Config())[0].fix == "add_repo"
+
+
+def test_migration_status_of_a_database(ui, two_repos, monkeypatch, tmp_path) -> None:
+    port, _jobs, _picked = ui
+    cfg, one, _two = two_repos
+    from pdms_cli import migrations
+    from pdms_cli.config import Database
+
+    cfg.dbs = {"local": Database("localhost")}
+    status, data = post(port, "/api/migrations/status", {"db": "local"})
+    assert status == 400 and "Settings → Repos" in data["error"]  # no migrations repo for 'one'
+    flyway = tmp_path / "pdms-db-migrations"
+    (flyway / "migrations").mkdir(parents=True)
+    (flyway / "flyway.toml").write_text('[flyway]\nlocations = ["filesystem:migrations"]\n', encoding="utf-8")
+    cfg.repos["one"].migrations = str(flyway)
+    monkeypatch.setattr(migrations, "history", lambda db, settings, timeout: None)
+    status, data = post(port, "/api/migrations/status", {"db": "local"})
+    assert status == 200 and data["db"] == "local" and data["flyway"] is False and data["migrations"] == []
+
+    def unreachable(db, settings, timeout):
+        raise RuntimeError("connection timeout expired\nmore details")
+
+    monkeypatch.setattr(migrations, "history", unreachable)
+    status, data = post(port, "/api/migrations/status", {"db": "local"})
+    assert status == 400 and data["error"] == "Could not query local: connection timeout expired"
+    assert post(port, "/api/migrations/status", {"db": "nope"})[0] == 400

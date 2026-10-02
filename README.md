@@ -309,6 +309,9 @@ imported from the `pdms_user` table of a database, like `pdms user import`. **Ex
 `pdms config export` and `pdms config import` do: choose the sections, the passwords only if asked, and on import see
 what is new or changed and which of your entries to overwrite (the previous file is kept as a backup).
 Deleting a database or a user that a stack uses makes that stack ask for one when it starts.
+Each database has **Migrations**: the Flyway migrations of the current repo's migrations checkout against it
+(applied, pending, failed, a repeatable that changed and runs again, or applied but not in this checkout), read from
+its `flyway_schema_history` and the migration files, without Docker; only to look, `pdms migrate` applies them.
 Its first tab, **Repos**, adds (checking the folder as you type it; **Browse…** in the window), edits (name,
 migrations repo, remote API for the proxy) and removes repos, like `pdms repo add/edit/remove`, and **Use** makes one
 the current repo: when services of the old one are running it asks, like `pdms repo use`, whether to keep them, stop
