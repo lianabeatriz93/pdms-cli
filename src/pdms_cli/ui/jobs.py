@@ -560,6 +560,31 @@ def events_queues(cfg: Config) -> dict:
             "broker": event_map.broker_queue, "broker_service": bool(actions.broker_service(root, event_map))}
 
 
+def events_ready(cfg: Config) -> dict:
+    """What starting the local events needs (Docker running, its port free) and a real route of the repo, for the
+    Events screen while they are off."""
+    docker_ok, docker_version = events.docker_available()
+    port = cfg.defaults.events_port
+    example = None
+    try:
+        _root, event_map = actions.load_events(cfg)
+    except actions.ActionError:
+        event_map = None
+    if event_map:
+        for event_type, queue in sorted(event_map.routes.items()):
+            consumer = event_map.consumers.get(queue)
+            if consumer and queue != event_map.broker_queue:
+                example = {"type": event_type, "queue": queue, "consumer": consumer.service.rsplit("/", 1)[-1],
+                           "broker": event_map.broker_queue}
+                break
+    return {
+        "docker": {"ok": docker_ok, "version": docker_version},
+        "port": {"port": port, "free": events.is_up(port) or actions.port_available("127.0.0.1", port)},
+        "example": example,
+        "queues": len(event_map.queues) if event_map else 0,
+    }
+
+
 def events_map(cfg: Config) -> dict:
     """Every event type, the queue the broker sends it to and its consumer, like ``pdms events map``."""
     _root, event_map = actions.load_events(cfg)

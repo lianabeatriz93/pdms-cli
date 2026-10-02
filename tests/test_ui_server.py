@@ -1046,3 +1046,26 @@ def test_a_kept_proxy_request_is_shown_without_secrets_and_sent_again(ui, machin
     monkeypatch.setattr(actions.proxy, "running_proxy", lambda: None)
     status, data = post(port, "/api/proxy/replay", {"id": ident})
     assert status == 400 and "not running" in data["error"]
+
+
+def test_events_ready_says_what_starting_them_needs_and_shows_a_real_route(ui, machine, monkeypatch) -> None:
+    from pdms_cli import events
+
+    port, _hub, _states, _jobs = ui
+    event_map = events.EventMap(
+        queues={"broker.fifo": events.Queue("broker.fifo"), "credential.fifo": events.Queue("credential.fifo")},
+        consumers={"broker.fifo": events.Consumer("broker/broker-sqs-event", "h"),
+                   "credential.fifo": events.Consumer("lead/lead-epic-ride-notify-ev", "h")},
+        routes={"LEAD_SP_UPDATED": "credential.fifo"}, broker_queue="broker.fifo",
+    )
+    monkeypatch.setattr(ui_jobs.actions, "load_events", lambda cfg: (Path("/r"), event_map))
+    monkeypatch.setattr(ui_jobs.events, "docker_available", lambda: (True, "29.8.1"))
+    monkeypatch.setattr(ui_jobs.events, "is_up", lambda port: False)
+    monkeypatch.setattr(ui_jobs.actions, "port_available", lambda host, port: False)
+    response, raw, _conn = request(port, "/api/events/ready", cookie(port))
+    assert response.status == 200 and json.loads(raw) == {
+        "docker": {"ok": True, "version": "29.8.1"}, "port": {"port": 9324, "free": False},
+        "example": {"type": "LEAD_SP_UPDATED", "queue": "credential.fifo", "consumer": "lead-epic-ride-notify-ev",
+                    "broker": "broker.fifo"},
+        "queues": 2,
+    }

@@ -448,6 +448,9 @@ td.wrap-detail .st { white-space: nowrap; }
 .events-off h2 { margin: 0 0 .3rem; font-size: 1rem; }
 .events-off p { margin: 0 0 .8rem; max-width: 62ch; font-size: .86rem; }
 .events-off .note { margin: .7rem 0 0; font-size: .78rem; }
+.checks-mini { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .7rem; }
+.checks-mini:empty { display: none; }
+.flow code { overflow-wrap: anywhere; }
 .flow { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; font-size: .8rem; counter-reset: hop; }
 .flow li { counter-increment: hop; display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; padding: .45rem .6rem; border: 1px dashed var(--line); border-radius: 7px; background: var(--bg); min-width: 0; }
 .flow li::before { content: counter(hop); font: 600 .7rem/1 var(--mono); color: var(--muted); }
@@ -569,3 +572,15 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 .palette-foot { display: flex; flex-wrap: wrap; gap: .4rem 1rem; padding: .45rem .85rem; border-top: 1px solid var(--line); font-size: .74rem; color: var(--muted); }
 @media (max-width: 1080px) { .search .lbl { display: none; } }
 @media (max-width: 640px) { .search kbd { display: none; } }
+
+/* Settings → Defaults → Look: a card per theme, with a small picture of it */
+.theme-cards { display: flex; flex-wrap: wrap; gap: .5rem; }
+.theme-cards label { display: grid; gap: .35rem; justify-items: center; align-content: start; text-align: center; padding: .5rem; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: .8rem; width: 128px; position: relative; }
+.theme-cards input { position: absolute; opacity: 0; pointer-events: none; }
+.theme-cards label:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.theme-cards label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.swatch { width: 80px; height: 48px; border-radius: 5px; border: 1px solid var(--line); display: grid; grid-template-columns: 22px 1fr; overflow: hidden; }
+.swatch.light { background: #eef2f7; } .swatch.light i { background: #e3e9f1; }
+.swatch.dark { background: #121922; } .swatch.dark i { background: #0e141c; }
+.swatch.system { background: linear-gradient(135deg, #eef2f7 50%, #121922 50%); }
+.swatch.system i { background: transparent; }
