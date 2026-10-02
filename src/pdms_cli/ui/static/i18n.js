@@ -489,7 +489,6 @@ const CATALOG = {
     "yarn dev, pointed to the proxy": "yarn dev, apuntando al proxy",
     "{seconds} s": "{seconds} s",
     "{when} · commit {commit}": "{when} · commit {commit}",
-    "✓ Nothing needs attention.": "✓ Nada requiere atención.",
     "Automatic checks are off.": "Las comprobaciones automáticas están desactivadas.",
     "Check now": "Comprobar ahora",
     "Close": "Cerrar",
