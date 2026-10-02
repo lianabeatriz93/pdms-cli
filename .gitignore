@@ -3,3 +3,4 @@ __pycache__/
 *.egg-info/
 dist/
 junit.xml
+pdms-cli.code-workspace
