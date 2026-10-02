@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from pdms_cli import instances, proxy, repos, routes
+from pdms_cli import captures, instances, proxy, repos, routes
 from pdms_cli.config import DevUser
 
 TERRAFORM = {
@@ -136,11 +136,11 @@ def gateway_url(repo):
     )})
     gateways = []
 
-    def make(remote_enabled=True, impersonate=None, timeout=300):
+    def make(remote_enabled=True, impersonate=None, timeout=300, **extra):
         gw = proxy.Gateway(
             routes=routes.load_routes(repo), backend=repo / "backend",
             remote=f"http://127.0.0.1:{remote.server_address[1]}/dev" if remote_enabled else None,
-            impersonate=impersonate, timeout=timeout,
+            impersonate=impersonate, timeout=timeout, **extra,
         )
         server = start(proxy.make_handler(gw), "proxy")
         gateways.append(server)
@@ -396,3 +396,58 @@ def test_background_proxy_starts_answers_and_stops(tmp_path, monkeypatch):
     assert not (root / "frontend" / ".env.local").exists()
     assert not instances.process_alive(int(running["pid"]), running["created"]) and proxy.running_proxy() is None
     assert not proxy.state_path().exists()
+
+
+def wait_for(condition, timeout: float = 5) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.01)
+
+
+def test_the_background_proxy_keeps_each_request_for_its_detail(gateway_url, tmp_path, monkeypatch):
+    logged = []
+    recorder = captures.Recorder(tmp_path / "requests.jsonl")
+    port = gateway_url(recorder=recorder, log=lambda *line: logged.append(line))
+    call(port, "POST", "/api/v1/leads/tp?x=1", headers={"Authorization": "Bearer s3cret", "Content-Type": "application/json"},
+         body='{"name": "Ana"}')
+    call(port, "GET", "/api/v1/nowhere")
+    wait_for(lambda: len(logged) == 2)  # logged right after answering
+    (method, path, status, target, _seconds, ident), other = logged
+    assert (method, path, status, target) == ("POST", "/api/v1/leads/tp", 200, "remote") and len(ident) == 8
+    assert other[1] == "/api/v1/nowhere" and other[5] != ident
+    assert proxy.format_request(*logged[0]).endswith(f"ms #{ident}")
+
+    kept = captures.find(ident, recorder.file)
+    assert kept["path"] == "/api/v1/leads/tp?x=1" and kept["request"]["body"]["text"] == '{"name": "Ana"}'
+    assert json.loads(kept["response"]["body"]["text"])["server"] == "remote"
+    if os.name != "nt":
+        assert recorder.file.stat().st_mode & 0o777 == 0o600
+    shown = captures.public(kept)
+    assert ["Authorization", "Bearer (hidden)"] in shown["request"]["headers"]
+    assert "s3cret" not in json.dumps(shown["request"]["headers"])  # (this echo server repeats it in its body)
+    command = captures.curl(kept, 9999)
+    assert command.startswith("curl -i -X POST 'http://localhost:9999/api/v1/leads/tp?x=1'")
+    assert "s3cret" not in command and "--data-raw '{\"name\": \"Ana\"}'" in command
+
+    status, _took = captures.replay(kept, port)  # through the proxy again, with the real token
+    wait_for(lambda: len(logged) == 3)
+    assert status == 200
+    again = captures.find(logged[2][5], recorder.file)
+    assert ["Authorization", "Bearer s3cret"] in again["request"]["headers"]
+
+
+def test_captures_rotate_and_big_or_binary_bodies_are_not_replayed(tmp_path, monkeypatch):
+    monkeypatch.setattr(captures, "FILE_LIMIT", 200)
+    recorder = captures.Recorder(tmp_path / "requests.jsonl")
+    ids = [captures.new_id() for _ in range(3)]
+    for ident in ids:
+        recorder.record(captures.entry(ident, "GET", "/x", 200, "remote", 0.01, [], None, [], b"{}"))
+    assert (tmp_path / "requests.jsonl.1").exists()
+    assert captures.find(ids[0], recorder.file) is None or captures.find(ids[-1], recorder.file)
+    assert captures.find(ids[-1], recorder.file)["id"] == ids[-1]
+    assert captures.body(b"\xff\xfe") == {"size": 2, "binary": True}
+    big = captures.body(b"a" * (captures.BODY_LIMIT + 1))
+    assert big["truncated"] and len(big["text"]) == captures.BODY_LIMIT
+    capture = captures.entry("x", "POST", "/x", 200, "remote", 0, [], b"a" * (captures.BODY_LIMIT + 1), [], None)
+    assert "64 KB" in captures.replayable(capture)

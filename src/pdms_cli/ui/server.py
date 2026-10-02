@@ -330,7 +330,7 @@ def make_handler(
                     self.reply_json(200, ui_jobs.frontend_options(Config.load()))
                 except actions.ActionError as exc:
                     self.reply_json(400, {"error": plain(exc.message)})
-            elif url.path in ("/api/proxy/options", "/api/proxy/routes"):
+            elif url.path in ("/api/proxy/options", "/api/proxy/routes", "/api/proxy/request"):
                 self.proxy_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
             elif url.path in ("/api/events/queues", "/api/events/map", "/api/events/peek", "/api/events/template"):
                 self.events_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
@@ -408,6 +408,8 @@ def make_handler(
                 cfg = Config.load()
                 if which == "options":
                     data = ui_jobs.proxy_options(cfg)
+                elif which == "request":
+                    data = actions.proxy_request(query.get("id", [""])[0])
                 else:
                     data = ui_jobs.proxy_routes(cfg, env_name(env) if (env := query.get("env", [""])[0]) else None)
             except actions.ActionError as exc:
@@ -471,6 +473,10 @@ def make_handler(
                     return self.act_on_events(path.rsplit("/", 1)[-1], body)
                 except OSError as exc:  # ElasticMQ went away in the middle
                     return 502, {"error": f"ElasticMQ: {exc}"}
+            if path == "/api/proxy/replay":
+                if not isinstance(body.get("id"), str):
+                    raise actions.ActionError("id must be a string")
+                return 200, actions.replay_request(body["id"])
             if path == "/api/code/open":
                 file, line = body.get("path"), body.get("line", 0)
                 if not isinstance(file, str) or not isinstance(line, int) or isinstance(line, bool):

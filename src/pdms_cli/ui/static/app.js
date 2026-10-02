@@ -929,9 +929,10 @@ async function saveEditor(event) {
 
 const MAX_REQUESTS = 2000;
 // One line of the background proxy's log (proxy.format_request): 15:42:07 GET    /api/v1/lead/tp 200 → lead-tp-list@8081  14ms
-const REQUEST = /^(\d\d:\d\d:\d\d) (\S+) +(\S+) (\d{3}) → (\S+) +(\d+)ms$/;
+// A background proxy that keeps its requests ends the line with the id of the capture: … 14ms #1a2b3c4d
+const REQUEST = /^(\d\d:\d\d:\d\d) (\S+) +(\S+) (\d{3}) → (\S+) +(\d+)ms(?: #([0-9a-f]{8}))?$/;
 const NOT_LOCAL = new Set(["remote", "missing", "other-repo", "docs"]);
-const proxyView = { tab: "requests", stream: null, requests: [], routes: null, routesFor: "" };
+const proxyView = { tab: "requests", stream: null, requests: [], routes: null, routesFor: "", picked: "" }; // picked: capture id
 
 function proxyJob() {
   return state.jobs.proxy || (state.proxy && state.jobs[state.proxy.key]) || null;
@@ -1007,8 +1008,8 @@ function syncRequests() {
 function parseRequest(line) {
   const match = REQUEST.exec(line);
   if (!match) return null;
-  const [, time, method, path, status, target, ms] = match;
-  return { time, method, path, status: Number(status), target, ms: Number(ms) };
+  const [, time, method, path, status, target, ms, id] = match;
+  return { time, method, path, status: Number(status), target, ms: Number(ms), id: id || "" };
 }
 
 function requestShown(req) {
@@ -1021,20 +1022,33 @@ function codeClass(status) {
   return status < 400 ? "code-ok" : status < 500 ? "code-warn" : "code-bad";
 }
 
-function requestRow(req) {
-  const local = !NOT_LOCAL.has(req.target);
-  const open = () => showLogs(req.target, "current", {
+// A path that may wrap after each "/" (and only there) when its column is narrow.
+function slashBreaks(path) {
+  return path.split(/(?<=\/)/).flatMap((part, i) => (i ? [document.createElement("wbr"), part] : [part]));
+}
+
+// The log of the service that answered, at the line of this request.
+function requestLog(req) {
+  showLogs(req.target, "current", {
     label: `${req.method} ${req.path}`,
     match: (line) => line.includes(`"${req.method} ${req.path} `) || line.includes(`"${req.method} ${req.path}?`),
   });
-  const attrs = local ? {
-    class: "jump", tabindex: "0", title: t("Open the log of {target}", { target: req.target }),
+}
+
+function requestRow(req) {
+  const local = !NOT_LOCAL.has(req.target);
+  // Kept by the proxy: the row opens its detail. Older lines (no id) still jump to the service's log.
+  const open = req.id ? () => pickRequest(req) : local ? () => requestLog(req) : null;
+  const attrs = open ? {
+    class: `jump${req.id && req.id === proxyView.picked ? " picked" : ""}`, tabindex: "0",
+    title: req.id ? t("See the request") : t("Open the log of {target}", { target: req.target }),
     onclick: open, onkeydown: (event) => { if (event.key === "Enter") open(); },
   } : {};
+  if (req.id) attrs["data-id"] = req.id;
   return el("tr", attrs,
     el("td", { class: "mono muted" }, req.time),
     el("td", { class: "method" }, req.method),
-    el("td", { class: "mono" }, req.path),
+    el("td", { class: "mono req-path" }, ...slashBreaks(req.path)),
     el("td", { class: `num ${codeClass(req.status)}` }, String(req.status)),
     el("td", { class: local ? "mono" : `target-${req.target === "other-repo" ? "other" : req.target}` }, req.target),
     el("td", { class: "num muted" }, `${req.ms}ms`),
@@ -1055,6 +1069,73 @@ function addRequests(lines) {
   $("req-rows").append(...fresh.filter(requestShown).map(requestRow));
   paintRequestsNote();
   if (follow) box.scrollTop = box.scrollHeight;
+}
+
+// ---- one request: what the proxy kept of it (secret headers hidden by the server)
+
+async function pickRequest(req) {
+  proxyView.picked = req.id;
+  for (const node of $("req-rows").children) node.classList.toggle("picked", node.dataset.id === req.id);
+  $("req-detail").hidden = false;
+  $("req-d-method").textContent = req.method;
+  $("req-d-path").textContent = req.path;
+  $("req-d-body").replaceChildren(el("p", { class: "muted" }, t("Loading…")));
+  let data;
+  try {
+    const response = await fetch(`/api/proxy/request?${new URLSearchParams({ id: req.id })}`);
+    data = await response.json();
+    if (!response.ok) throw new Error(data.error || t("pdms ui answered {status}", { status: response.status }));
+  } catch (error) {
+    if (proxyView.picked === req.id) $("req-d-body").replaceChildren(el("p", { class: "error" }, error.message));
+    return;
+  }
+  if (proxyView.picked === req.id) paintRequestDetail(req, data);
+}
+
+function headerList(pairs) {
+  const list = el("dl", { class: "kv" });
+  for (const [name, value] of pairs) list.append(el("dt", {}, name), el("dd", {}, value));
+  return list;
+}
+
+// A body as text, indented when it is JSON.
+function bodyBlock(part) {
+  const sent = part.body;
+  if (sent.binary) return el("p", { class: "muted" }, t("{size} bytes of binary data", { size: sent.size }));
+  if (!sent.text) return el("p", { class: "muted" }, t("(empty)"));
+  let text = sent.text;
+  try { text = JSON.stringify(JSON.parse(text), null, 2); } catch { /* not JSON: as it came */ }
+  const block = el("pre", { class: "json" }, text);
+  return sent.truncated ? el("div", {}, block, el("p", { class: "muted" }, t("Only the first 64 KB of {size} bytes.", { size: sent.size }))) : block;
+}
+
+function paintRequestDetail(req, data) {
+  const capture = data.request;
+  const summary = el("dl", { class: "kv" },
+    el("dt", {}, t("Status")), el("dd", { class: codeClass(capture.status) }, String(capture.status)),
+    el("dt", {}, t("Went to")), el("dd", {}, capture.target),
+    el("dt", {}, t("Took")), el("dd", {}, `${capture.ms} ms`),
+    el("dt", {}, t("At")), el("dd", {}, new Date(capture.at).toLocaleTimeString()),
+  );
+  const replay = button(t("Replay"), () => replayRequest(req), data.replay ? { disabled: "", title: data.replay } : {});
+  const actions = el("div", { class: "req-actions" },
+    button(t("Copy as curl"), () => copyText(data.curl, t("Copied, without the Authorization header.")), data.curl ? {} : { disabled: "" }),
+    replay,
+  );
+  if (!NOT_LOCAL.has(capture.target)) actions.append(button(t("Open the log here"), () => requestLog(req)));
+  $("req-d-body").replaceChildren(
+    el("h3", { class: "sub" }, t("Summary")), summary,
+    el("h3", { class: "sub" }, t("Request headers")), headerList(capture.request.headers),
+    el("h3", { class: "sub" }, t("Request body")), bodyBlock(capture.request),
+    el("h3", { class: "sub" }, t("Response")), bodyBlock(capture.response),
+    actions,
+  );
+}
+
+function replayRequest(req) {
+  act("/api/proxy/replay", { id: req.id }, (data) => {
+    toast(t("Sent again: {status} in {ms} ms. It shows up at the bottom of the list.", { status: data.status, ms: data.ms }), "info");
+  });
 }
 
 function paintRequests() {
@@ -3554,7 +3635,14 @@ $("proxy-no-remote").addEventListener("change", () => { $("proxy-remote").disabl
 for (const tab of $("proxy-tabs").children) tab.addEventListener("click", () => showProxyTab(tab.dataset.tab));
 $("req-filter").addEventListener("input", paintRequests);
 $("req-errors").addEventListener("change", paintRequests);
-$("req-clear").addEventListener("click", () => { proxyView.requests = []; paintRequests(); });
+$("req-clear").addEventListener("click", () => { proxyView.requests = []; closeRequest(); paintRequests(); });
+$("req-d-close").addEventListener("click", () => closeRequest());
+
+function closeRequest() {
+  proxyView.picked = "";
+  $("req-detail").hidden = true;
+  for (const node of $("req-rows").children) node.classList.remove("picked");
+}
 $("route-filter").addEventListener("input", paintRoutes);
 $("route-local").addEventListener("change", paintRoutes);
 $("route-refresh").addEventListener("click", loadRoutes);

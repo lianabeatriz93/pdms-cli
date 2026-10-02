@@ -1019,3 +1019,30 @@ def test_debug_and_open_code_go_through_the_actions(ui, machine, monkeypatch) ->
     assert post(port, "/api/code/open", {"path": "/r/main.py", "line": "9"})[0] == 400
     assert post(port, "/api/instances/nope@1/debug")[0] == 400
     assert calls == ["svc@8081", ("/r/main.py", 9)]
+
+
+def test_a_kept_proxy_request_is_shown_without_secrets_and_sent_again(ui, machine, monkeypatch) -> None:
+    from pdms_cli import captures
+
+    port, _hub, _states, _jobs = ui
+    ident = "0a1b2c3d"
+    captures.Recorder().record(captures.entry(
+        ident, "PUT", "/api/v1/lead/sp/8812", 500, "lead-sp-update@28105", 0.041,
+        [("Authorization", "Bearer s3cret"), ("Content-Type", "application/json")], b'{"status": "IN_REVIEW"}',
+        [("Content-Type", "application/json")], b'{"detail": "Internal Server Error"}'))
+    monkeypatch.setattr(actions.proxy, "running_proxy", lambda: {"port": 28800})
+    response, raw, _conn = request(port, f"/api/proxy/request?id={ident}", cookie(port))
+    data = json.loads(raw)
+    assert response.status == 200 and data["replay"] == "" and "s3cret" not in raw.decode()
+    assert data["request"]["request"]["headers"][0] == ["Authorization", "Bearer (hidden)"]
+    assert data["curl"].startswith("curl -i -X PUT http://localhost:28800/api/v1/lead/sp/8812 ")
+    for bad in ("ffffffff", "../../x", ""):
+        assert request(port, f"/api/proxy/request?id={bad}", cookie(port))[0].status == 400
+
+    sent = []
+    monkeypatch.setattr(actions.captures, "replay", lambda capture, to: sent.append((capture["id"], to)) or (500, 0.04))
+    assert post(port, "/api/proxy/replay", {"id": ident}) == (200, {"status": 500, "ms": 40})
+    assert sent == [(ident, 28800)]
+    monkeypatch.setattr(actions.proxy, "running_proxy", lambda: None)
+    status, data = post(port, "/api/proxy/replay", {"id": ident})
+    assert status == 400 and "not running" in data["error"]
