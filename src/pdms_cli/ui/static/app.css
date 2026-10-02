@@ -2,6 +2,8 @@
   --bg: #eef2f7; --surface: #ffffff; --side: #e3e9f1; --ink: #16202e; --muted: #5a6778; --line: #d9e0e9;
   --accent: #1f5fd1; --ok: #1d8a4e; --ok-soft: #e1f4e8; --warn: #a8660b; --warn-soft: #fbefd9; --bad: #c0392b;
   --bad-soft: #fbe3e0; --code: #eef2f7; --accent-soft: #e3ecfb;
+  /* Filled buttons: white text needs a darker fill than the accent links use (WCAG AA, 4.5:1). */
+  --primary: #1f5fd1; --danger: #c0392b;
   --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   color-scheme: light;
 }
@@ -10,6 +12,7 @@
     --bg: #121922; --surface: #161d27; --side: #0c1118; --ink: #e3e9f2; --muted: #93a1b4; --line: #2a3442;
     --accent: #6f9ff5; --ok: #4cc27f; --ok-soft: #16301f; --warn: #e2a64a; --warn-soft: #33270f; --bad: #ef6b5d;
     --bad-soft: #3a1c19; --code: #1b2330; --accent-soft: #1a2840;
+    --primary: #3567cf; --danger: #c0392b;
     color-scheme: dark;
   }
 }
@@ -84,7 +87,7 @@ td.num { font-variant-numeric: tabular-nums; }
 .btn.small { font-size: .75rem; padding: .1rem .5rem; }
 .btn.tiny { font-size: .7rem; padding: 0 .4rem; margin-top: .2rem; }
 .btn.ghost { background: transparent; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
 .btn.bad { color: var(--bad); }
 .btn.bad:hover { border-color: var(--bad); }
 td.row-actions { text-align: right; }
@@ -124,7 +127,7 @@ dialog legend { font-size: .82rem; color: var(--muted); padding: 0 .3rem; }
 .toast.error { color: var(--bad); border-color: var(--bad); }
 
 .view { display: grid; gap: .8rem; align-content: start; min-width: 0; }
-.btn.bad-fill { background: var(--bad); border-color: var(--bad); }
+.btn.bad-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn.link { border-color: transparent; color: var(--accent); font-family: var(--mono); margin: 0; }
 .cards { display: grid; gap: .8rem; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }

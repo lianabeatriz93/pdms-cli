@@ -620,7 +620,7 @@ const CATALOG = {
     "1 service runs outside pdms": "1 servicio corre fuera de pdms",
     "Adopt": "Adoptar",
     "Adopt all": "Adoptar todos",
-    "Local events are off: services publish to AWS.": "Los eventos locales están apagados: los servicios publican en AWS.",
+    "Local events are off": "Eventos locales apagados",
     "Manage it again: logs, stop and restart": "Volver a gestionarlo: logs, parar y reiniciar",
     "Stop {what}?": "¿Parar {what}?",
     "They stop with their reloader and workers, like pdms stop.": "Se paran con su reloader y sus workers, como pdms stop.",
