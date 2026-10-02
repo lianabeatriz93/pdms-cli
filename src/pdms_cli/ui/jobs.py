@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .. import __version__, actions, events, frontend, i18n, instances, proxy, repos, routes, runner, transfer, update
 from .. import migrations, userimport
-from ..config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Setup, Stack, config_path
+from ..config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from ..i18n import _
 from . import state as ui_state
 from . import updates as ui_updates
@@ -783,7 +783,7 @@ def settings(cfg: Config) -> dict:
         "defaults": asdict(cfg.defaults),
         "roles": actions.known_roles(cfg),
         "sections": list(transfer.SECTIONS),
-        "choices": {"language": i18n.LANGUAGES, "logging_level": list(LOG_LEVELS), "events": list(EVENTS_MODES)},
+        "choices": {"language": i18n.LANGUAGES, "logging_level": list(LOG_LEVELS), "events": list(EVENTS_MODES), "theme": list(THEMES)},
     }
 
 

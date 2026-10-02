@@ -297,7 +297,7 @@ def test_read_db_users_reports_the_driver_error(cfg, monkeypatch) -> None:
     ({"language": "fr"}, "language"), ({"host": ""}, "host"), ({"port": 0}, "port"),
     ({"logging_level": "TRACE"}, "logging_level"), ({"events": "sqs"}, "events"), ({"events_port": "x"}, "events_port"),
     ({"db_timeout": 0}, "db_timeout"), ({"proxy_timeout": 0}, "proxy_timeout"), ({"proxy_port": 70000}, "proxy_port"),
-    ({"env": {"BAD-NAME": "1"}}, "env"),
+    ({"env": {"BAD-NAME": "1"}}, "env"), ({"theme": "blue"}, "theme"),
 ])
 def test_save_defaults_rejects_bad_values(cfg, change, field) -> None:
     before = Defaults(**vars(cfg.defaults))
@@ -314,6 +314,30 @@ def test_save_defaults_and_set_language(cfg) -> None:
     assert cfg.defaults.language == "en"
     with pytest.raises(actions.ActionError):
         actions.set_language(cfg, "fr")
+
+
+def test_the_look_of_pdms_ui_is_saved(cfg) -> None:
+    actions.save_defaults(cfg, Defaults(theme="dark"))
+    assert cfg.defaults.theme == "dark"
+
+
+def test_the_defaults_wizard_keeps_what_it_does_not_ask(monkeypatch) -> None:
+    """pdms config defaults used to build new defaults, losing the ElasticMQ port and the look of pdms ui."""
+    from pdms_cli import prompts
+
+    class Answer:
+        def __init__(self, default=None, **_kwargs):
+            self.default = default
+
+        def unsafe_ask(self):
+            return self.default if self.default is not None else False
+
+    for kind in ("text", "select", "confirm"):
+        monkeypatch.setattr(prompts.questionary, kind, lambda *args, **kwargs: Answer(**kwargs))
+    monkeypatch.setattr(prompts, "ask_language", lambda current: current)
+    current = Defaults(events_port=9400, theme="dark", port=28200)
+    asked = prompts.ask_defaults(current)
+    assert (asked.events_port, asked.theme, asked.port) == (9400, "dark", 28200)
 
 
 # --------------------------------------------------------------------------- proxy

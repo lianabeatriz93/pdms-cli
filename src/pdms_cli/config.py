@@ -17,6 +17,7 @@ import tomlkit
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 # Where services publish SQS events (see ``Defaults.events``).
 EVENTS_MODES = ("auto", "local", "aws")
+THEMES = ("system", "light", "dark")  # pdms ui: like the system, or always light or dark
 
 
 def config_path() -> Path:
@@ -100,6 +101,8 @@ class Defaults:
     proxy_timeout: int = 300
     # Port of pdms proxy (pdms proxy -p, pdms ui). Far from 8000, for the same reason.
     proxy_port: int = 28800
+    # Look of pdms ui: "system" (light or dark like the computer), "light" or "dark".
+    theme: str = "system"
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 

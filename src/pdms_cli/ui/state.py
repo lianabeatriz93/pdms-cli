@@ -149,6 +149,8 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, 
     return {
         "version": __version__,
         "language": i18n.configured(cfg.defaults.language),
+        "theme": cfg.defaults.theme,
+        "home": str(Path.home()),
         "repo": {"alias": cfg.current_repo, "root": str(root)} if root else None,
         "repos": [{"name": name, "path": str(repo.root)} for name, repo in cfg.repos.items()],
         "user": cfg.last_user,

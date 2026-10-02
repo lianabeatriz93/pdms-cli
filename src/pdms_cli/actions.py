@@ -23,7 +23,7 @@ from typing import IO
 from urllib.parse import unquote, urlsplit
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
-from .config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack, config_path
+from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Stack, config_path
 from .i18n import LANGUAGES, _
 
 
@@ -1230,6 +1230,7 @@ def save_defaults(cfg: Config, defaults: Defaults) -> None:
         db_timeout=_number("db_timeout", defaults.db_timeout, 1, 600),
         proxy_timeout=_number("proxy_timeout", defaults.proxy_timeout, 1, MAX_PROXY_TIMEOUT),
         proxy_port=_number("proxy_port", defaults.proxy_port, 1, 65535),
+        theme=_one_of("theme", defaults.theme, THEMES),
         env=dict(defaults.env),
     )
     cfg.save()
