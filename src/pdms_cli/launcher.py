@@ -6,6 +6,10 @@ import sys
 
 
 def main() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        # Redirected to a file on Windows the encoding is cp1252, which has no ✓: replace what it cannot write.
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     if sys.stdout is None or sys.stderr is None:
         # pdmsw.exe (the app menu shortcut on Windows) has no console: write to pdms logs ui instead.
         try:
