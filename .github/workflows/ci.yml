@@ -1,9 +1,19 @@
 name: CI
 
+# Each commit of a branch runs once, through its pull request; main runs on push. macOS minutes cost 10 times
+# Linux ones (Windows, twice), so pull requests run a smaller matrix and main the whole of it.
 on:
   push:
+    branches: [main]
+    paths-ignore: ["**.md"]
   pull_request:
+    paths-ignore: ["**.md"]
   workflow_dispatch:
+
+# A new commit to a pull request cancels the run of the previous one.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   tests:
@@ -11,8 +21,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.10", "3.12"]
+        # Pull requests: both Pythons on Linux, the newest on macOS and Windows. main: every OS with both.
+        include: >-
+          ${{ fromJSON(github.event_name == 'pull_request' && '[
+            {"os": "ubuntu-latest", "python": "3.10"}, {"os": "ubuntu-latest", "python": "3.12"},
+            {"os": "macos-latest", "python": "3.12"}, {"os": "windows-latest", "python": "3.12"}
+          ]' || '[
+            {"os": "ubuntu-latest", "python": "3.10"}, {"os": "ubuntu-latest", "python": "3.12"},
+            {"os": "macos-latest", "python": "3.10"}, {"os": "macos-latest", "python": "3.12"},
+            {"os": "windows-latest", "python": "3.10"}, {"os": "windows-latest", "python": "3.12"}
+          ]') }}
     runs-on: ${{ matrix.os }}
     env:
       PYTHONUTF8: "0"  # run with each platform's default encoding, like users do
@@ -55,8 +73,32 @@ jobs:
       - name: Build
         run: uv build
 
+  changes:
+    name: what changed
+    runs-on: ubuntu-latest
+    outputs:
+      installers: ${{ steps.diff.outputs.installers }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: diff
+        name: Did the installers or the packaging change?
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "installers=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '^(installer/|pyproject\.toml$|uv\.lock$|\.github/workflows/)'; then
+            echo "installers=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "installers=false" >> "$GITHUB_OUTPUT"
+          fi
+
   installers:
     name: installer (${{ matrix.os }})
+    # Only when they (or what they install) changed in a pull request; always on main.
+    needs: changes
+    if: needs.changes.outputs.installers == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -93,9 +135,6 @@ jobs:
 
   flyway:
     name: flyway (pdms migrate, real image)
-    # Once per commit: the push and pull_request runs pulling the 360 MB image at the same time hit public ECR's
-    # throttling for anonymous downloads.
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     services:
       postgres:

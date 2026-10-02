@@ -610,8 +610,11 @@ uv tool install -e . --force     # use your checkout as the `pdms` command (re-r
 With the editable install, code changes apply immediately and `pdms self-update` tells you to use `git pull`.
 If an update adds a dependency and the command fails, it says which one is missing and how to reinstall.
 
-CI (`.github/workflows/ci.yml`) runs the tests on Linux, macOS and Windows (Python 3.10 and 3.12) and installs the
-built package with `install.sh` / `install.ps1` on the three systems, on every push.
+CI (`.github/workflows/ci.yml`) runs once per commit of a pull request and on every push to `main`; a new commit to
+a pull request cancels the run of the previous one, and changes to Markdown files alone run nothing. On `main` it runs
+the tests on Linux, macOS and Windows with Python 3.10 and 3.12; pull requests run both Pythons on Linux and 3.12 on
+macOS and Windows (their minutes cost more). The installers (`install.sh` / `install.ps1` on the three systems) run on
+`main` and in pull requests that change `installer/`, `pyproject.toml`, `uv.lock` or the workflows.
 
 ### Releasing
 
