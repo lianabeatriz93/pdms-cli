@@ -527,6 +527,33 @@
   </form>
 </dialog>
 
+<dialog id="flyway-dialog">
+  <div class="dialog-body">
+    <h2 id="flyway-title"></h2>
+    <p class="muted mono" id="flyway-repo"></p>
+    <div class="summary" id="flyway-summary"></div>
+    <p class="warn" id="flyway-never" hidden></p>
+    <p class="error" id="flyway-error" hidden></p>
+    <div class="bar">
+      <input type="search" id="flyway-filter" placeholder="Filter by version or description" aria-label="Filter migrations" autocomplete="off">
+      <label class="inline"><input type="checkbox" id="flyway-pending" checked> Pending only</label>
+      <span class="muted push" id="flyway-count"></span>
+    </div>
+    <div class="tbl flyway-list">
+      <table>
+        <thead><tr><th>State</th><th>Version</th><th>Description</th><th>Applied on</th></tr></thead>
+        <tbody id="flyway-rows"></tbody>
+      </table>
+      <p class="empty" id="flyway-empty" hidden></p>
+    </div>
+    <p class="muted note">Read from the database's Flyway history and the files of the migrations repo, without running Flyway. To apply them: <code>pdms migrate</code> (local databases only) or the pipeline.</p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="flyway-refresh">Refresh</button>
+      <button class="btn primary" type="button" id="flyway-close">Close</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="db-dialog">
   <form method="dialog" id="db-form" autocomplete="off">
     <h2 id="db-title">New database</h2>

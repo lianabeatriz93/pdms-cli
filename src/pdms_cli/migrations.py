@@ -11,7 +11,11 @@ import re
 import subprocess
 import sys
 import time
+import zlib
+from dataclasses import dataclass
 from pathlib import Path
+
+import tomlkit
 
 from .config import Database
 
@@ -96,3 +100,123 @@ def docker_command(repo: Path, db: Database, command: str) -> list[str]:
         "-e", f"DB_USER={db.user}", "-e", "DB_PASSWORD",
         IMAGE, f"-configFiles={config_files}", "-environment=local", *extra, command,
     ]
+
+
+# --------------------------------------------------------------------------- status, read-only and without Docker
+
+MIGRATION = re.compile(r"^(?P<kind>[VR])(?P<version>[^_]*)__(?P<description>.+)\.sql$")
+LINE_BREAK = re.compile(r"\r\n|\r|\n")
+
+
+@dataclass
+class FlywaySettings:
+    locations: list[Path]
+    table: str = "flyway_schema_history"
+    schema: str = "public"
+
+
+def settings(repo: Path) -> FlywaySettings:
+    """The locations, history table and schema of ``flyway.toml`` (its local environment's schema)."""
+    data = tomlkit.parse((repo / "flyway.toml").read_text(encoding="utf-8")).unwrap()
+    flyway = data.get("flyway", {})
+    locations = [repo / str(item).removeprefix("filesystem:") for item in flyway.get("locations", ["migrations"])
+                 if not str(item).startswith("classpath:")]
+    schemas = data.get("environments", {}).get("local", {}).get("schemas") or flyway.get("schemas") or ["public"]
+    return FlywaySettings(locations, str(flyway.get("table", "flyway_schema_history")), str(schemas[0]))
+
+
+def version_key(version: str) -> tuple[int, ...]:
+    """Flyway compares versions part by part as numbers (``.`` and ``_`` separate them)."""
+    return tuple(int(part) for part in re.split(r"[._]", version) if part.isdigit())
+
+
+def checksum(text: str) -> int:
+    """Flyway's checksum of a migration: CRC32 of its lines without line breaks (and without a BOM), signed."""
+    lines = LINE_BREAK.split(text.removeprefix("﻿"))
+    if lines and lines[-1] == "":
+        lines.pop()  # Java's readLine gives no empty line after the last line break
+    crc = 0
+    for line in lines:
+        crc = zlib.crc32(line.encode("utf-8"), crc)
+    return crc - (1 << 32) if crc >= 1 << 31 else crc
+
+
+def files(repo: Path, flyway: FlywaySettings | None = None) -> list[dict]:
+    """The migrations of the repo: ``{kind, version, description, script, checksum}`` (script relative to its
+    location, as Flyway records it)."""
+    found = []
+    for location in (flyway or settings(repo)).locations:
+        for path in sorted(location.rglob("*.sql")) if location.is_dir() else []:
+            match = MIGRATION.match(path.name)
+            if not match:
+                continue
+            found.append({
+                "kind": "versioned" if match["kind"] == "V" else "repeatable", "version": match["version"],
+                "description": match["description"].replace("_", " "), "script": path.relative_to(location).as_posix(),
+                "checksum": checksum(path.read_text(encoding="utf-8", errors="replace")),
+            })
+    return found
+
+
+def history(db: Database, flyway: FlywaySettings, timeout: int) -> list[dict] | None:
+    """The rows of Flyway's history table, oldest first; None when Flyway never ran on this database."""
+    import psycopg
+    from psycopg import sql
+
+    with psycopg.connect(host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password,
+                         connect_timeout=timeout) as conn:
+        conn.read_only = True
+        table = sql.Identifier(flyway.schema, flyway.table)
+        if conn.execute("select to_regclass(%s)", [f'"{flyway.schema}"."{flyway.table}"']).fetchone()[0] is None:
+            return None
+        rows = conn.execute(sql.SQL(
+            "select version, description, type, script, checksum, installed_on, success from {} order by installed_rank"
+        ).format(table)).fetchall()
+    keys = ("version", "description", "type", "script", "checksum", "installed_on", "success")
+    return [dict(zip(keys, row)) for row in rows]
+
+
+def status(repo: Path, db: Database, timeout: int = 15) -> dict:
+    """What ``flyway info`` would say, read straight from the history table and the repo's files.
+
+    States: ``applied``, ``pending``, ``failed``, ``outdated`` (a repeatable changed since it ran: it runs again) and
+    ``missing`` (applied, but not in this checkout: another branch, or an old checkout)."""
+    flyway = settings(repo)
+    local = files(repo, flyway)
+    rows = history(db, flyway, timeout)
+    applied = [row for row in rows or [] if row["type"] not in ("BASELINE", "SCHEMA", "DELETE")]
+    by_version = {version_key(row["version"]): row for row in applied if row["version"]}
+    last_repeatable = {row["description"]: row for row in applied if not row["version"]}
+    items = []
+    for item in local:
+        row = (by_version.get(version_key(item["version"])) if item["kind"] == "versioned"
+               else last_repeatable.get(item["description"]))
+        if row is None:
+            state = "pending"
+        elif not row["success"]:
+            state = "failed"
+        elif item["kind"] == "repeatable" and row["checksum"] != item["checksum"]:
+            state = "outdated"
+        else:
+            state = "applied"
+        items.append({**{k: item[k] for k in ("kind", "version", "description", "script")}, "state": state,
+                      "installed_on": row["installed_on"].isoformat(timespec="seconds") if row and row["installed_on"] else ""})
+    known = {version_key(item["version"]) for item in local if item["kind"] == "versioned"}
+    items += [{"kind": "versioned", "version": row["version"], "description": row["description"],
+               "script": row["script"], "state": "missing",
+               "installed_on": row["installed_on"].isoformat(timespec="seconds") if row["installed_on"] else ""}
+              for key, row in by_version.items() if key not in known]
+    items.sort(key=lambda item: (item["kind"] != "versioned", version_key(item["version"]), item["description"]))
+    counts = {state: sum(item["state"] == state for item in items)
+              for state in ("applied", "pending", "failed", "outdated", "missing")}
+    return {"repo": str(repo), "branch": git_branch(repo), "flyway": rows is not None, "migrations": items,
+            "counts": counts, "table": f"{flyway.schema}.{flyway.table}"}
+
+
+def git_branch(repo: Path) -> str:
+    try:
+        result = subprocess.run(["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
+                                text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""

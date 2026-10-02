@@ -421,3 +421,14 @@ td .found-note { color: var(--muted); }
 .check .hint code { font-size: .76rem; }
 .check.fail { background: var(--bad-soft); }
 .check.warn { background: var(--warn-soft); }
+
+/* Migrations (Flyway) */
+#flyway-dialog { width: min(52rem, calc(100vw - 32px)); }
+#flyway-dialog .dialog-body { display: grid; gap: .6rem; }
+#flyway-dialog h2, #flyway-dialog p { margin: 0; }
+.flyway-list { max-height: 50vh; overflow: auto; }
+#flyway-rows td:nth-child(3) { white-space: normal; }
+.st.pending, .st.outdated { color: var(--warn); background: var(--warn-soft); }
+.st.failed { color: var(--bad); background: var(--bad-soft); }
+.st.missing { color: var(--muted); background: var(--code); }
+.st.applied { color: var(--ok); background: var(--ok-soft); }

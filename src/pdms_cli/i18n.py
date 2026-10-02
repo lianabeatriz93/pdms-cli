@@ -1064,4 +1064,10 @@ ES: dict[str, str] = {
         "pdms ui se abre en la bandeja al iniciar sesión.",
     "pdms was not in the app menu.":
         "pdms no estaba en el menú de aplicaciones.",
+    "Could not query {name}: {error}":
+        "No se pudo consultar {name}: {error}",
+    "Could not read {path}: {error}":
+        "No se pudo leer {path}: {error}",
+    "No migrations repo (pdms-db-migrations) for '{alias}': set it in Settings → Repos.":
+        "No hay repo de migraciones (pdms-db-migrations) para '{alias}': configúralo en Configuración → Repos.",
 }

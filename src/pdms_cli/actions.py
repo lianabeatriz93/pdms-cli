@@ -798,6 +798,21 @@ def migrations_repo(path: str) -> str:
     return str(found)
 
 
+def current_migrations_repo(cfg: Config) -> Path:
+    """The Flyway checkout of the current repo: the one saved for it, or the only (or matching) one next to it."""
+    root = repos.active_root(cfg)
+    alias = repos.alias_of(cfg, root) if root else None
+    repo = cfg.repos.get(alias) if alias else None
+    if repo and repo.migrations and migrations.is_migrations_repo(Path(repo.migrations)):
+        return Path(repo.migrations)
+    near = migrations.siblings(root) if root else []
+    found = near[0] if len(near) == 1 else migrations.best_match(root, near) if root else None
+    if found is None:
+        raise ActionError(_("No migrations repo (pdms-db-migrations) for '{alias}': set it in Settings → Repos.",
+                            alias=alias or "-"))
+    return found
+
+
 def remote_api(url: str) -> str:
     """``url`` without the trailing slash, if it can be the proxy's remote API ("" for none)."""
     url = url.strip().rstrip("/")
