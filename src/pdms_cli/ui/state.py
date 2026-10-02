@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from .. import __version__, events, frontend, i18n, instances, proxy, repos
+from .. import __version__, actions, events, frontend, i18n, instances, proxy, repos
 from ..config import Config
 from . import updates
 
@@ -42,7 +44,7 @@ def sns_state(cfg: Config, events_up: bool) -> dict:
         last = datetime.fromtimestamp(log.stat().st_mtime).astimezone().isoformat(timespec="seconds")
     except OSError:
         last = ""
-    return {"key": events.SNS_KEY, "queue": events.SNS_QUEUE, "status": "ok" if events_up else "stopped",
+    return {"key": events.SNS_KEY, "queue": events.SNS_QUEUE, "status": "ok" if events_up else "off",
             "last_publish": last}
 
 
@@ -94,6 +96,35 @@ def frontend_state(cfg: Config) -> dict | None:
     return state
 
 
+STRAYS_EVERY = 10.0  # seconds; going through every process of the machine takes a moment
+_strays: dict = {"at": 0.0, "items": []}
+_strays_lock = threading.Lock()
+
+
+def stray_state(stray: actions.Stray) -> dict:
+    proc = stray.process
+    return {
+        "key": proc.key, "pid": proc.pid, "name": proc.name, "service": proc.service, "repo": stray.repo,
+        "host": proc.host, "port": proc.port, "queue": proc.queue, "user": stray.user, "db": stray.db,
+        "started_at": proc.started_at, "log": bool(proc.log),
+    }
+
+
+def strays_state(cfg: Config) -> list[dict]:
+    """The services running outside pdms, looked for again every :data:`STRAYS_EVERY` seconds at most."""
+    with _strays_lock:
+        if time.monotonic() - _strays["at"] >= STRAYS_EVERY:
+            _strays["items"] = [stray_state(stray) for stray in actions.strays(cfg)]
+            _strays["at"] = time.monotonic()
+        return _strays["items"]
+
+
+def forget_strays() -> None:
+    """Look for them again on the next state (after adopting or stopping some)."""
+    with _strays_lock:
+        _strays["at"] = 0.0
+
+
 def profiles(cfg: Config) -> dict[str, dict]:
     """Who each user is, to tell them apart: full name and roles (no ids nor emails)."""
     return {
@@ -124,6 +155,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, 
         "profiles": profiles(cfg),
         "dbs": [{"name": name, "protected": db.protected} for name, db in cfg.dbs.items()],
         "instances": [instance_state(cfg, inst, healths[inst.key]) for inst in items],
+        "strays": strays_state(cfg),
         "stacks": stacks_state(cfg, live),
         "proxy": proxy_state(cfg),
         "events": {"port": cfg.defaults.events_port, "up": events_up},

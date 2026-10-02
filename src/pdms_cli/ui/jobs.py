@@ -18,6 +18,7 @@ from .. import __version__, actions, events, frontend, i18n, instances, proxy, r
 from .. import migrations, userimport
 from ..config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from ..i18n import _
+from . import state as ui_state
 from . import updates as ui_updates
 from .control import Control
 from .doctor import Doctor
@@ -723,6 +724,31 @@ def forget(key: str) -> None:
     if inst.alive():
         raise actions.ActionError(_("{key} is running; stop it first.", key=key))
     instances.forget(key)
+
+
+def stray_keys(body: dict) -> list[str] | None:
+    keys = body.get("keys")
+    if keys is None:
+        return None
+    if not isinstance(keys, list) or not all(isinstance(key, str) for key in keys):
+        raise actions.ActionError("keys must be a list of instance keys (or missing for every one)")
+    return keys
+
+
+def adopt_strays(body: dict) -> dict:
+    try:
+        adopted = actions.adopt_strays(Config.load(), stray_keys(body))
+    finally:
+        ui_state.forget_strays()
+    return {"adopted": [inst.key for inst in adopted]}
+
+
+def stop_strays(body: dict) -> dict:
+    try:
+        stopped = actions.stop_strays(Config.load(), stray_keys(body))
+    finally:
+        ui_state.forget_strays()
+    return {"stopped": stopped}
 
 
 def forget_stopped() -> list[str]:

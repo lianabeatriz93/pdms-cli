@@ -200,6 +200,13 @@ fails to load:
 | `⚠ error` | The last load failed; the exception is shown (e.g. `ModuleNotFoundError: ...`). Saving the fix reloads it |
 | `✗ stopped` | The process exited; its log is kept |
 
+**Services running outside pdms.** When pdms loses track of a background service that is still running (its
+registry entry was forgotten while the process kept going), `pdms ps`, `pdms doctor` and pdms ui list it as
+*outside pdms*: services and SQS consumers of a registered repo whose pdms exited, with the user and database of
+the config they run as. `pdms adopt` (or `--all`, or the **Adopt** button) registers them again with their log, so
+`pdms logs`, `stop` and `restart` work; `pdms adopt --stop` stops them instead. A foreground `pdms run` or a
+debugger session is never listed, since something still holds it.
+
 `pdms ps` also warns when the **installed code of a running instance is outdated**: `--reload` picks up changes of the
 service and of editable (`develop = true`) libraries, but not of the `common/` libraries installed as a copy
 (`develop = false`), nor a new `poetry.lock`. When any of them changed since the instance started, it says which ones

@@ -820,11 +820,15 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
             items.pop(inst.key)
     running_proxy = proxy.running_proxy()
     running_frontend = frontend.running()
+    cfg = Config.load()
+    outside = actions.strays(cfg)
     if not items and not running_proxy and not running_frontend:
-        console.print(_("No background services."))
+        if outside:
+            print_strays(outside)
+        else:
+            console.print(_("No background services."))
         return
     healths = instances.health_all(list(items.values()))
-    cfg = Config.load()
     table = Table(_("Instance"), _("Status"), "URL", "Repo", _("User"), "DB", _("Uptime"))
     table.columns[0].no_wrap = table.columns[1].no_wrap = table.columns[2].no_wrap = True
     for inst in items.values():
@@ -866,6 +870,68 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
         )
     if any(h.state == "stopped" for h in healths.values()):
         console.print(_("[dim]Stopped ones keep their log (pdms logs <instance>). Remove them with pdms ps --clean.[/]"))
+    if outside:
+        console.print()
+        print_strays(outside)
+
+
+def stray_table(found: list[actions.Stray]) -> Table:
+    table = Table(_("Instance"), "PID", "URL", "Repo", _("User"), "DB", _("Uptime"))
+    table.columns[0].no_wrap = table.columns[2].no_wrap = True
+    for stray in found:
+        proc = stray.process
+        table.add_row(proc.key, str(proc.pid), f"sqs ← {proc.queue}" if proc.queue else f"http://localhost:{proc.port}",
+                      stray.repo or "-", stray.user or "?", stray.db or "?", uptime(proc.started_at))
+    return table
+
+
+def print_strays(found: list[actions.Stray]) -> None:
+    console.print("[yellow]⚠[/] " + _("Running outside pdms ({count}): pdms started them, then lost track of them.",
+                                      count=len(found)), highlight=False)
+    console.print(stray_table(found))
+    console.print(_("[dim]pdms adopt to manage them again (logs, stop, restart), or pdms adopt --stop to stop them.[/]"))
+
+
+@app.command(help=_("Manage again the services that run outside pdms (pdms ps lists them), or stop them."))
+def adopt(
+    keys: Optional[list[str]] = typer.Argument(None, help=_("Which ones (by default it asks; every one with --all).")),
+    all_: bool = typer.Option(False, "--all", "-a", help=_("Every service running outside pdms.")),
+    stop_them: bool = typer.Option(False, "--stop", help=_("Stop them instead, with their reloader and workers.")),
+) -> None:
+    cfg = Config.load()
+    found = actions.strays(cfg)
+    if not found:
+        console.print(_("Nothing runs outside pdms."))
+        return
+    if keys:
+        chosen = keys
+    elif all_ or len(found) == 1:
+        chosen = [stray.key for stray in found]
+    else:
+        prompts.require_tty()
+        console.print(stray_table(found))
+        question = _("Which ones do you want to stop? (space to select)") if stop_them \
+            else _("Which ones do you want to adopt? (space to select)")
+        chosen = questionary.checkbox(question, choices=[questionary.Choice(s.key, s.key, checked=True) for s in found]
+                                      ).unsafe_ask()
+        if not chosen:
+            console.print(_("Nothing to do."))
+            return
+    try:
+        if stop_them:
+            with console.status(_("Stopping {key}...", key=", ".join(chosen))):
+                stopped = actions.stop_strays(cfg, chosen)
+            for key in stopped:
+                console.print("[green]✓[/] " + _("{key} stopped.", key=key))
+            return
+        adopted = actions.adopt_strays(cfg, chosen)
+    except actions.ActionError as exc:
+        fail(exc.message)
+    for inst in adopted:
+        who = f"{inst.user or '?'} · {inst.db or '?'}"
+        console.print("[green]✓[/] " + _("{key} adopted ({who}).", key=inst.key, who=who), highlight=False)
+    if any(not inst.user or not inst.db for inst in adopted):
+        console.print(_("[dim]? = no user or database of the config matches; pdms restart -c <instance> picks them.[/]"))
 
 
 @app.command(help=_("Show the console of background services (Ctrl+C to exit)."))
