@@ -109,6 +109,26 @@ td.num { font-variant-numeric: tabular-nums; }
 .btn.bad:hover { border-color: var(--bad); }
 td.row-actions { text-align: right; }
 td.row-actions .btn + .btn { margin-left: .3rem; }
+/* Row actions as icons; in Services they stay in view at the right edge of a narrow window. */
+.ibtn {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 6px; vertical-align: middle;
+  border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; text-decoration: none;
+}
+.ibtn:hover { border-color: var(--line); background: var(--bg); color: var(--ink); }
+.ibtn.bad:hover { color: var(--bad); border-color: var(--bad); }
+.ibtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+td.row-actions .ibtn + .ibtn, td.row-actions .btn + .ibtn, td.row-actions .ibtn + .btn { margin-left: 2px; }
+#rows td.row-actions { position: sticky; right: 0; background: var(--surface); box-shadow: -10px 0 10px -10px rgb(0 0 0 / .25); }
+#rows tr.group td { background: var(--bg); padding: .3rem .7rem; font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+#rows tr.group td .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
+#rows tr.outside-row td { background: color-mix(in srgb, var(--warn-soft) 45%, var(--surface)); }
+#rows tr.error-row td { background: color-mix(in srgb, var(--bad-soft) 45%, var(--surface)); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: var(--surface); }
+.seg button { font: inherit; font-size: .8rem; padding: .25rem .7rem; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.seg button span { font-family: var(--mono); font-size: .72rem; margin-left: .2rem; }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 tr.picked td { background: var(--code); }
 
 .logs { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; display: grid; min-width: 0; }

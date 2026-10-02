@@ -120,6 +120,25 @@ function paintContext() {
   $("ctx").replaceChildren(...chips);
 }
 
+function icon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "i");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+// A row action as an icon: its name shows on hover and is what screen readers say.
+function iconButton(name, label, onclick, attrs = {}) {
+  return el("button", { class: "ibtn", type: "button", title: label, "aria-label": label, onclick, ...attrs }, icon(name));
+}
+
+function iconLink(name, label, href) {
+  return el("a", { class: "ibtn", href, target: "_blank", rel: "noopener noreferrer", title: label, "aria-label": label }, icon(name));
+}
+
 function button(label, onclick, attrs = {}) {
   return el("button", { class: "btn small", type: "button", onclick, ...attrs }, label);
 }
@@ -144,7 +163,7 @@ async function stopStrays(keys) {
 
 function strayActions(cell, item) {
   cell.append(button(t("Adopt"), () => adoptStrays([item.key]), { title: t("Manage it again: logs, stop and restart") }));
-  cell.append(button(t("Stop"), () => stopStrays([item.key]), { class: "btn small bad" }));
+  cell.append(iconButton("stop", t("Stop"), () => stopStrays([item.key]), { class: "ibtn bad" }));
   return cell;
 }
 
@@ -152,20 +171,16 @@ function rowActions(item, job) {
   const cell = el("td", { class: "row-actions" });
   if (item.isStray) return strayActions(cell, item);
   const busy = job && !job.error;
-  cell.append(button(t("Logs"), () => openLogs(item.key, busy ? jobLog(job) : "current")));
+  cell.append(iconButton("logs", t("Logs"), () => openLogs(item.key, busy ? jobLog(job) : "current")));
   if (item.isFrontend && !busy) return frontendActions(cell, item);
   if (busy || item.isSns) return cell;
   const alive = item.status !== "stopped";
-  if (alive && !item.queue && !item.isProxy) {
-    cell.append(el("a", {
-      class: "btn small", href: `http://localhost:${item.port}/docs`, target: "_blank", rel: "noopener noreferrer",
-    }, t("Docs")));
-  }
-  if (!item.isProxy && !item.placeholder) cell.append(button(t("Restart"), () => openRestart(item)));
+  if (alive && !item.queue && !item.isProxy) cell.append(iconLink("open", t("Swagger (/docs)"), `http://localhost:${item.port}/docs`));
+  if (!item.isProxy && !item.placeholder) cell.append(iconButton("restart", t("Restart"), () => openRestart(item)));
   if (alive) {
-    cell.append(button(t("Stop"), () => act(`/api/instances/${encodeURIComponent(item.key)}/stop`), { class: "btn small bad" }));
+    cell.append(iconButton("stop", t("Stop"), () => act(`/api/instances/${encodeURIComponent(item.key)}/stop`), { class: "ibtn bad" }));
   } else if (!item.placeholder) {
-    cell.append(button(t("Forget"), () => act(`/api/instances/${encodeURIComponent(item.key)}/forget`)));
+    cell.append(iconButton("forget", t("Forget"), () => act(`/api/instances/${encodeURIComponent(item.key)}/forget`)));
   }
   return cell;
 }
@@ -197,7 +212,8 @@ function row(item) {
   const uptimeCell = item.isSns
     ? el("td", { class: "num muted" }, lastPublish(item))
     : el("td", running ? { class: "num", "data-started": item.started_at } : { class: "num" }, running ? uptime(item.started_at) : "");
-  return el("tr", item.key === logs.key ? { class: "picked" } : {},
+  const kind = [item.key === logs.key ? "picked" : "", item.isStray ? "outside-row" : "", item.status === "error" ? "error-row" : ""].filter(Boolean).join(" ");
+  return el("tr", kind ? { class: kind } : {},
     el("td", { class: "mono" }, item.label || item.key),
     statusCell(item, job),
     el("td", { class: "mono" }, item.url || ""),
@@ -253,15 +269,50 @@ function problem(item) {
 
 function serviceShown(item) {
   const text = $("svc-filter").value.trim().toLowerCase();
-  if ($("svc-problems").checked && !problem(item)) return false;
+  if (servicesView.show === "problems" && !problem(item)) return false;
+  if (servicesView.show === "outside" && !item.isStray) return false;
   return !text || [item.key, item.status, statusLabel(item.status), item.detail, item.url, item.repo, item.user, item.db]
     .join(" ").toLowerCase().includes(text);
+}
+
+const servicesView = { show: "all" };
+
+// The stack each instance belongs to (its first one), for the group rows of Services.
+function stackOf(key) {
+  const stack = state.stacks.find((item) => item.services.some((svc) => svc.running.includes(key)));
+  return stack ? stack.name : "";
+}
+
+// Rows under a header per stack, then the rest, then what runs outside pdms.
+function groupedRows(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const name = item.isStray ? "\u0002outside" : (!item.isProxy && !item.isSns && !item.isFrontend && stackOf(item.key)) || "\u0001other";
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(item);
+  }
+  const order = [...state.stacks.map((stack) => stack.name), "\u0001other", "\u0002outside"].filter((name) => groups.has(name));
+  const rows = [];
+  for (const name of order) {
+    const label = name === "\u0001other" ? t("Other") : name === "\u0002outside" ? t("Outside pdms") : t("Stack {name}", { name });
+    const head = el("td", { colspan: "7" }, label, el("span", { class: "muted" }, ` · ${groups.get(name).length}`));
+    const extra = el("td", { class: "row-actions" });
+    if (name === "\u0002outside" && groups.get(name).length > 1) extra.append(button(t("Adopt all"), () => adoptStrays(null)));
+    rows.push(el("tr", { class: "group" }, head, extra), ...groups.get(name).map(row));
+  }
+  return rows;
 }
 
 function paintServices() {
   const items = serviceItems();
   const shown = items.filter(serviceShown);
-  $("rows").replaceChildren(...shown.map(row));
+  $("rows").replaceChildren(...groupedRows(shown));
+  const counts = { all: items.length, problems: items.filter(problem).length, outside: items.filter((item) => item.isStray).length };
+  for (const node of document.querySelectorAll("#svc-seg button")) {
+    node.querySelector("span").textContent = String(counts[node.dataset.show]);
+    node.setAttribute("aria-pressed", String(node.dataset.show === servicesView.show));
+    node.hidden = node.dataset.show === "outside" && !counts.outside && servicesView.show !== "outside";
+  }
   $("empty").hidden = items.length > 0;
   $("svc-none").hidden = !items.length || shown.length > 0;
   $("svc-count").textContent = items.length ? t("{shown} of {total}", { shown: shown.length, total: items.length }) : "";
@@ -2413,11 +2464,9 @@ function apiLabel(url) {
 }
 
 function frontendActions(cell, item) {
-  if (item.status !== "stopped") {
-    cell.append(el("a", { class: "btn small", href: item.url, target: "_blank", rel: "noopener noreferrer" }, t("Open")));
-  }
-  if (item.mode === "build") cell.append(button(t("Rebuild"), () => rebuildFrontend()));
-  cell.append(button(t("Stop"), () => act("/api/instances/frontend/stop"), { class: "btn small bad" }));
+  if (item.status !== "stopped") cell.append(iconLink("open", t("Open the app"), item.url));
+  if (item.mode === "build") cell.append(iconButton("restart", t("Rebuild"), () => rebuildFrontend()));
+  cell.append(iconButton("stop", t("Stop"), () => act("/api/instances/frontend/stop"), { class: "ibtn bad" }));
   return cell;
 }
 
@@ -3420,7 +3469,9 @@ for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => o
 $("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info")));
 $("adopt-all").addEventListener("click", () => adoptStrays(null));
 $("svc-filter").addEventListener("input", () => state && paintServices());
-$("svc-problems").addEventListener("change", () => state && paintServices());
+for (const node of document.querySelectorAll("#svc-seg button")) {
+  node.addEventListener("click", () => { servicesView.show = node.dataset.show; if (state) paintServices(); });
+}
 $("stack-filter").addEventListener("input", () => state && paintStacks());
 $("stack-running").addEventListener("change", () => state && paintStacks());
 $("run-new").addEventListener("click", () => state && openRun());

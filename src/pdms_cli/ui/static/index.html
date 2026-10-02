@@ -24,6 +24,11 @@
   <symbol id="i-proxy" viewBox="0 0 24 24"><path d="M4 8h14l-3-3M20 16H6l3 3"/></symbol>
   <symbol id="i-events" viewBox="0 0 24 24"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M6 5h12l2 8v6H4v-6z"/></symbol>
   <symbol id="i-doctor" viewBox="0 0 24 24"><path d="M3 12h4l2-5 4 10 2-5h6"/></symbol>
+  <symbol id="i-logs" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="1.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-restart" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-forget" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
 </svg>
 <nav class="side" aria-label="Views">
@@ -92,7 +97,11 @@
   </div>
   <div class="bar filter">
     <input type="search" id="svc-filter" placeholder="Filter by instance, status, repo, user or DB" aria-label="Filter services" autocomplete="off">
-    <label class="inline"><input type="checkbox" id="svc-problems"> Problems only</label>
+    <div class="seg" id="svc-seg" role="group" aria-label="Show">
+      <button type="button" data-show="all" aria-pressed="true">All <span></span></button>
+      <button type="button" data-show="problems" aria-pressed="false">Problems <span></span></button>
+      <button type="button" data-show="outside" aria-pressed="false">Outside pdms <span></span></button>
+    </div>
     <span class="muted" id="svc-count"></span>
   </div>
   <div class="tbl">

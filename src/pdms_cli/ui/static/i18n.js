@@ -15,7 +15,7 @@ const statics = []; // [node, English, how]: how is "text", "html" or an attribu
 // Texts that stay as they are in every language (the test accepts them without a translation).
 const KEEP = new Set([
   ".env.local → proxy", "Broker", "DB", "DEV_FIRST_NAME", "DEV_LAST_NAME", "DEV_ROLES", "DEV_USERNAME",
-  "DEV_USERNAME (email)", "DEV_USER_ID", "DEV_USER_ID (uuid)", "Docs", "Endpoint", "Frontend", "Host",
+  "DEV_USERNAME (email)", "DEV_USER_ID", "DEV_USER_ID (uuid)", "Endpoint", "Frontend", "Host",
   "LOGGING_LEVEL", "Log", "Logs", "Proxy", "Repo", "SNS", "Stacks", "Topic", "URL", "broker", "broker {name}", "db",
   "error", "https://….execute-api.us-east-1.amazonaws.com/dev", "ok", "poetry lock && poetry install.", "proxy",
   "repo", "uvicorn --reload.", "{n} stack", "{n} stacks", "✕", "API", "Node", "yarn install", "dev (yarn dev)", "pdms", "Doctor", "~/Code/Alivi/pdms",
@@ -434,7 +434,6 @@ const CATALOG = {
     "No stacks yet.": "Todavía no hay stacks.",
     "Not running": "No está corriendo",
     "Only if node_modules is out of date": "Solo si node_modules está desactualizado",
-    "Open": "Abrir",
     "Open the app": "Abrir la app",
     "Open the list": "Ver la lista",
     "PDMS web app (Vite, :{port})": "App web de PDMS (Vite, :{port})",
@@ -649,6 +648,11 @@ const CATALOG = {
     "Look": "Aspecto",
     "Views": "Vistas",
     "on :{port}": "encendido en :{port}",
+    "Other": "Otros",
+    "Outside pdms": "Fuera de pdms",
+    "Problems": "Problemas",
+    "Show": "Mostrar",
+    "Swagger (/docs)": "Swagger (/docs)",
   },
 };
 
