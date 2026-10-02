@@ -15,6 +15,7 @@ import re
 import signal
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -83,13 +84,24 @@ class Instance:
         return process_alive(self.pid, self.created)
 
 
+# How far the creation time psutil reports may move for the same process. psutil adds the process's start (counted
+# from boot) to the boot time, and the boot time follows the wall clock: every NTP adjustment moves it by a second or
+# more, so a strict comparison would take a running service for a stopped one (and "Forget" would lose it). A reused
+# PID within this margin of the old process's start would need the PID counter to wrap in that time.
+CREATED_SLACK = 30.0
+
+
+def same_process(actual: float, created: float) -> bool:
+    return abs(actual - created) < CREATED_SLACK
+
+
 def process_alive(pid: int, created: float = 0.0) -> bool:
     """Whether ``pid`` is running (not a zombie) and, if ``created`` is known, is still the same process."""
     try:
         proc = psutil.Process(pid)
         if proc.status() == psutil.STATUS_ZOMBIE:
             return False
-        return not created or abs(proc.create_time() - created) < 1
+        return not created or same_process(proc.create_time(), created)
     except (psutil.NoSuchProcess, psutil.ZombieProcess):
         return False
     except psutil.AccessDenied:
@@ -148,9 +160,21 @@ def load() -> dict[str, Instance]:
 
 
 def save(instances: dict[str, Instance]) -> None:
+    """Replace the registry in one step: pdms ui reads it every couple of seconds while the CLI writes it, and a
+    half-written file would read as empty (the next save would then forget every instance)."""
     path = registry_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({k: asdict(v) for k, v in instances.items()}, indent=2), encoding="utf-8")
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps({k: asdict(v) for k, v in instances.items()}, indent=2), encoding="utf-8")
+    for attempt in range(40):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:  # Windows: someone is reading it right now
+            if attempt == 39:
+                temporary.unlink(missing_ok=True)
+                raise
+            time.sleep(0.05)
 
 
 def make_key(service: Path, port: int) -> str:
