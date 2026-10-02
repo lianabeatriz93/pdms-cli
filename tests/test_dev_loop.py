@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -13,6 +14,8 @@ import pytest
 
 from pdms_cli import actions, instances, vscode
 from pdms_cli.config import Config, Database, DevUser, Repo
+from pdms_cli.ui import recent as ui_recent
+from pdms_cli.ui import server as ui_server
 from pdms_cli.ui import state as ui_state
 
 TRACEBACK = """INFO:     Will watch for changes in these directories: ['{svc}']
@@ -133,3 +136,56 @@ def test_debugging_checks_everything_before_stopping_the_instance(repo, monkeypa
     monkeypatch.setattr(actions.events, "running", lambda port: False)
     with pytest.raises(actions.LocalEventsDown):
         actions.debug_instance(cfg, inst)
+
+
+# --------------------------------------------------------------------------- Recent and notifications
+
+
+def snapshot(*instances_, jobs=None):
+    return {"instances": [{"key": key, "status": status, "detail": detail} for key, status, detail in instances_],
+            "jobs": jobs or {}}
+
+
+def test_recent_says_what_changed_and_tells_the_desktop_only_what_happened_by_itself():
+    told = []
+    feed = ui_recent.Recent(notify=lambda title, message: told.append(message))
+    feed.observe(snapshot(("a@1", "ok", ""), ("b@2", "ok", ""), ("c@3", "error", "")))
+    assert feed.items() == [] and told == []  # the first state is only remembered
+
+    feed.observe(snapshot(("a@1", "error", "ModuleNotFoundError: x"), ("b@2", "stopped", ""), ("c@3", "ok", "")))
+    assert [(e["event"], e["key"]) for e in feed.items()] == [("recovered", "c@3"), ("exited", "b@2"), ("failed", "a@1")]
+    assert told == ["2 problems: a@1, b@2"]
+
+    feed.observe(snapshot(("a@1", "error", "x"), jobs={"stack:sp": {"action": "up", "error": ""},
+                                                        "a@1": {"action": "restart", "error": ""}}))
+    feed.observe(snapshot(("a@1", "ok", ""), jobs={"a@1": {"action": "restart", "error": "poetry install failed"}}))
+    events = [(e["event"], e["key"], e.get("action")) for e in feed.items()[:2]]
+    assert events == [("done", "stack:sp", "up"), ("job-failed", "a@1", "restart")]
+    assert told == ["2 problems: a@1, b@2"]  # asked for on the page: it shows there, no notification
+
+    feed.observe(snapshot(("d@4", "ok", "")))
+    feed.observe(snapshot(("d@4", "error", "boom")), notify=False)  # defaults.notify off
+    assert len(told) == 1 and (feed.items()[0]["event"], feed.items()[0]["key"]) == ("failed", "d@4")
+
+
+def test_one_failure_reads_on_its_own():
+    assert ui_recent.notification_text([{"event": "failed", "key": "a@1", "detail": "boom"}]) == "a@1 failed to load: boom"
+    assert ui_recent.notification_text([{"event": "exited", "key": "a@1", "detail": ""}]) == "a@1 stopped by itself."
+
+
+def test_the_hub_keeps_building_without_a_page_while_notifications_are_on():
+    built, on = [], {"value": True}
+    hub = ui_server.Hub(build=lambda: built.append(1) or {"n": len(built)}, interval=0.01, always=lambda: on["value"])
+    hub.start()
+    try:
+        deadline = time.monotonic() + 5
+        while len(built) < 3:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        on["value"] = False
+        time.sleep(0.05)
+        count = len(built)
+        time.sleep(0.1)
+        assert len(built) == count  # no page and no notifications: nothing to build for
+    finally:
+        hub.stop()

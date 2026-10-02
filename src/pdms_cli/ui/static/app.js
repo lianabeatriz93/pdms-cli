@@ -1888,6 +1888,7 @@ const DEFAULTS = [
   ["banner", N_("Show the PDMS banner"), "check", N_("When the interactive menu opens.")],
   ["update_check", N_("Tell me about new pdms versions"), "check", N_("Checked at most once a day.")],
   ["ui_at_login", N_("Open pdms ui when I log in"), "check", N_("In the tray, without its window. To have it in the app menu too: pdms ui --install.")],
+  ["notify", N_("Desktop notifications"), "check", N_("When a service fails to load or stops by itself, while pdms ui runs (also from the tray).")],
   ["env", N_("Extra environment variables"), "env", N_("Injected on every run, after the profile's own.")],
 ];
 
@@ -2954,6 +2955,19 @@ function attention() {
   return items.sort((a, b) => rank[a[0]] - rank[b[0]]);
 }
 
+// What a Recent entry says (ui/recent.py sends what happened, not a text).
+function recentText(entry) {
+  const what = entry.key.startsWith("stack:") ? t("Stack {name}", { name: entry.key.slice(6) })
+    : entry.key === HOME_JOB ? t("Start everything") : entry.key === EVENTS_JOB ? t("Local events") : entry.key;
+  if (entry.event === "failed") return t("{what} failed to load", { what });
+  if (entry.event === "exited") return t("{what} stopped by itself", { what });
+  if (entry.event === "recovered") return t("{what} loads again", { what });
+  const starts = ["start", "up", "restart"].includes(entry.action), stops = ["stop", "down"].includes(entry.action);
+  if (entry.event === "job-failed") return starts ? t("{what} could not start", { what }) : stops ? t("{what} could not stop", { what }) : t("{what} failed", { what });
+  if (entry.action === "restart") return t("{what} restarted", { what });
+  return starts ? t("{what} started", { what }) : stops ? t("{what} stopped", { what }) : t("{what}: done", { what });
+}
+
 function paintHome() {
   paintSetup();
   paintSteps();
@@ -2977,6 +2991,12 @@ function paintHome() {
 
   $("home-stacks").replaceChildren(...state.stacks.map(homeStackRow));
   $("home-stacks-empty").hidden = state.stacks.length > 0;
+  const recent = state.recent || [];
+  $("home-recent").replaceChildren(...recent.map((entry) => el("li", { class: entry.kind },
+    el("time", { datetime: entry.at }, new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })),
+    el("span", {}, el("b", {}, recentText(entry)), entry.detail ? el("small", {}, entry.detail) : ""),
+  )));
+  $("home-recent-empty").hidden = recent.length > 0;
   const items = attention();
   $("home-attn").replaceChildren(...items.map(([kind, title, detail, actions]) => el("li", {},
     el("span", { class: `sev ${kind}` }),
