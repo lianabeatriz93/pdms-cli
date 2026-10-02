@@ -195,7 +195,7 @@ def env_name(value: object) -> str:
 
 def proxy_options(body: dict) -> dict:
     """The port, env, remote, user and frontend choice of a proxy start."""
-    port, frontend = body.get("port", ui_jobs.PROXY_PORT), body.get("frontend")
+    port, frontend = body.get("port", Config.load().defaults.proxy_port), body.get("frontend")
     if not isinstance(port, int) or isinstance(port, bool) or not 0 < port < 65536:
         raise actions.ActionError("port must be a number between 1 and 65535")
     if frontend not in (None, True, False):

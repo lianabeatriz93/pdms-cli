@@ -19,6 +19,7 @@ def cfg(monkeypatch) -> Config:
     return Config(
         users={"supervisor": DevUser("u1", "s@x.com"), "agent": DevUser("u2", "a@x.com")},
         dbs={"local": Database("localhost"), "shared": Database("db.example.com", protected=True)},
+        defaults=Defaults(port=8080),  # the port logic, whatever the default port is
     )
 
 
@@ -295,13 +296,15 @@ def test_read_db_users_reports_the_driver_error(cfg, monkeypatch) -> None:
 @pytest.mark.parametrize("change, field", [
     ({"language": "fr"}, "language"), ({"host": ""}, "host"), ({"port": 0}, "port"),
     ({"logging_level": "TRACE"}, "logging_level"), ({"events": "sqs"}, "events"), ({"events_port": "x"}, "events_port"),
-    ({"db_timeout": 0}, "db_timeout"), ({"proxy_timeout": 0}, "proxy_timeout"), ({"env": {"BAD-NAME": "1"}}, "env"),
+    ({"db_timeout": 0}, "db_timeout"), ({"proxy_timeout": 0}, "proxy_timeout"), ({"proxy_port": 70000}, "proxy_port"),
+    ({"env": {"BAD-NAME": "1"}}, "env"),
 ])
 def test_save_defaults_rejects_bad_values(cfg, change, field) -> None:
+    before = Defaults(**vars(cfg.defaults))
     with pytest.raises(actions.InvalidValue) as invalid:
         actions.save_defaults(cfg, Defaults(**change))
     assert invalid.value.field == field
-    assert cfg.defaults == Defaults()
+    assert cfg.defaults == before
 
 
 def test_save_defaults_and_set_language(cfg) -> None:

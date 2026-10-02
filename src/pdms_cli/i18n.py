@@ -689,7 +689,6 @@ ES: dict[str, str] = {
     "{port} · used by the pdms proxy": "{port} · lo usa el proxy de pdms",
     "{port} · free": "{port} · libre",
     "{port} · in use": "{port} · ocupado",
-    "pdms will offer the next free port.": "pdms propondrá el siguiente puerto libre.",
     "Background services": "Servicios en segundo plano",
     "Instances": "Instancias",
     "none running": "ninguna corriendo",
@@ -1070,4 +1069,14 @@ ES: dict[str, str] = {
         "No se pudo leer {path}: {error}",
     "No migrations repo (pdms-db-migrations) for '{alias}': set it in Settings → Repos.":
         "No hay repo de migraciones (pdms-db-migrations) para '{alias}': configúralo en Configuración → Repos.",
+    "Port of pdms proxy:":
+        "Puerto de pdms proxy:",
+    "Port to listen on (default: the proxy_port setting, 28800).":
+        "Puerto en el que escuchar (por defecto: el ajuste proxy_port, 28800).",
+    "pdms takes the next free port; to start somewhere else, change it in the defaults.":
+        "pdms toma el siguiente puerto libre; para empezar en otro, cámbialo en los ajustes por defecto.",
+    "{port} · in use by another program":
+        "{port} · lo usa otro programa",
+    "{port} · used by {key}":
+        "{port} · lo usa {key}",
 }

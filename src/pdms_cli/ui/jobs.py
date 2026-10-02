@@ -22,7 +22,6 @@ from . import updates as ui_updates
 from .control import Control
 from .doctor import Doctor
 
-PROXY_PORT = 8000  # pdms proxy's --port default
 EVENTS_KEY = "events:elasticmq"  # the job of pdms events up/down (not an instance: no row of its own in Services)
 HOME_KEY = "home"  # the job of Home's Start everything / Stop everything
 REPO_KEY = "repo"  # the job of switching the current repo (stopping or moving what ran from the old one)
@@ -411,7 +410,7 @@ class Jobs:
             target, _detected = actions.proxy_remote(cfg, repo, None, False)
             plan_args = dict(env=env, remote=target, frontend=frontend.exists(repo) or None)
             try:
-                proxy_plan = actions.plan_proxy(cfg, repo, actions.proxy_routes(repo, env), port=PROXY_PORT, **plan_args)
+                proxy_plan = actions.plan_proxy(cfg, repo, actions.proxy_routes(repo, env), port=cfg.defaults.proxy_port, **plan_args)
             except actions.PortBusy as busy:
                 proxy_plan = actions.plan_proxy(cfg, repo, actions.proxy_routes(repo, env), port=busy.free, **plan_args)
         frontend_plan = None
@@ -627,7 +626,7 @@ def proxy_options(cfg: Config) -> dict:
     environments = routes.terraform_dir(root, "dev").parent
     envs = sorted(p.name for p in environments.iterdir() if p.is_dir()) if environments.is_dir() else []
     return {
-        "port": PROXY_PORT, "env": "dev" if "dev" in envs or not envs else envs[0], "envs": envs,
+        "port": cfg.defaults.proxy_port, "env": "dev" if "dev" in envs or not envs else envs[0], "envs": envs,
         "remote": repo_remote(cfg, root), "frontend": (root / "frontend").is_dir(),
     }
 

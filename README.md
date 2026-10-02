@@ -137,7 +137,7 @@ built-in copy is used only if the repo cannot be read. Aliases come from the ema
 ```bash
 cd ~/Code/Alivi/pdms/backend/lead/lead-tp-create
 pdms run                                  # asks for user, DB, port and foreground/background
-pdms run -u supervisor -d local -p 8081 -n
+pdms run -u supervisor -d local -p 28101 -n
 pdms run lead-tp-create -b                # by name (or lead/lead-tp-create) from anywhere
 pdms run -C backend/lead/lead-tp-create
 ```
@@ -169,7 +169,7 @@ install) or disable the install altogether (`install = false`). Fingerprints liv
 ```bash
 pdms services tp-                  # services of the current repo and the ports they are running on
 pdms run lead-tp-create -b
-pdms run lead-tp-details -b -p 8081
+pdms run lead-tp-details -b -p 28101
 pdms ps                            # status, URL, user, DB and uptime of each instance
 pdms logs lead-tp-create           # live console (Ctrl+C to exit); --no-follow to print and exit
 pdms logs --all                    # every running instance merged, prefixed and colored per instance
@@ -209,7 +209,7 @@ and suggests `pdms restart <instance>`, which reinstalls them automatically (sma
 
 ```bash
 pdms up tp                 # start locally what you are working on
-pdms proxy                 # http://localhost:8000 → local instances first, the remote API (dev) for the rest
+pdms proxy                 # http://localhost:28800 → local instances first, the remote API (dev) for the rest
 pdms proxy --as agent      # act as another user on local services, without restarting them
 pdms proxy -b              # in the background: pdms ps shows it, pdms logs proxy, pdms stop proxy
 pdms proxy routes -f tp    # which service handles each route and where it would go now
@@ -227,11 +227,11 @@ pdms proxy routes -f tp    # which service handles each route and where it would
 - **CORS** preflights are answered by the proxy (in AWS, API Gateway does it; the services have no CORS middleware).
 - **`--as USER`** adds the `X-Dev-*` headers that services in `DEVELOPMENT_MODE` use instead of their `DEV_*`
   variables. They are only sent to local services, never to the remote API.
-- **Frontend:** `pdms proxy` offers to write `VITE_APP_API_URL=http://localhost:8000` and
+- **Frontend:** `pdms proxy` offers to write `VITE_APP_API_URL=http://localhost:28800` and
   `VITE_APP_API_URL_VERSION=api/v1` into `frontend/.env.local` (git-ignored, other lines are kept). Restart `yarn dev`.
   When the proxy stops, the file is put back as it was (if the proxy was killed, the next `pdms proxy` does it);
   values edited by hand in the meantime are left alone.
-- **Docs:** `http://localhost:8000/docs` is a Swagger UI with a selector for every local service (live specs from
+- **Docs:** `http://localhost:28800/docs` is a Swagger UI with a selector for every local service (live specs from
   their `/openapi.json`) plus an "All local services" view; "Try it out" goes through the proxy. Each service's own
   `http://localhost:<port>/docs` keeps working.
 - Every request is logged with its status, target and time. Every response carries an `X-Pdms-Target` header.
@@ -558,13 +558,15 @@ do it later).
 ## Configuration
 
 Stored in `~/.config/pdms/config.toml` (or wherever `PDMS_CONFIG` points) with permissions `0600`, since it holds
-the database passwords. Never commit it.
+the database passwords. Never commit it. Up to 0.2.5 services started on 8080 and the proxy on 8000, ports many other
+programs use; a configuration still on 8080 moves to the new defaults by itself.
 
 ```toml
 [defaults]
 language = "en"                           # "en" or "es"
 host = "0.0.0.0"
-port = 8080
+port = 28100                              # first port tried for a service (the next free one if busy)
+proxy_port = 28800                        # pdms proxy (or pdms proxy -p)
 logging_level = "DEBUG"
 reload = true
 install = true

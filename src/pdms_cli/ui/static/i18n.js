@@ -615,6 +615,8 @@ const CATALOG = {
     "{n} failed": "{n} fallidas",
     "{n} not in this checkout": "{n} no están en este checkout",
     "{n} pending": "{n} pendientes",
+    "Proxy port": "Puerto del proxy",
+    "Where pdms proxy listens (pdms proxy, Start everything); the next free one when it is busy.": "Dónde escucha pdms proxy (pdms proxy, Levantar todo); el siguiente libre si está ocupado.",
   },
 };
 

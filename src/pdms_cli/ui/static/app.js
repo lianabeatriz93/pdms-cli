@@ -1626,6 +1626,7 @@ const DEFAULTS = [
   ["events", N_("Where services publish SQS events"), "select", N_("auto: the local broker while pdms events up runs; local: always; aws: as each service is configured.")],
   ["events_port", N_("Local ElasticMQ port"), "number", N_("Host port of the ElasticMQ that pdms events up starts.")],
   ["db_timeout", N_("Connection test timeout"), "number", N_("Seconds to wait when testing a database.")],
+  ["proxy_port", N_("Proxy port"), "number", N_("Where pdms proxy listens (pdms proxy, Start everything); the next free one when it is busy.")],
   ["proxy_timeout", N_("Proxy timeout"), "number", N_("Seconds the proxy waits for a service or the remote API before answering 502. Slow databases need more; applies when the proxy starts.")],
   ["banner", N_("Show the PDMS banner"), "check", N_("When the interactive menu opens.")],
   ["update_check", N_("Tell me about new pdms versions"), "check", N_("Checked at most once a day.")],
