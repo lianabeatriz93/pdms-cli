@@ -29,6 +29,7 @@
   <symbol id="i-restart" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></symbol>
   <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
   <symbol id="i-forget" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
 </svg>
 <nav class="side" aria-label="Views">
@@ -206,6 +207,22 @@
     </div>
   </div>
   <div class="card proxy-info" id="events-info"></div>
+  <section class="card events-off" id="events-off" aria-labelledby="events-off-title" hidden>
+    <div>
+      <h2 id="events-off-title">Services publish to AWS right now</h2>
+      <p class="muted">Start the local events to run ElasticMQ in Docker with every queue of the repo, and the broker. Services started afterwards publish there and to a local SNS, and this screen follows their messages and sends events.</p>
+      <div class="bar-actions">
+        <button class="btn primary" id="events-off-start" type="button">Start local events</button>
+        <button class="btn" id="events-off-browse" type="button">See the queues</button>
+      </div>
+      <p class="muted note">Services already running keep publishing to AWS until they restart.</p>
+    </div>
+    <ol class="flow" aria-label="Where an event goes with local events">
+      <li>A service publishes an event <span class="muted">(pdms logs sns)</span></li>
+      <li><span class="mono" id="events-off-broker">broker-sqs-queue.fifo</span> → <span class="muted">the broker</span></li>
+      <li>The queue of its type → <span class="muted">its consumer</span></li>
+    </ol>
+  </section>
 
   <div class="tabs view-tabs" id="events-tabs" role="tablist">
     <button type="button" role="tab" data-tab="queues">Queues</button>

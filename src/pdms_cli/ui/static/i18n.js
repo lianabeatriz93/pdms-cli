@@ -18,7 +18,7 @@ const KEEP = new Set([
   "DEV_USERNAME (email)", "DEV_USER_ID", "DEV_USER_ID (uuid)", "Endpoint", "Frontend", "Host",
   "LOGGING_LEVEL", "Log", "Logs", "Proxy", "Repo", "SNS", "Stacks", "Topic", "URL", "broker", "broker {name}", "db",
   "error", "https://….execute-api.us-east-1.amazonaws.com/dev", "ok", "poetry lock && poetry install.", "proxy",
-  "repo", "uvicorn --reload.", "{n} stack", "{n} stacks", "✕", "API", "Node", "yarn install", "dev (yarn dev)", "pdms", "Doctor", "~/Code/Alivi/pdms",
+  "repo", "uvicorn --reload.", "{n} stack", "{n} stacks", "✕", "API", "Node", "yarn install", "dev (yarn dev)", "pdms", "Doctor", "~/Code/Alivi/pdms", "→", "broker-sqs-queue.fifo",
 ]);
 
 const CATALOG = {
@@ -28,7 +28,6 @@ const CATALOG = {
     "'{name}' saved.": "'{name}' guardado.",
     "(ask when starting)": "(preguntar al levantar)",
     "(no log here)": "(no hay log aquí)",
-    "(repo root)": "(raíz del repo)",
     "A local ElasticMQ (Docker) with every queue of the repo, like pdms events up. The broker runs as this user and database.": "Un ElasticMQ local (Docker) con todas las colas del repo, como pdms events up. El broker corre con este usuario y esta base de datos.",
     "A stack needs at least one service.": "Un stack necesita al menos un servicio.",
     "A TOML file to share or keep, like <code>pdms config export</code>; <b>Import…</b> or <code>pdms config import</code> reads it back.": "Un fichero TOML para compartir o guardar, como <code>pdms config export</code>; <b>Importar…</b> o <code>pdms config import</code> lo vuelven a leer.",
@@ -653,6 +652,20 @@ const CATALOG = {
     "Problems": "Problemas",
     "Show": "Mostrar",
     "Swagger (/docs)": "Swagger (/docs)",
+    "(pdms logs sns)": "(pdms logs sns)",
+    "A service publishes an event": "Un servicio publica un evento",
+    "Fold": "Plegar",
+    "See the queues": "Ver las colas",
+    "See the {n} queues": "Ver las {n} colas",
+    "Services already running keep publishing to AWS until they restart.": "Los servicios que ya corren siguen publicando en AWS hasta que se reinician.",
+    "Services publish to AWS right now": "Ahora mismo los servicios publican en AWS",
+    "Show its services": "Ver sus servicios",
+    "Start the local events to run ElasticMQ in Docker with every queue of the repo, and the broker. Services started afterwards publish there and to a local SNS, and this screen follows their messages and sends events.": "Levanta los eventos locales para correr ElasticMQ en Docker con todas las colas del repo, y el broker. Los servicios que levantes después publican ahí y en un SNS local, y esta pantalla sigue sus mensajes y envía eventos.",
+    "The queue of its type →": "La cola de su tipo →",
+    "Where an event goes with local events": "Por dónde pasa un evento con los eventos locales",
+    "its consumer": "su consumidor",
+    "the broker": "el broker",
+    "{up}/{total} · {n} failing": "{up}/{total} · {n} fallando",
   },
 };
 
