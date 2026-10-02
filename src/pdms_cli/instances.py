@@ -490,6 +490,21 @@ def serving(log: str) -> bool:
     return last_marker(log, (SERVING_MARKER, *RESTART_MARKERS)) == SERVING_MARKER
 
 
+FRAME_LINE = re.compile(r'^\s*File "(?P<path>[^"]+)", line (?P<line>\d+)')
+
+
+def last_traceback(log: str, lines: int = 300, limit: int = 120) -> list[str]:
+    """The latest traceback of the log, from its first line to its exception (at most ``limit`` lines)."""
+    text = tail(log, lines).splitlines()
+    start = max((i for i, line in enumerate(text) if FAILED_MARKERS[0] in line), default=-1)
+    if start < 0:
+        return []
+    end = next((i for i in range(start + 1, len(text))
+                if not text[i].startswith((" ", "\t")) and EXCEPTION_LINE.match(text[i].strip())), len(text) - 1)
+    block = text[start:end + 1]
+    return block if len(block) <= limit else [*block[:limit // 2], "  …", *block[-(limit // 2):]]
+
+
 POLLER_READY = "[pdms-poller] Polling"
 
 

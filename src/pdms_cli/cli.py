@@ -28,7 +28,7 @@ from rich.text import Text
 from . import (
     __version__, actions, banner, completion, desktop, events, frontend, i18n, installer, instances, logview, migrations, prompts, proxy, repos, routes,
     onboarding, runner, transfer,
-    update, userimport, vscode,
+    update, userimport,
 )
 from . import doctor as diagnostics
 from .config import Config, Database, DevUser, Stack, config_path, write_private
@@ -393,13 +393,6 @@ def warn_events(setup: actions.EventsSetup) -> None:
         console.print(f"[yellow]{setup.warning}[/]")
 
 
-def events_for(cfg: Config, service: Path, mode: Optional[str]) -> tuple[dict[str, str], str, str]:
-    """``(extra environment, summary label, kind)`` for publishing events, kind being ``local`` or ``aws``."""
-    setup = settle(lambda: actions.events_setup(cfg, service, mode))
-    warn_events(setup)
-    return setup.env, setup.label, setup.kind
-
-
 def do_run(
     service_name: Optional[str] = None,
     user: Optional[str] = None,
@@ -529,12 +522,12 @@ def debug(
     if consumer:
         events_mode = "local"
     prof = choose_profile(cfg, None, target, user, db, port, host, yes, needs_port=not consumer)
-    events_env, events_label, _events_kind = events_for(cfg, prof.service, events_mode)
-    program = events.poller_command("", consumer[0], consumer[1], cfg.defaults.events_port)[3:] if consumer else None
+    setup = settle(lambda: actions.events_setup(cfg, prof.service, events_mode))
+    warn_events(setup)
     print_summary(cfg, prof, {
         _("Debug"): f"{consumer[0].name} -> {consumer[1].handler}" if consumer else
         _("http://{host}:{port} (no --reload, so breakpoints work)", host=prof.host, port=prof.port),
-        _("Events"): events_label,
+        _("Events"): setup.label,
         _("Install"): install_label(cfg, install),
     })
     confirm_protected(cfg, prof, yes)
@@ -547,18 +540,18 @@ def debug(
             _("Could not find the virtualenv python (poetry env info -e).")
         )
 
-    env_file = vscode.write_env_file(prof.service, runner.service_env(cfg.defaults, prof.user, prof.db, events_env))
-    launch, name, backup = vscode.upsert_configuration(
-        prof.service, python=python, env_file=env_file, host=prof.host, port=prof.port,
-        description=f"{prof.user_name} @ {prof.db_name} " + (f"sqs {consumer[0].name}" if consumer else f":{prof.port}"),
-        program=program,
-    )
-    console.print("[green]✓[/] " + _("Configuration [bold]{name}[/] saved to {launch}", name=name, launch=launch))
-    if backup:
-        console.print(f"[yellow]{_('⚠ launch.json had comments and they were lost; original copy at {backup}', backup=backup)}[/]")
+    launch = settle(lambda: actions.plan_service(
+        cfg, prof.service, user_name=prof.user_name, db_name=prof.db_name, port=prof.port or None, host=prof.host,
+        reload=False, events_ready=setup,
+    ))
+    debug_setup = settle(lambda: actions.write_debug_config(cfg, launch))
+    console.print("[green]✓[/] " + _("Configuration [bold]{name}[/] saved to {launch}", name=debug_setup.name,
+                                     launch=debug_setup.launch_json))
+    if debug_setup.backup:
+        console.print(f"[yellow]{_('⚠ launch.json had comments and they were lost; original copy at {backup}', backup=debug_setup.backup)}[/]")
     console.print(_(
         "  Variables (including the password) in {env_file} [dim](outside the repo, permissions 600)[/]",
-        env_file=env_file,
+        env_file=debug_setup.env_file,
     ))
     console.print(_("  In VS Code: Run and Debug (Ctrl+Shift+D) → pick the configuration → F5."))
     console.print(_(

@@ -239,6 +239,11 @@ ES: dict[str, str] = {
     "starting": "arrancando",
     "busy": "ocupado",
     "not answering while it works on a request": "no responde mientras atiende una petición",
+    "{name} has no virtualenv yet: start it once (that installs it) and try again.":
+        "{name} aún no tiene virtualenv: levántalo una vez (así se instala) y vuelve a intentarlo.",
+    "VS Code's code command was not found. In VS Code: Ctrl+Shift+P → Shell Command: Install 'code' command in PATH.":
+        "No se encontró el comando code de VS Code. En VS Code: Ctrl+Shift+P → Shell Command: Install 'code' command in PATH.",
+    "{path} is not a file of a registered repo.": "{path} no es un archivo de un repo registrado.",
     "stopped": "parado",
     "running": "corriendo",
     "Choose an instance:": "Elige instancia:",

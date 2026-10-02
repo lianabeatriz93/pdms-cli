@@ -221,6 +221,14 @@ class Jobs:
 
         return self.run(inst.key, "restart", "stopping", work)
 
+    def debug(self, key: str) -> dict:
+        """Hand the instance over to VS Code (see :func:`actions.debug_instance`); quick, so not a job."""
+        inst = find(key)
+        if self.busy(inst.key):
+            raise actions.ActionError(_("{key} is busy.", key=inst.key))
+        setup = actions.debug_instance(Config.load(), inst)
+        return {"name": setup.name, "launch": str(setup.launch_json), "backup": str(setup.backup or "")}
+
     def start(
         self, service: str, *, port: int | None = None, user: str | None = None, db: str | None = None,
         install: bool | None = None, confirmed: bool = False,

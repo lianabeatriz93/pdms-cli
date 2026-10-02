@@ -471,6 +471,12 @@ def make_handler(
                     return self.act_on_events(path.rsplit("/", 1)[-1], body)
                 except OSError as exc:  # ElasticMQ went away in the middle
                     return 502, {"error": f"ElasticMQ: {exc}"}
+            if path == "/api/code/open":
+                file, line = body.get("path"), body.get("line", 0)
+                if not isinstance(file, str) or not isinstance(line, int) or isinstance(line, bool):
+                    raise actions.ActionError("path must be a string and line a number")
+                actions.open_code(Config.load(), file, line)
+                return 200, {}
             if path == "/api/clean":
                 return 200, {"forgotten": ui_jobs.forget_stopped()}
             if path == "/api/frontend/fix-api":
@@ -539,6 +545,8 @@ def make_handler(
             if verb == "restart":
                 job = jobs.restart(key, **launch_options(body))
                 return 202, {"job": job.key}
+            if verb == "debug":
+                return 200, jobs.debug(key)
             if verb == "forget":
                 ui_jobs.forget(key)
                 return 200, {}
