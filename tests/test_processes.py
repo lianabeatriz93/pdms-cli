@@ -53,6 +53,28 @@ def test_a_reused_pid_is_not_mistaken_for_our_process():
         proc.wait()
 
 
+def test_a_clock_adjustment_does_not_make_a_running_process_look_stopped():
+    """NTP moves the boot time psutil adds to every start, so the same process reports another creation time."""
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        created = instances.creation_time(proc.pid)
+        assert instances.process_alive(proc.pid, created - 1.0)
+        assert instances.process_alive(proc.pid, created + 2.5)
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_the_registry_is_replaced_whole_never_left_half_written(tmp_path, monkeypatch):
+    """A reader must never see a truncated file: it would read no instances, and its next save would lose them all."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    inst = instances.Instance(key="svc@28100", pid=1, service="/x/svc", host="0.0.0.0", port=28100, user="u", db="d",
+                              reload=True, log="/x.log", started_at="2026-10-02T06:56:00")
+    instances.save({inst.key: inst})
+    assert list(instances.load()) == ["svc@28100"]
+    assert not list(instances.registry_path().parent.glob("*.tmp"))
+
+
 def test_finished_processes_are_not_alive():
     proc = subprocess.Popen([sys.executable, "-c", "pass"])
     proc.wait()
