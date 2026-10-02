@@ -102,7 +102,7 @@ def profiles(cfg: Config) -> dict[str, dict]:
     }
 
 
-def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) -> dict:
+def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, doctor: dict | None = None) -> dict:
     """Everything the page shows: repo, users and DBs (names only), instances, proxy, local events and jobs."""
     cfg = cfg or Config.load()
     items = list(instances.load().values())
@@ -117,6 +117,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) 
         "version": __version__,
         "language": i18n.configured(cfg.defaults.language),
         "repo": {"alias": cfg.current_repo, "root": str(root)} if root else None,
+        "repos": [{"name": name, "path": str(repo.root)} for name, repo in cfg.repos.items()],
         "user": cfg.last_user,
         "db": cfg.last_db,
         "users": list(cfg.users),
@@ -130,5 +131,6 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) 
         "frontend": frontend_state(cfg),
         "setup": asdict(cfg.setup),
         "update": updates.state(cfg),
+        "doctor": doctor or {"running": False, "at": "", "counts": {}, "problems": []},
         "jobs": jobs or {},
     }

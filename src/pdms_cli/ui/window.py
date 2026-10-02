@@ -124,6 +124,12 @@ def open_window(url: str, control: Control, hidden: bool = False) -> None:
         tray.stop()
         window.destroy()
 
+    def pick_folder(start: str = "") -> str:
+        kind = webview.FileDialog.FOLDER if hasattr(webview, "FileDialog") else webview.FOLDER_DIALOG
+        chosen = window.create_file_dialog(kind, directory=start or "")
+        return str(chosen[0]) if chosen else ""
+
+    control.pick_folder = pick_folder
     window.events.closing += closing
     window.events.minimized += lambda: minimized.append(True)
     window.events.restored += lambda: minimized.clear()

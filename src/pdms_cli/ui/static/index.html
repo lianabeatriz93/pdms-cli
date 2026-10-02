@@ -15,6 +15,7 @@
   <span class="live" id="live" title="Connecting…"></span>
   <button class="chip update-chip" id="update-chip" type="button" hidden></button>
   <div class="ctx" id="ctx"></div>
+  <div class="menu" id="repo-menu" role="menu" hidden></div>
 </header>
 <nav class="side">
   <a href="#home" data-view="home">Home</a>
@@ -22,7 +23,8 @@
   <a href="#stacks" data-view="stacks">Stacks <span id="stack-count"></span></a>
   <a href="#proxy" data-view="proxy">Proxy <span id="proxy-on"></span></a>
   <a href="#events" data-view="events">Events <span id="events-on"></span></a>
-  <a href="#settings" data-view="settings" class="side-end">Settings</a>
+  <a href="#doctor" data-view="doctor" class="side-end">Doctor <span class="badge" id="doctor-badge" hidden></span></a>
+  <a href="#settings" data-view="settings">Settings</a>
 </nav>
 <main class="main">
 <section class="view" id="view-home" hidden>
@@ -246,6 +248,28 @@
   </div>
 </section>
 
+<section class="view" id="view-doctor" hidden>
+  <div class="bar">
+    <h1>Doctor</h1>
+    <div class="summary" id="doctor-summary"></div>
+    <span class="muted" id="doctor-running" hidden>Checking…</span>
+    <div class="bar-actions push">
+      <button class="btn" id="doctor-copy" type="button">Copy report</button>
+      <button class="btn primary" id="doctor-run" type="button">Run again</button>
+    </div>
+  </div>
+  <div class="bar filter">
+    <input type="search" id="doctor-filter" placeholder="Filter checks" aria-label="Filter checks" autocomplete="off">
+    <label class="inline"><input type="checkbox" id="doctor-problems"> Problems only</label>
+    <label class="inline"><input type="checkbox" id="doctor-dbs"> Test database connections</label>
+    <span class="muted push" id="doctor-when"></span>
+  </div>
+  <p class="error" id="doctor-error" hidden></p>
+  <div class="checks" id="doctor-checks"></div>
+  <p class="empty card" id="doctor-none" hidden>No check matches the filter.</p>
+  <p class="muted note">The same checks as <code>pdms doctor</code>. Where pdms ui can fix something, the hint is a button; otherwise it shows the command to run.</p>
+</section>
+
 <section class="view" id="view-settings" hidden>
   <div class="bar">
     <h1>Settings</h1><span class="muted" id="settings-summary"></span>
@@ -258,12 +282,29 @@
   </div>
 
   <div class="tabs view-tabs" id="settings-tabs" role="tablist">
+    <button type="button" role="tab" data-tab="repos">Repos</button>
     <button type="button" role="tab" data-tab="dbs">Databases</button>
     <button type="button" role="tab" data-tab="users">Users</button>
     <button type="button" role="tab" data-tab="defaults">Defaults</button>
   </div>
 
-  <div class="panel" id="settings-dbs">
+  <div class="panel" id="settings-repos">
+    <div class="bar">
+      <input type="search" id="repo-filter" placeholder="Filter by name or path" aria-label="Filter repos" autocomplete="off">
+      <span class="muted" id="repo-count"></span>
+      <button class="btn primary push" id="repo-new" type="button">Add repo</button>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th></th><th>Name</th><th>Path</th><th>Migrations (Flyway)</th><th>Remote API for the proxy</th><th class="num">Running</th><th></th></tr></thead>
+        <tbody id="repo-rows"></tbody>
+      </table>
+      <p class="empty" id="repo-empty" hidden></p>
+    </div>
+    <p class="muted note">The current repo (●) is the one pdms ui lists services, stacks and proxy routes from. Removing a repo only forgets it: nothing is deleted from disk.</p>
+  </div>
+
+  <div class="panel" id="settings-dbs" hidden>
     <div class="bar">
       <input type="search" id="db-filter" placeholder="Filter by name, host, database or user" aria-label="Filter databases" autocomplete="off">
       <label class="inline"><input type="checkbox" id="db-protected"> Protected only</label>
@@ -434,6 +475,54 @@
     <div class="actions">
       <button class="btn ghost" type="button" id="editor-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="editor-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="repo-dialog">
+  <form method="dialog" id="repo-form" autocomplete="off">
+    <h2 id="repo-title">Add repo</h2>
+    <p class="muted" id="repo-hint"></p>
+    <label id="repo-path-label">Folder
+      <span class="path-row">
+        <input id="repo-path" class="mono" spellcheck="false" placeholder="~/Code/Alivi/pdms">
+        <button class="btn" type="button" id="repo-browse" hidden>Browse…</button>
+      </span>
+    </label>
+    <p class="found" id="repo-found" hidden></p>
+    <label>Name <input id="repo-name" pattern="[A-Za-z0-9_\-]+" required></label>
+    <label>Migrations repo (Flyway)
+      <input id="repo-migrations" class="mono" spellcheck="false" placeholder="found next to the repo, if any">
+      <small class="muted">Used by <code>pdms migrate</code>. Empty: pdms looks for a pdms-db-migrations folder next to the repo.</small>
+    </label>
+    <label>Remote API for the proxy
+      <input id="repo-remote" class="mono" spellcheck="false">
+      <small class="muted">Where the proxy sends the routes no local service answers.</small>
+    </label>
+    <label class="inline" id="repo-use-label"><input type="checkbox" id="repo-use" checked> Make it the current repo</label>
+    <p class="error" id="repo-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="repo-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="repo-save">Add</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="switch-dialog">
+  <form method="dialog" id="switch-form">
+    <h2 id="switch-title"></h2>
+    <p class="muted" id="switch-text"></p>
+    <fieldset>
+      <legend>Running instances</legend>
+      <label class="inline"><input type="radio" name="running" value="keep" checked> Keep them running (they coexist, each on its port)</label>
+      <label class="inline"><input type="radio" name="running" value="stop"> Stop them</label>
+      <label class="inline"><input type="radio" name="running" value="move"> <span id="switch-move"></span></label>
+    </fieldset>
+    <p class="warn" id="switch-proxy" hidden></p>
+    <p class="error" id="switch-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="switch-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="switch-go"></button>
     </div>
   </form>
 </dialog>

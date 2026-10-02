@@ -16,6 +16,8 @@ class Control:
         self._show: Callable[[], None] | None = None
         self._close: Callable[[], None] = lambda: None
         self.quitting = threading.Event()
+        # The system's folder picker, with a window (None in the browser, where the page cannot reach it).
+        self.pick_folder: Callable[[str], str] | None = None
 
     def attach(self, show: Callable[[], None] | None, close: Callable[[], None]) -> None:
         """``show`` brings the window to the front (None: there is no window, the browser opens instead);

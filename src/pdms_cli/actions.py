@@ -841,12 +841,18 @@ class RepoSwitch:
 
 
 def use_repo(cfg: Config, alias: str) -> RepoSwitch:
-    """Make ``alias`` the current repo."""
-    alias = require(cfg.repos, _("repo"), alias)
-    old = cfg.current_repo
-    cfg.current_repo = alias
+    """Make ``alias`` the current repo; what was left running from the previous one."""
+    switch = plan_repo_switch(cfg, alias)
+    cfg.current_repo = require(cfg.repos, _("repo"), alias)
     cfg.save()
     repos.use_for_this_command(None)
+    return switch
+
+
+def plan_repo_switch(cfg: Config, alias: str) -> RepoSwitch:
+    """What making ``alias`` the current repo would leave running from the current one (nothing changes)."""
+    alias = require(cfg.repos, _("repo"), alias)
+    old = cfg.current_repo
     if not old or old == alias or old not in cfg.repos:
         return RepoSwitch(old, [], False)
     old_root, new_root = cfg.repos[old].root, cfg.repos[alias].root
