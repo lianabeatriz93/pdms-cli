@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import __version__, events, frontend, instances, installer, migrations, proxy, repos, routes, runner, update
+from . import __version__, actions, events, frontend, instances, installer, migrations, proxy, repos, routes, runner, update
 from .config import Config, config_path
 from .i18n import _
 
@@ -273,11 +273,22 @@ def check_frontend(cfg: Config) -> list[Check]:
     return checks
 
 
-def check_instances() -> list[Check]:
+def check_strays(cfg: Config, section: str) -> list[Check]:
+    found = actions.strays(cfg)
+    if not found:
+        return []
+    keys = [stray.key for stray in found]
+    shown = ", ".join(keys[:3]) + (" " + _("+{count} more", count=len(keys) - 3) if len(keys) > 3 else "")
+    return [Check(section, _("Outside pdms"), WARN, f"{len(keys)} · {shown}",
+                  _("pdms lost track of them: pdms adopt --all (or pdms adopt --stop)"), fix="adopt")]
+
+
+def check_instances(cfg: Config | None = None) -> list[Check]:
     section = _("Background services")
     items = list(instances.load().values())
+    outside = check_strays(cfg, section) if cfg else []
     if not items:
-        return [Check(section, _("Instances"), OK, _("none running"))]
+        return [Check(section, _("Instances"), OK, _("none running")), *outside]
     healths = instances.health_all(items)
     by_state: dict[str, list[str]] = {}
     for key, health in healths.items():
@@ -294,11 +305,11 @@ def check_instances() -> list[Check]:
     if stale:
         checks.append(Check(section, _("Outdated installed code"), WARN, ", ".join(stale), "pdms restart <instance>",
                             fix="services"))
-    return checks
+    return checks + outside
 
 
 def run_all(cfg: Config, *, databases: bool = True, timeout: int = 5) -> list[Check]:
     checks = check_pdms() + check_tools() + check_config(cfg)
     if databases:
         checks += check_databases(cfg, timeout)
-    return checks + check_repo(cfg) + check_frontend(cfg) + check_ports(cfg) + check_instances() + check_shell()
+    return checks + check_repo(cfg) + check_frontend(cfg) + check_ports(cfg) + check_instances(cfg) + check_shell()

@@ -282,6 +282,21 @@ def test_forget_only_stopped_instances(ui, machine) -> None:
     assert instances.load().keys() == {"svc@8081"}
 
 
+def test_strays_are_adopted_or_stopped_and_looked_for_again(ui, monkeypatch) -> None:
+    port, _hub, _states, _jobs = ui
+    monkeypatch.setattr(ui_jobs.Config, "load", staticmethod(lambda: Config()))
+    calls = []
+    monkeypatch.setattr(ui_jobs.actions, "adopt_strays", lambda cfg, keys: calls.append(("adopt", keys)) or [
+        SimpleNamespace(key="svc@8090")])
+    monkeypatch.setattr(ui_jobs.actions, "stop_strays", lambda cfg, keys: calls.append(("stop", keys)) or keys)
+    ui_state._strays["at"] = time.monotonic()  # a fresh scan, which an action must throw away
+    assert post(port, "/api/strays/adopt") == (200, {"adopted": ["svc@8090"]})
+    assert ui_state._strays["at"] == 0.0
+    assert post(port, "/api/strays/stop", {"keys": ["svc@8091"]}) == (200, {"stopped": ["svc@8091"]})
+    assert post(port, "/api/strays/stop", {"keys": "svc@8091"})[0] == 400
+    assert calls == [("adopt", None), ("stop", ["svc@8091"])]
+
+
 def test_logs_tail_and_unknown_logs(ui, machine) -> None:
     port, _hub, _states, _jobs = ui
     response, raw, _conn = request(port, "/api/logs?key=svc@8081&lines=2", cookie(port))
@@ -524,7 +539,7 @@ def test_the_local_sns_is_a_row_with_its_log(ui, machine, monkeypatch) -> None:
     assert sns["key"] == "sns" and sns["queue"] == "pdms-sns" and sns["status"] == "ok" and sns["last_publish"]
     monkeypatch.setattr(ui_state.events, "is_up", lambda port: False)
     log.unlink()
-    assert ui_state.build_state(machine)["sns"] == {"key": "sns", "queue": "pdms-sns", "status": "stopped", "last_publish": ""}
+    assert ui_state.build_state(machine)["sns"] == {"key": "sns", "queue": "pdms-sns", "status": "off", "last_publish": ""}
 
 
 # --------------------------------------------------------------------------- proxy

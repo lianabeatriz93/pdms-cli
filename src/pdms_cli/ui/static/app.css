@@ -68,6 +68,8 @@ td.num { font-variant-numeric: tabular-nums; }
 .st.starting, .st.error { color: var(--warn); background: var(--warn-soft); }
 .st.stopped { color: var(--bad); background: var(--bad-soft); }
 .st.off { color: var(--muted); background: var(--code); }
+.st.outside { color: var(--warn); border: 1px dashed currentColor; padding: 0 .45rem; }
+.detail.quiet { color: var(--muted); }
 
 .mono { font-family: var(--mono); }
 .push { margin-left: auto; }

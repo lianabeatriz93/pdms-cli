@@ -15,10 +15,12 @@ import re
 import shutil
 import time
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import IO
+from urllib.parse import unquote, urlsplit
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
 from .config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack, config_path
@@ -365,6 +367,81 @@ def exec_service(cfg: Config, launch: ServiceLaunch) -> None:
 
 def stop_service(instance: instances.Instance) -> None:
     instances.stop(instance)
+
+
+# --------------------------------------------------------------------------- services outside pdms
+
+
+@dataclass
+class Stray:
+    """A service running outside pdms, with the user and database of the config it runs as ("" when none matches)."""
+
+    process: instances.Stray
+    user: str
+    db: str
+    repo: str
+
+    @property
+    def key(self) -> str:
+        return self.process.key
+
+
+def _database_id(url: str) -> tuple[str, str, int, str]:
+    """``user@host:port/database`` of a connection string, without the password (it may have changed since)."""
+    parts = urlsplit(url)
+    try:
+        port = parts.port or 5432
+    except ValueError:
+        port = 0
+    return unquote(parts.username or ""), parts.hostname or "", port, parts.path.lstrip("/")
+
+
+def user_of(cfg: Config, env: dict[str, str]) -> str:
+    """The user profile whose DEV_USER_ID (and DEV_USERNAME) a service runs with."""
+    user_id, username = env.get("DEV_USER_ID", ""), env.get("DEV_USERNAME", "")
+    matches = [name for name, user in cfg.users.items() if user_id and user.user_id == user_id]
+    return next((name for name in matches if cfg.users[name].username == username), matches[0] if matches else "")
+
+
+def db_of(cfg: Config, env: dict[str, str]) -> str:
+    url = env.get("DB_PG_CONNECTION_STR", "")
+    if not url:
+        return ""
+    wanted = _database_id(url)
+    return next((name for name, db in cfg.dbs.items() if _database_id(db.url()) == wanted), "")
+
+
+def strays(cfg: Config) -> list[Stray]:
+    """Services of the registered repos that run but pdms does not know: their pdms exited and lost them (adopt
+    them to manage them again, or stop them)."""
+    found = instances.strays([repo.root for repo in cfg.repos.values()])
+    return [Stray(process, user_of(cfg, process.env), db_of(cfg, process.env),
+                  repos.repo_of(cfg, process.service) or "") for process in found]
+
+
+def _pick_strays(cfg: Config, keys: Iterable[str] | None) -> list[Stray]:
+    found = strays(cfg)
+    if keys is None:
+        return found
+    wanted = list(keys)
+    unknown = [key for key in wanted if key not in {stray.key for stray in found}]
+    if unknown:
+        raise ActionError(_("Not running outside pdms: {keys}", keys=", ".join(unknown)))
+    return [stray for stray in found if stray.key in wanted]
+
+
+def adopt_strays(cfg: Config, keys: Iterable[str] | None = None) -> list[instances.Instance]:
+    """Register the given services running outside pdms again (every one with ``None``)."""
+    return [instances.adopt(stray.process, user=stray.user, db=stray.db) for stray in _pick_strays(cfg, keys)]
+
+
+def stop_strays(cfg: Config, keys: Iterable[str] | None = None) -> list[str]:
+    """Stop the given services running outside pdms (every one with ``None``), with their reloader and workers."""
+    chosen = _pick_strays(cfg, keys)
+    if chosen:
+        with ThreadPoolExecutor(max_workers=min(8, len(chosen))) as pool:
+            list(pool.map(lambda stray: instances.kill_tree(stray.process.pid, stray.process.created), chosen))
+    return [stray.key for stray in chosen]
 
 
 def restart_service(

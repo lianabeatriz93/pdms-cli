@@ -473,6 +473,10 @@ def make_handler(
                     return 502, {"error": f"ElasticMQ: {exc}"}
             if path == "/api/clean":
                 return 200, {"forgotten": ui_jobs.forget_stopped()}
+            if path == "/api/strays/adopt":
+                return 200, ui_jobs.adopt_strays(body)
+            if path == "/api/strays/stop":
+                return 200, ui_jobs.stop_strays(body)
             if path.startswith("/api/update/"):
                 return self.act_on_update(path.rsplit("/", 1)[-1], body)
             if path == "/api/doctor/run":

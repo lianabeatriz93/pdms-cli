@@ -1079,4 +1079,38 @@ ES: dict[str, str] = {
         "{port} · lo usa otro programa",
     "{port} · used by {key}":
         "{port} · lo usa {key}",
+    # ------------------------------------------------------------------ services outside pdms
+    "# pdms {when} · adopted {key} (pid {pid}): its output does not come to this file. pdms restart {key} to have its log here.\n":
+        "# pdms {when} · {key} adoptado (pid {pid}): su salida no llega a este fichero. pdms restart {key} para tener su log aquí.\n",
+    "Every service running outside pdms.":
+        "Todos los servicios que corren fuera de pdms.",
+    "Manage again the services that run outside pdms (pdms ps lists them), or stop them.":
+        "Volver a gestionar los servicios que corren fuera de pdms (pdms ps los lista), o pararlos.",
+    "Not running outside pdms: {keys}":
+        "No corren fuera de pdms: {keys}",
+    "Nothing runs outside pdms.":
+        "No hay nada corriendo fuera de pdms.",
+    "Nothing to do.":
+        "Nada que hacer.",
+    "Outside pdms":
+        "Fuera de pdms",
+    "Running outside pdms ({count}): pdms started them, then lost track of them.":
+        "Corriendo fuera de pdms ({count}): pdms los levantó y después les perdió la pista.",
+    "Stop them instead, with their reloader and workers.":
+        "Pararlos en vez de eso, con su reloader y sus workers.",
+    "Which ones (by default it asks; every one with --all).":
+        "Cuáles (por defecto pregunta; todos con --all).",
+    "Which ones do you want to adopt? (space to select)":
+        "¿Cuáles quieres adoptar? (espacio para seleccionar)",
+    "Which ones do you want to stop? (space to select)":
+        "¿Cuáles quieres parar? (espacio para seleccionar)",
+    "[dim]? = no user or database of the config matches; pdms restart -c <instance> picks them.[/]":
+        "[dim]? = no coincide ningún usuario o base de datos de la config; pdms restart -c <instancia> los elige.[/]",
+    "[dim]pdms adopt to manage them again (logs, stop, restart), or pdms adopt --stop to stop them.[/]":
+        "[dim]pdms adopt para volver a gestionarlos (logs, stop, restart), o pdms adopt --stop para pararlos.[/]",
+    "pdms lost track of them: pdms adopt --all (or pdms adopt --stop)":
+        "pdms les perdió la pista: pdms adopt --all (o pdms adopt --stop)",
+    "+{count} more": "+{count} más",
+    "{key} adopted ({who}).":
+        "{key} adoptado ({who}).",
 }

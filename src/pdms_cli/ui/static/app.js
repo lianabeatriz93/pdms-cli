@@ -43,6 +43,8 @@ function statusLabel(status) {
   if (status === "starting") return t("starting");
   if (status === "error") return t("error");
   if (status === "stopped") return t("stopped");
+  if (status === "off") return t("off");
+  if (status === "outside") return t("outside pdms");
   return status;
 }
 
@@ -120,8 +122,33 @@ function button(label, onclick, attrs = {}) {
   return el("button", { class: "btn small", type: "button", onclick, ...attrs }, label);
 }
 
+// Services pdms started but lost track of (keys: null for every one).
+function adoptStrays(keys, after = null) {
+  act("/api/strays/adopt", keys ? { keys } : {}, (data) => {
+    const n = data.adopted.length;
+    toast(n === 1 ? t("{key} adopted: pdms manages it again.", { key: data.adopted[0] }) : t("{n} services adopted: pdms manages them again.", { n }), "info");
+    if (after) after();
+  });
+}
+
+async function stopStrays(keys) {
+  const all = state.strays || [];
+  const chosen = keys ? all.filter((s) => keys.includes(s.key)) : all;
+  if (!chosen.length) return;
+  const what = chosen.length === 1 ? chosen[0].key : t("{n} services", { n: chosen.length });
+  if (!await confirmDialog(t("Stop {what}?", { what }), t("They stop with their reloader and workers, like pdms stop."), t("Stop"))) return;
+  act("/api/strays/stop", keys ? { keys } : {}, (data) => toast(t("{n} stopped.", { n: data.stopped.length }), "info"));
+}
+
+function strayActions(cell, item) {
+  cell.append(button(t("Adopt"), () => adoptStrays([item.key]), { title: t("Manage it again: logs, stop and restart") }));
+  cell.append(button(t("Stop"), () => stopStrays([item.key]), { class: "btn small bad" }));
+  return cell;
+}
+
 function rowActions(item, job) {
   const cell = el("td", { class: "row-actions" });
+  if (item.isStray) return strayActions(cell, item);
   const busy = job && !job.error;
   cell.append(button(t("Logs"), () => openLogs(item.key, busy ? jobLog(job) : "current")));
   if (item.isFrontend && !busy) return frontendActions(cell, item);
@@ -147,8 +174,10 @@ function statusCell(item, job) {
     cell.append(el("span", { class: "st starting" }, phaseLabel(job.phase)));
     return cell;
   }
-  cell.append(el("span", { class: `st ${item.status}` }, statusLabel(item.status)));
+  cell.append(el("span", item.isStray ? { class: "st outside", title: t("pdms lost track of it: it keeps its port, but pdms ps, logs and Stop do not see it.") }
+    : { class: `st ${item.status}` }, statusLabel(item.status)));
   if (item.detail) cell.append(el("span", { class: "detail" }, item.detail));
+  if (item.note) cell.append(el("span", { class: "detail quiet" }, item.note));
   if (job && job.error) {
     cell.append(el("span", { class: "detail" }, failedText(job)));
     cell.append(button(t("Dismiss"), () => act(`/api/instances/${encodeURIComponent(item.key)}/dismiss`), { class: "btn tiny" }));
@@ -189,8 +218,14 @@ function serviceItems() {
   }
   if (state.sns) {
     items.push({
-      ...state.sns, isSns: true, url: `sns → ${state.sns.queue}`, repo: "", user: "", db: "",
-      detail: state.sns.status === "stopped" ? t("the local ElasticMQ is not running: pdms events up") : "",
+      ...state.sns, isSns: true, url: `sns → ${state.sns.queue}`, repo: "", user: "", db: "", detail: "",
+      note: state.sns.status === "off" ? t("Local events are off: services publish to AWS.") : "",
+    });
+  }
+  for (const stray of state.strays || []) {
+    items.push({
+      ...stray, isStray: true, status: "outside", url: stray.queue ? `sqs ← ${stray.queue}` : `http://localhost:${stray.port}`,
+      detail: "", note: `pid ${stray.pid}`,
     });
   }
   const front = state.frontend;
@@ -211,7 +246,7 @@ function serviceItems() {
 
 function problem(item) {
   const job = state.jobs[item.key];
-  return item.status === "error" || (item.status === "stopped" && !item.placeholder) || Boolean(job && job.error);
+  return item.isStray || item.status === "error" || (item.status === "stopped" && !item.placeholder) || Boolean(job && job.error);
 }
 
 function serviceShown(item) {
@@ -231,8 +266,11 @@ function paintServices() {
   const alive = state.instances.filter((i) => i.status !== "stopped");
   const failing = state.instances.filter((i) => i.status === "error" || i.status === "stopped");
   $("count").textContent = alive.length || "";
-  $("summary").textContent = [t("{n} running", { n: alive.length }), t("{n} failing", { n: failing.length })].join(" · ");
+  const parts = [t("{n} running", { n: alive.length }), t("{n} failing", { n: failing.length })];
+  if ((state.strays || []).length) parts.push(t("{n} outside pdms", { n: state.strays.length }));
+  $("summary").textContent = parts.join(" · ");
   $("clean").hidden = !state.instances.some((i) => i.status === "stopped");
+  $("adopt-all").hidden = !(state.strays || []).length;
   $("front-new").hidden = !state.frontend || state.frontend.running || Boolean(state.jobs.frontend && !state.jobs.frontend.error);
 }
 
@@ -2523,6 +2561,7 @@ function servicesTile() {
     title: t("Services"), status, kind: failing.length ? "bad" : "",
     main: alive.length ? t("{n} running", { n: alive.length }) : t("No background services"),
     rows: alive.length ? [[t("user"), users.join(", ")], [t("db"), dbs.join(", ")]] : [],
+    hint: (state.strays || []).length ? t("{n} outside pdms", { n: state.strays.length }) : "",
     actions: [button(t("Start service"), () => openRun()), button(t("Open the list"), () => { location.hash = "#services"; })],
   });
 }
@@ -2630,6 +2669,14 @@ function attention() {
       items.push(["warn", inst.key, t("stopped"), [button(t("Logs"), () => showLogs(inst.key)),
         button(t("Forget"), () => act(`/api/instances/${encodeURIComponent(inst.key)}/forget`), { class: "btn small ghost" })]]);
     }
+  }
+  const strays = state.strays || [];
+  if (strays.length) {
+    const names = strays.slice(0, 4).map((s) => s.queue ? s.name : `${s.name} :${s.port}`).join(" · ");
+    items.push(["warn", strays.length === 1 ? t("1 service runs outside pdms") : t("{n} services run outside pdms", { n: strays.length }),
+      `${names}${strays.length > 4 ? " · " + t("+{n} more", { n: strays.length - 4 }) : ""}. ${t("pdms lost track of them: they keep their ports, but pdms ps, logs and Stop do not see them.")}`,
+      [button(strays.length === 1 ? t("Adopt") : t("Adopt all"), () => adoptStrays(null)),
+        button(t("Stop them"), () => stopStrays(null), { class: "btn small bad" })]]);
   }
   const front = state.frontend;
   if (front && front.running && front.status === "error" && !state.jobs.frontend) {
@@ -3155,7 +3202,7 @@ function paintFlyway() {
 const doctorView = { latest: null, at: null };
 const CHECK_ICONS = { ok: "✓", warn: "!", fail: "✗" };
 // What Home already shows by itself (services, updates), so its Doctor lines leave them out.
-const HOME_COVERS = new Set(["services", "forget_stopped", "update"]);
+const HOME_COVERS = new Set(["services", "forget_stopped", "update", "adopt"]);
 // A hint that is a command to run, shown with a Copy button.
 const COMMAND = /^(pdms|chmod|nvm|npm|uv|sudo|yarn) \S.*[^.]$/;
 
@@ -3186,6 +3233,7 @@ function fixLabel(fix) {
   if (kind === "repos") return t("Open Repos");
   if (kind === "edit_repo") return t("Edit {name}", { name });
   if (kind === "forget_stopped") return t("Forget stopped");
+  if (kind === "adopt") return t("Adopt all");
   return t("Open Services");
 }
 
@@ -3198,6 +3246,7 @@ function runFix(fix) {
   else if (kind === "add_repo") openSetting("repos", () => openRepo());
   else if (kind === "repos") openSetting("repos");
   else if (kind === "edit_repo") openSetting("repos", (data) => { const repo = data.repos.find((r) => r.name === name); if (repo) openRepo(repo); });
+  else if (kind === "adopt") adoptStrays(null, () => act("/api/doctor/run", { databases: false }));
   else if (kind === "forget_stopped") act("/api/clean", {}, (data) => { toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info"); act("/api/doctor/run", { databases: false }); });
   else location.hash = "#services";
 }
@@ -3302,6 +3351,7 @@ $("logs-close").addEventListener("click", closeLogs);
 $("logs-clear").addEventListener("click", clearLog);
 for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => openLogs(logs.key, tab.dataset.which));
 $("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info")));
+$("adopt-all").addEventListener("click", () => adoptStrays(null));
 $("svc-filter").addEventListener("input", () => state && paintServices());
 $("svc-problems").addEventListener("change", () => state && paintServices());
 $("stack-filter").addEventListener("input", () => state && paintStacks());

@@ -251,6 +251,169 @@ def contains(path: str, marker: str) -> bool:
         return False
 
 
+# --------------------------------------------------------------------------- processes outside pdms
+
+POLLER_SCRIPT = "pdms_sqs_poller.py"
+# Who a process gets as its parent once the one that started it exited (Linux desktops use a systemd --user).
+ADOPTIVE_PARENTS = {"systemd", "launchd", "init"}
+# What pdms keeps from a stray's environment: who it runs as, its database and where its events go.
+STRAY_ENV = ("DEV_USER_ID", "DEV_USERNAME", "DB_PG_CONNECTION_STR", "PDMS_SQS_ENDPOINT")
+
+
+@dataclass
+class Stray:
+    """A service pdms started (or one like it) that is still running but is not in the registry any more."""
+
+    key: str
+    pid: int
+    created: float
+    service: str
+    host: str
+    port: int
+    reload: bool
+    queue: str
+    log: str  # the pdms log it still writes to, "" when its output goes elsewhere
+    env: dict[str, str] = field(default_factory=dict, repr=False)
+
+    @property
+    def name(self) -> str:
+        return Path(self.service).name
+
+    @property
+    def started_at(self) -> str:
+        return datetime.fromtimestamp(self.created).isoformat(timespec="seconds")
+
+
+def _option(args: list[str], name: str) -> str:
+    for i, arg in enumerate(args):
+        if arg == name and i + 1 < len(args):
+            return args[i + 1]
+        if arg.startswith(name + "="):
+            return arg.split("=", 1)[1]
+    return ""
+
+
+def _file_name(arg: str) -> str:
+    return re.split(r"[\\/]", arg)[-1].lower()
+
+
+def launch_of(args: list[str]) -> tuple[str, int, bool, str] | None:
+    """``(host, port, reload, queue)`` when ``args`` is a service the way pdms starts one: ``uvicorn main:app`` or
+    the SQS poller of an event consumer; None for anything else."""
+    if any(_file_name(arg) == POLLER_SCRIPT for arg in args):
+        return "", 0, False, _option(args, "--queue-url").rstrip("/").rsplit("/", 1)[-1]
+    if "main:app" in args and any(_file_name(arg).removesuffix(".exe") == "uvicorn" for arg in args):
+        port = _option(args, "--port")
+        return _option(args, "--host") or "127.0.0.1", int(port) if port.isdigit() else 8000, "--reload" in args, ""
+    return None
+
+
+def _orphaned(proc: psutil.Process) -> bool:
+    """Whether the process that started ``proc`` exited (a foreground ``pdms run`` or a debugger still holds it)."""
+    try:
+        parent = proc.parent()
+        if parent is None or parent.pid == 1:
+            return True
+        # Windows does not re-parent: the PID may now belong to a newer, unrelated process.
+        return parent.create_time() > proc.create_time() or parent.name().lower() in ADOPTIVE_PARENTS
+    except psutil.Error:
+        return True
+
+
+def _top(proc: psutil.Process) -> psutil.Process:
+    """The process pdms would have started: ``poetry run`` stays as the parent where it cannot exec (Windows)."""
+    try:
+        while (parent := proc.parent()) and parent.name().lower().startswith("poetry"):
+            proc = parent
+    except psutil.Error:
+        pass
+    return proc
+
+
+def _known_pids() -> set[int]:
+    pids: set[int] = set()
+    for inst in load().values():
+        if not inst.alive():
+            continue
+        pids.add(inst.pid)
+        try:
+            pids.update(child.pid for child in psutil.Process(inst.pid).children(recursive=True))
+        except psutil.Error:
+            pass
+    return pids
+
+
+def _log_of(*procs: psutil.Process) -> str:
+    logs = state_dir() / "logs"
+    for proc in procs:
+        try:
+            for opened in proc.open_files():
+                if Path(opened.path).parent == logs and opened.path.endswith(".log"):
+                    return opened.path
+        except psutil.Error:
+            pass
+    return ""
+
+
+def _environment(proc: psutil.Process) -> dict[str, str]:
+    try:
+        env = proc.environ()
+    except psutil.Error:
+        return {}
+    return {name: env[name] for name in STRAY_ENV if name in env}
+
+
+def strays(roots: list[Path]) -> list[Stray]:
+    """Services of the repos in ``roots`` running on their own: their pdms exited and the registry lost them."""
+    roots = [root.resolve() for root in roots]
+    known = _known_pids()
+    found: dict[int, Stray] = {}
+    for proc in psutil.process_iter(["cmdline"]):
+        launch = launch_of(proc.info["cmdline"] or [])
+        if launch is None or proc.pid in known:
+            continue
+        top = _top(proc)
+        if top.pid in known or top.pid in found or not _orphaned(top):
+            continue
+        try:
+            service = Path(proc.cwd()).resolve()
+            created = top.create_time()
+        except psutil.Error:
+            continue
+        if not (service / "main.py").is_file() or not any(service.is_relative_to(root) for root in roots):
+            continue
+        host, port, reload, queue = launch
+        found[top.pid] = Stray(
+            key=make_key(service, 0 if queue else port), pid=top.pid, created=created, service=str(service),
+            host=host, port=0 if queue else port, reload=reload, queue=queue, log=_log_of(proc, top),
+            env=_environment(proc),
+        )
+    return sorted(found.values(), key=lambda stray: stray.key)
+
+
+def adopt(stray: Stray, *, user: str, db: str) -> Instance:
+    """Put ``stray`` back in the registry, so pdms ps, logs, stop and restart know it again. Its output stays where
+    it goes: in its old log when it still writes one, otherwise nowhere pdms can read (until it restarts)."""
+    log = stray.log
+    if not log:
+        path = log_path(stray.key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rotate_log(path)
+        path.write_text(_("# pdms {when} · adopted {key} (pid {pid}): its output does not come to this file. "
+                          "pdms restart {key} to have its log here.\n", when=f"{datetime.now():%Y-%m-%d %H:%M:%S}",
+                          key=stray.key, pid=stray.pid), encoding="utf-8")
+        log = str(path)
+    instance = Instance(
+        key=stray.key, pid=stray.pid, service=stray.service, host=stray.host, port=stray.port, user=user, db=db,
+        reload=stray.reload, log=log, started_at=stray.started_at, created=stray.created,
+        events="local" if "PDMS_SQS_ENDPOINT" in stray.env else "aws", queue=stray.queue,
+    )
+    registry = load()
+    registry[stray.key] = instance
+    save(registry)
+    return instance
+
+
 # --------------------------------------------------------------------------- health
 
 # uvicorn logs these once the app imported fine (also after every --reload).
