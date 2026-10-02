@@ -398,3 +398,50 @@ def test_the_entries_run_this_pdms_even_without_its_exe_suffix(home, monkeypatch
     monkeypatch.setattr(desktop.shutil, "which", lambda name: None)  # a fresh install is not on the PATH yet
     assert desktop.pdms_executable() == bin_dir / "pdms.exe"
     assert desktop.pdms_executable(gui=True) == bin_dir / "pdmsw.exe"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shells")
+def test_the_shell_environment_comes_in_without_its_noise(tmp_path) -> None:
+    from pdms_cli import shellenv
+
+    # A shell whose startup files print things and add pyenv to PATH, as ~/.bashrc does.
+    fake = tmp_path / "fakeshell"
+    fake.write_text('#!/bin/sh\necho "welcome!"\nexport PATH="/opt/pyenv/shims:$PATH" PYENV_ROOT=/opt/pyenv\n'
+                    'shift\nexec /bin/sh -c "$1"\n')
+    fake.chmod(0o755)
+    found = shellenv.read(str(fake))
+    assert found["PATH"].startswith("/opt/pyenv/shims:") and found["PYENV_ROOT"] == "/opt/pyenv"
+
+    environ = {"PATH": "/usr/bin", "HOME": "/home/me", "PDMS_UI_TOKEN": "keep"}
+    changed = shellenv.adopt(environ, {**found, "HOME": "/elsewhere", "PDMS_UI_TOKEN": "other", "PWD": "/x"})
+    assert set(changed) >= {"PATH", "PYENV_ROOT"} and environ["HOME"] == "/home/me"  # never replaces what it has
+    assert environ["PDMS_UI_TOKEN"] == "keep" and "PWD" not in environ
+
+
+def test_a_shell_that_hangs_or_fails_changes_nothing(tmp_path) -> None:
+    from pdms_cli import shellenv
+
+    assert shellenv.read(str(tmp_path / "missing-shell")) == {}
+    hangs = tmp_path / "hangs"
+    hangs.write_text("#!/bin/sh\nsleep 30\n")
+    hangs.chmod(0o755)
+    if sys.platform != "win32":
+        assert shellenv.read(str(hangs), timeout=0.5) == {}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX folders")
+def test_known_tool_folders_are_added_even_if_the_shell_hangs(tmp_path) -> None:
+    from pdms_cli import shellenv
+
+    for folder in (".pyenv/shims", ".pyenv/bin", ".local/bin", ".nvm/versions/node/v22.22.0/bin"):
+        (tmp_path / folder).mkdir(parents=True)
+    (tmp_path / ".nvm/alias").mkdir(parents=True)
+    (tmp_path / ".nvm/alias/default").write_text("22\n")
+    environ = {"PATH": f"/usr/bin:{tmp_path}/.local/bin"}
+    changed = shellenv.adopt(environ, found={}, home=tmp_path)
+    path = environ["PATH"].split(os.pathsep)
+    mine = [entry for entry in path if entry.startswith(str(tmp_path))]
+    assert mine == [f"{tmp_path}/.pyenv/shims", f"{tmp_path}/.pyenv/bin", f"{tmp_path}/.nvm/versions/node/v22.22.0/bin",
+                    f"{tmp_path}/.local/bin"]  # the one already there is not repeated, nor moved
+    assert "/usr/bin" in path
+    assert environ["PYENV_ROOT"] == f"{tmp_path}/.pyenv" and changed == ["PATH", "PYENV_ROOT"]
