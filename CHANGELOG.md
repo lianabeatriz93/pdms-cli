@@ -1,3 +1,25 @@
+## v0.3.0 (2026-10-02)
+
+### Feat
+
+- services from port 28100 and the proxy on 28800 by default
+- **ui**: the Flyway migrations of a database, pending or applied
+- **ui**: Repos in Settings and a Doctor screen
+- **ui**: pdms in the app menu with a tray icon, and updates from pdms ui
+- **ui**: Home with Start everything, pdms front for the web app, and renaming users
+- **proxy**: configurable timeout, 300 s by default
+- **ui**: the pdms ui window shows the pdms icon
+
+### Fix
+
+- **ui**: pdms ui opened from the menu finds pyenv, nvm and the other shell tools
+- **cli**: never crash on a character the output encoding cannot write
+- **ui**: menu entries run this pdms on Windows, and the tests pass in CI
+
+### Refactor
+
+- **repos**: non-interactive actions for repos, and pdms repo edit
+
 ## v0.2.5 (2026-10-01)
 
 ### Feat
