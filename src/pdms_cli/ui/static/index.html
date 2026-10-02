@@ -17,14 +17,23 @@
   <div class="ctx" id="ctx"></div>
   <div class="menu" id="repo-menu" role="menu" hidden></div>
 </header>
-<nav class="side">
-  <a href="#home" data-view="home">Home</a>
-  <a href="#services" data-view="services">Services <span id="count"></span></a>
-  <a href="#stacks" data-view="stacks">Stacks <span id="stack-count"></span></a>
-  <a href="#proxy" data-view="proxy">Proxy <span id="proxy-on"></span></a>
-  <a href="#events" data-view="events">Events <span id="events-on"></span></a>
-  <a href="#doctor" data-view="doctor" class="side-end">Doctor <span class="badge" id="doctor-badge" hidden></span></a>
-  <a href="#settings" data-view="settings">Settings</a>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-services" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6.5" rx="1.5"/><rect x="3" y="13.5" width="18" height="6.5" rx="1.5"/><path d="M7 7.2h.01M7 16.8h.01"/></symbol>
+  <symbol id="i-stacks" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></symbol>
+  <symbol id="i-proxy" viewBox="0 0 24 24"><path d="M4 8h14l-3-3M20 16H6l3 3"/></symbol>
+  <symbol id="i-events" viewBox="0 0 24 24"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M6 5h12l2 8v6H4v-6z"/></symbol>
+  <symbol id="i-doctor" viewBox="0 0 24 24"><path d="M3 12h4l2-5 4 10 2-5h6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+</svg>
+<nav class="side" aria-label="Views">
+  <a href="#home" data-view="home" title="Home"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg><span class="lbl">Home</span></a>
+  <a href="#services" data-view="services" title="Services"><svg class="i" aria-hidden="true"><use href="#i-services"/></svg><span class="lbl">Services</span><span class="cnt" id="count"></span><span class="badge bad" id="svc-badge" hidden></span></a>
+  <a href="#stacks" data-view="stacks" title="Stacks"><svg class="i" aria-hidden="true"><use href="#i-stacks"/></svg><span class="lbl">Stacks</span><span class="cnt" id="stack-count"></span></a>
+  <a href="#proxy" data-view="proxy" title="Proxy"><svg class="i" aria-hidden="true"><use href="#i-proxy"/></svg><span class="lbl">Proxy</span><span class="sdot" id="proxy-on"></span></a>
+  <a href="#events" data-view="events" title="Events"><svg class="i" aria-hidden="true"><use href="#i-events"/></svg><span class="lbl">Events</span><span class="sdot" id="events-on"></span></a>
+  <a href="#doctor" data-view="doctor" class="side-end" title="Doctor"><svg class="i" aria-hidden="true"><use href="#i-doctor"/></svg><span class="lbl">Doctor</span><span class="badge" id="doctor-badge" hidden></span></a>
+  <a href="#settings" data-view="settings" title="Settings"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg><span class="lbl">Settings</span></a>
 </nav>
 <main class="main">
 <section class="view" id="view-home" hidden>
@@ -360,9 +369,9 @@
     <form class="card settings-form" id="defaults-form" autocomplete="off"></form>
     <p class="error" id="defaults-error" hidden></p>
     <p class="empty card" id="defaults-none" hidden>No setting matches the filter.</p>
+    <p class="muted note">The CLI keeps working alongside: both read and change the same state.</p>
   </div>
 </section>
-  <p class="muted note">The CLI keeps working alongside: both read and change the same state.</p>
 </main>
 
 <dialog id="restart">

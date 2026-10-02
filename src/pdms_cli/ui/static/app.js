@@ -10,6 +10,8 @@ function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
     if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    // The page's CSP refuses style attributes; set through the CSSOM, which it allows (a meter's width).
+    else if (key === "style") node.style.cssText = value;
     else node.setAttribute(key, value);
   }
   for (const child of children) node.append(child);
@@ -266,6 +268,10 @@ function paintServices() {
   const alive = state.instances.filter((i) => i.status !== "stopped");
   const failing = state.instances.filter((i) => i.status === "error" || i.status === "stopped");
   $("count").textContent = alive.length || "";
+  const broken = failing.length + (state.strays || []).length;
+  $("svc-badge").hidden = !broken;
+  $("svc-badge").textContent = String(broken);
+  $("svc-badge").title = t("{n} failing", { n: failing.length }) + ((state.strays || []).length ? ` · ${t("{n} outside pdms", { n: state.strays.length })}` : "");
   const parts = [t("{n} running", { n: alive.length }), t("{n} failing", { n: failing.length })];
   if ((state.strays || []).length) parts.push(t("{n} outside pdms", { n: state.strays.length }));
   $("summary").textContent = parts.join(" · ");
@@ -278,12 +284,34 @@ function tickUptimes() {
   for (const cell of document.querySelectorAll("[data-started]")) cell.textContent = uptime(cell.dataset.started);
 }
 
+// Settings → Defaults → Look: like the computer ("system"), or always light or dark.
+function useTheme(theme) {
+  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+}
+
+// A path as people read it: ~ for their home folder and, when still long, … in the middle (the full one goes in a title).
+function shortPath(path, max = 44) {
+  let text = String(path || "");
+  const home = state && state.home;
+  if (home && (text === home || text.startsWith(home + "/") || text.startsWith(home + "\\"))) text = "~" + text.slice(home.length);
+  if (text.length <= max) return text;
+  const keep = max - 1;
+  return text.slice(0, Math.ceil(keep * 0.4)) + "…" + text.slice(text.length - Math.floor(keep * 0.6));
+}
+
+// Every path inside a text (a check's detail, a hint) shortened the same way.
+function shortPaths(text) {
+  return String(text || "").replace(/(?:[A-Za-z]:\\|\/)[^\s·,()]+/g, (path) => shortPath(path));
+}
+
 function paint(next) {
   // pdms ui restarted with a new version (an update): load its page, which may have changed too.
   if (updateView.loaded === null) updateView.loaded = next.version;
   else if (next.version !== updateView.loaded) { location.reload(); return; }
   state = { jobs: {}, users: [], dbs: [], stacks: [], ...next };
   const relabel = useLanguage(state.language);
+  useTheme(state.theme);
   paintContext();
   paintUpdate();
   paintDoctorBadge();
@@ -819,7 +847,8 @@ function paintProxy() {
   const running = state.proxy;
   const job = proxyJob();
   const busy = job && !job.error;
-  $("proxy-on").textContent = running ? `:${running.port}` : "";
+  $("proxy-on").classList.toggle("on", Boolean(running));
+  $("proxy-on").title = running ? t("on :{port}", { port: running.port }) : t("off");
   $("proxy-summary").textContent = busy ? phaseLabel(job.phase)
     : running ? running.status === "ok" ? t("running on :{port}", { port: running.port }) : t("starting on :{port}", { port: running.port })
       : t("off");
@@ -1121,7 +1150,8 @@ function paintEvents() {
   const job = eventsJob();
   const busy = job && !job.error;
   const up = state.events.up;
-  $("events-on").textContent = up ? `:${state.events.port}` : "";
+  $("events-on").classList.toggle("on", Boolean(up));
+  $("events-on").title = up ? t("on :{port}", { port: state.events.port }) : t("off");
   $("events-summary").textContent = busy ? phaseLabel(job.phase) : up ? t("ElasticMQ running on :{port}", { port: state.events.port }) : t("off");
   $("events-start").hidden = up || busy;
   $("events-stop").hidden = !up || busy;
@@ -1653,8 +1683,10 @@ const settingsView = {
 };
 // [key, label, kind, help]: the rows of the Defaults tab, in the order of pdms config defaults (label and help
 // translated when painted).
+const THEME_NAMES = { system: N_("Like the computer"), light: N_("Light"), dark: N_("Dark") };
 const DEFAULTS = [
   ["language", N_("Language"), "select", N_("Of the CLI, of this page and of the messages pdms ui gets from the CLI.")],
+  ["theme", N_("Look"), "select", N_("Light or dark like the computer, or always one of them.")],
   ["host", N_("uvicorn host"), "text", N_("Where services listen (0.0.0.0: every interface).")],
   ["port", N_("Default port"), "number", N_("The first port tried for a service; the next free one when it is busy.")],
   ["logging_level", N_("LOGGING_LEVEL"), "select", N_("Passed to every service.")],
@@ -1706,7 +1738,7 @@ function paintSettings() {
     dbs === 1 ? t("{n} database", { n: dbs }) : t("{n} databases", { n: dbs }),
     users === 1 ? t("{n} user", { n: users }) : t("{n} users", { n: users }),
   ].join(" · ");
-  $("settings-path").textContent = data.path;
+  $("settings-path").textContent = shortPath(data.path);
   $("settings-path").title = data.path;
   paintRepos();
   paintDbs();
@@ -2013,7 +2045,8 @@ function settingInput(key, kind, value) {
   if (kind === "select") {
     const select = el("select", { id });
     const choices = settingsView.data.choices[key];
-    const names = Array.isArray(choices) ? Object.fromEntries(choices.map((c) => [c, c])) : choices;
+    const names = key === "theme" ? Object.fromEntries(choices.map((c) => [c, t(THEME_NAMES[c] || c)]))
+      : Array.isArray(choices) ? Object.fromEntries(choices.map((c) => [c, c])) : choices;
     options(select, Object.keys(names), value, (code) => names[code]);
     return select;
   }
@@ -3017,11 +3050,12 @@ async function openSetting(tab, open = null) {
 }
 
 function repoRow(repo) {
-  const path = el("td", { class: "mono" }, repo.path);
+  const path = el("td", { class: "mono", title: repo.path }, shortPath(repo.path));
   if (!repo.exists) path.append(" ", el("span", { class: "not-set" }, t("missing")));
-  const migrations = el("td", { class: "mono" }, repo.migrations || el("span", { class: "found-note" }, t("not set")));
-  const remote = el("td", { class: "mono" }, repo.remote
-    || el("span", { class: "found-note" }, repo.remote_found ? t("from frontend/.env: {url}", { url: repo.remote_found }) : t("not set")));
+  const migrations = el("td", { class: "mono", title: repo.migrations || "" },
+    repo.migrations ? shortPath(repo.migrations) : el("span", { class: "found-note" }, t("not set")));
+  const remote = el("td", { class: "mono", title: repo.remote || repo.remote_found || "" }, repo.remote ? shortPath(repo.remote)
+    : el("span", { class: "found-note" }, repo.remote_found ? t("from frontend/.env: {url}", { url: shortPath(repo.remote_found) }) : t("not set")));
   const name = el("td", {}, el("b", {}, repo.name));
   if (repo.current) name.append(el("span", { class: "tag current" }, t("current")));
   return el("tr", { class: repo.current ? "current" : "" },
@@ -3293,7 +3327,7 @@ function copyText(text, done) {
 function checkRow(check) {
   const row = el("div", { class: `check ${check.status === "ok" ? "" : check.status}` },
     el("span", { class: `icon ${check.status}`, "aria-label": statusWord(check.status) }, CHECK_ICONS[check.status] || "?"),
-    el("div", { class: "what" }, el("b", {}, check.name), el("span", { class: "detail" }, check.detail)));
+    el("div", { class: "what" }, el("b", {}, check.name), el("span", { class: "detail", title: check.detail }, shortPaths(check.detail))));
   if (check.status !== "ok" && (check.hint || check.fix)) {
     const hint = el("div", { class: "hint" });
     if (check.fix) hint.append(el("span", { class: "muted" }, check.hint), fixButton(check));

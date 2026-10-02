@@ -6,6 +6,7 @@ All prompts use ``unsafe_ask`` so Ctrl+C raises KeyboardInterrupt, handled once 
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from typing import Callable, Iterable
 
 import questionary
@@ -178,8 +179,9 @@ def ask_defaults(current: Defaults) -> Defaults:
             env[key] = value
         else:
             env.pop(key, None)
-    return Defaults(
-        language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
+    # What it does not ask (the ElasticMQ port, the look of pdms ui...) stays as it was.
+    return replace(
+        current, language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
         smart_install=smart_install if install else current.smart_install, update_check=update_check, events=events_mode, banner=banner,
         ui_at_login=ui_at_login, db_timeout=int(db_timeout), proxy_timeout=int(proxy_timeout),
         proxy_port=int(proxy_port), env=env,

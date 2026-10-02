@@ -643,6 +643,13 @@ const CATALOG = {
     "frontend/.env.local is back as it was.": "frontend/.env.local vuelve a estar como estaba.",
     "frontend/.env.local still has {url}. Pointing it to the proxy restarts yarn dev by itself.": "frontend/.env.local todavía tiene {url}. Al apuntarlo al proxy, yarn dev se reinicia solo.",
     "{url} comes from frontend/.env.local. Start the proxy, or change VITE_APP_API_URL there.": "{url} sale de frontend/.env.local. Levanta el proxy, o cambia ahí VITE_APP_API_URL.",
+    "Dark": "Oscuro",
+    "Light": "Claro",
+    "Light or dark like the computer, or always one of them.": "Claro u oscuro como el ordenador, o siempre uno de los dos.",
+    "Like the computer": "Como el ordenador",
+    "Look": "Aspecto",
+    "Views": "Vistas",
+    "on :{port}": "encendido en :{port}",
   },
 };
 
