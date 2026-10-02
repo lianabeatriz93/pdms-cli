@@ -93,6 +93,8 @@ def frontend_state(cfg: Config) -> dict | None:
             if now != build.get("api"):
                 state["stale"] = now
     state["api_local"] = frontend.is_local(state["api"])
+    problem = actions.frontend_api(cfg) if not state["stale"] else None
+    state["api_problem"] = asdict(problem) if problem else None
     return state
 
 

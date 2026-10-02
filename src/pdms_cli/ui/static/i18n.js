@@ -632,6 +632,17 @@ const CATALOG = {
     "{n} services adopted: pdms manages them again.": "{n} servicios adoptados: pdms vuelve a gestionarlos.",
     "{n} services run outside pdms": "{n} servicios corren fuera de pdms",
     "{n} stopped.": "{n} parados.",
+    "A proxy that did not stop cleanly left {url} in frontend/.env.local.": "Un proxy que no se paró bien dejó {url} en frontend/.env.local.",
+    "Fix it": "Arreglarlo",
+    "Nothing answers where the frontend calls (:{port})": "Nada responde donde llama el frontend (:{port})",
+    "Point it to :{port}": "Apuntarlo a :{port}",
+    "Restore .env.local": "Restaurar .env.local",
+    "The frontend calls :{port}, the proxy runs on :{proxy}": "El frontend llama a :{port}, el proxy corre en :{proxy}",
+    "The frontend calls a proxy that is not running (:{port})": "El frontend llama a un proxy que no está corriendo (:{port})",
+    "The frontend now calls the proxy.": "El frontend ahora llama al proxy.",
+    "frontend/.env.local is back as it was.": "frontend/.env.local vuelve a estar como estaba.",
+    "frontend/.env.local still has {url}. Pointing it to the proxy restarts yarn dev by itself.": "frontend/.env.local todavía tiene {url}. Al apuntarlo al proxy, yarn dev se reinicia solo.",
+    "{url} comes from frontend/.env.local. Start the proxy, or change VITE_APP_API_URL there.": "{url} sale de frontend/.env.local. Levanta el proxy, o cambia ahí VITE_APP_API_URL.",
   },
 };
 

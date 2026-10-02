@@ -1113,4 +1113,21 @@ ES: dict[str, str] = {
     "+{count} more": "+{count} más",
     "{key} adopted ({who}).":
         "{key} adoptado ({who}).",
+    # ------------------------------------------------------------------ where the frontend calls
+    "API URL":
+        "URL de la API",
+    "Nothing answers on port {port}: start the proxy (pdms proxy -b), or change VITE_APP_API_URL in frontend/.env.local.":
+        "Nada responde en el puerto {port}: levanta el proxy (pdms proxy -b), o cambia VITE_APP_API_URL en frontend/.env.local.",
+    "Point it to the proxy (frontend/.env.local; yarn dev restarts by itself).":
+        "Apúntalo al proxy (frontend/.env.local; yarn dev se reinicia solo).",
+    "Put frontend/.env.local back as it was, or start the proxy: pdms proxy -b":
+        "Deja frontend/.env.local como estaba, o levanta el proxy: pdms proxy -b",
+    "Start the proxy (pdms proxy -b), or change VITE_APP_API_URL in frontend/.env.local.":
+        "Levanta el proxy (pdms proxy -b), o cambia VITE_APP_API_URL en frontend/.env.local.",
+    "{url} · nothing answers there":
+        "{url} · nada responde ahí",
+    "{url} · the proxy runs on :{port}":
+        "{url} · el proxy corre en :{port}",
+    "{url} · the proxy that wrote it is not running":
+        "{url} · el proxy que lo escribió no está corriendo",
 }

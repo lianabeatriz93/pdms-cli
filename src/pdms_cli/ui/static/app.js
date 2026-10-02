@@ -2348,6 +2348,32 @@ function staleText(front) {
   return t("Built for {built}; the API is now {now}. Rebuild to use it.", { built: front.api || "-", now: front.stale || "-" });
 }
 
+// The frontend calls a local API nobody answers on (state.frontend.api_problem).
+function apiProblemTitle(problem) {
+  if (problem.proxy_port) return t("The frontend calls :{port}, the proxy runs on :{proxy}", { port: problem.port, proxy: problem.proxy_port });
+  if (problem.leftover) return t("The frontend calls a proxy that is not running (:{port})", { port: problem.port });
+  return t("Nothing answers where the frontend calls (:{port})", { port: problem.port });
+}
+
+function apiProblemText(problem) {
+  if (problem.proxy_port) return t("frontend/.env.local still has {url}. Pointing it to the proxy restarts yarn dev by itself.", { url: problem.url });
+  if (problem.leftover) return t("A proxy that did not stop cleanly left {url} in frontend/.env.local.", { url: problem.url });
+  return t("{url} comes from frontend/.env.local. Start the proxy, or change VITE_APP_API_URL there.", { url: problem.url });
+}
+
+function fixFrontendApi() {
+  act("/api/frontend/fix-api", {}, (data) => {
+    toast(data.done === "pointed" ? t("The frontend now calls the proxy.") : t("frontend/.env.local is back as it was."), "info");
+    act("/api/doctor/run", { databases: false });
+  });
+}
+
+function apiFixButtons(problem) {
+  if (problem.proxy_port) return [button(t("Point it to :{port}", { port: problem.proxy_port }), fixFrontendApi, { class: "btn small primary" })];
+  const start = button(t("Start proxy"), () => openProxyStart());
+  return problem.leftover ? [button(t("Restore .env.local"), fixFrontendApi), start] : [start];
+}
+
 function apiLabel(url) {
   if (!url) return "-";
   return /:\/\/(localhost|127\.0\.0\.1)[:/]/.test(url) ? t("the proxy ({url})", { url }) : url;
@@ -2590,7 +2616,8 @@ function frontendTile() {
   const job = state.jobs.frontend;
   const busy = job && !job.error;
   const status = busy ? pill("starting", phaseLabel(job.phase)) : front.running ? pill(front.status, statusLabel(front.status)) : pill("off", t("off"));
-  const rows = [[t("Mode"), front.mode ? front.mode : (state.setup || {}).frontend_mode || "dev"], [t("API"), apiLabel(front.api)]];
+  const problem = front.api_problem;
+  const rows = [[t("Mode"), front.mode ? front.mode : (state.setup || {}).frontend_mode || "dev"], [t("API"), problem ? front.api : apiLabel(front.api)]];
   if (front.mode === "build" && front.build) {
     rows.push([t("Built"), t("{when} · commit {commit}", { when: new Date(front.build.built_at).toLocaleString(), commit: front.build.commit || "-" })]);
   }
@@ -2607,9 +2634,10 @@ function frontendTile() {
       button(t("Dismiss"), () => act("/api/instances/frontend/dismiss"), { class: "btn small ghost" }));
   }
   return tile({
-    title: t("Frontend"), status, kind: (job && job.error) || front.status === "error" ? "bad" : front.stale ? "warn" : "",
+    title: t("Frontend"), status, kind: (job && job.error) || front.status === "error" ? "bad" : front.stale || problem ? "warn" : "",
     main: front.running ? link(front.url, front.url) : t("PDMS web app (Vite, :{port})", { port: front.port }),
-    rows, hint: job && job.error ? failedText(job) : front.stale ? staleText(front) : front.detail, actions,
+    rows, hint: job && job.error ? failedText(job) : front.stale ? staleText(front) : problem ? apiProblemTitle(problem) : front.detail,
+    actions: problem && !busy ? [...apiFixButtons(problem), ...actions] : actions,
   });
 }
 
@@ -2682,6 +2710,7 @@ function attention() {
   if (front && front.running && front.status === "error" && !state.jobs.frontend) {
     items.push(["bad", "frontend", front.detail, [button(t("Logs"), () => showLogs("frontend"))]]);
   }
+  if (front && front.api_problem) items.push(["warn", apiProblemTitle(front.api_problem), apiProblemText(front.api_problem), apiFixButtons(front.api_problem)]);
   if (front && front.stale) items.push(["warn", t("The frontend build is out of date"), staleText(front), [button(t("Rebuild"), rebuildFrontend)]]);
   if ((state.setup || {}).events && !state.events.up && !state.jobs[EVENTS_JOB]) {
     items.push(["warn", t("The local events are off"), t("The services publish to AWS until they are on."), [button(t("Start"), openEventsUp)]]);
@@ -3202,7 +3231,7 @@ function paintFlyway() {
 const doctorView = { latest: null, at: null };
 const CHECK_ICONS = { ok: "✓", warn: "!", fail: "✗" };
 // What Home already shows by itself (services, updates), so its Doctor lines leave them out.
-const HOME_COVERS = new Set(["services", "forget_stopped", "update", "adopt"]);
+const HOME_COVERS = new Set(["services", "forget_stopped", "update", "adopt", "frontend_api"]);
 // A hint that is a command to run, shown with a Copy button.
 const COMMAND = /^(pdms|chmod|nvm|npm|uv|sudo|yarn) \S.*[^.]$/;
 
@@ -3234,6 +3263,7 @@ function fixLabel(fix) {
   if (kind === "edit_repo") return t("Edit {name}", { name });
   if (kind === "forget_stopped") return t("Forget stopped");
   if (kind === "adopt") return t("Adopt all");
+  if (kind === "frontend_api") return t("Fix it");
   return t("Open Services");
 }
 
@@ -3246,6 +3276,7 @@ function runFix(fix) {
   else if (kind === "add_repo") openSetting("repos", () => openRepo());
   else if (kind === "repos") openSetting("repos");
   else if (kind === "edit_repo") openSetting("repos", (data) => { const repo = data.repos.find((r) => r.name === name); if (repo) openRepo(repo); });
+  else if (kind === "frontend_api") fixFrontendApi();
   else if (kind === "adopt") adoptStrays(null, () => act("/api/doctor/run", { databases: false }));
   else if (kind === "forget_stopped") act("/api/clean", {}, (data) => { toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info"); act("/api/doctor/run", { databases: false }); });
   else location.hash = "#services";

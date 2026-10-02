@@ -841,6 +841,54 @@ def stop_frontend(current: dict | None = None) -> bool:
     return True
 
 
+@dataclass
+class FrontendApi:
+    """The web app calls a local API nobody answers on: a proxy that stopped, or one on another port."""
+
+    url: str  # VITE_APP_API_URL (+ version) it calls
+    port: int
+    proxy_port: int | None  # the proxy running now, if any
+    leftover: bool  # frontend/.env.local still has the change a proxy that did not stop cleanly made
+
+
+def frontend_api(cfg: Config) -> FrontendApi | None:
+    """What is wrong with where the frontend of the current repo sends its API calls, or None when nothing is."""
+    root = repos.active_root(cfg)
+    if not frontend.exists(root):
+        return None
+    url = frontend.api_url(root, "dev")
+    if not frontend.is_local(url):
+        return None
+    try:
+        port = urlsplit(url).port or 80
+    except ValueError:
+        return None
+    running = proxy.running_proxy()
+    if running and running["port"] == port:
+        return None
+    if instances.responds("127.0.0.1", port, timeout=0.5):  # a service it calls directly, on purpose
+        return None
+    return FrontendApi(url, port, running["port"] if running else None, bool(proxy.frontend_change()))
+
+
+def fix_frontend_api(cfg: Config) -> str:
+    """Point the frontend to the running proxy ("pointed"), or put ``.env.local`` back as it was ("restored")."""
+    problem = frontend_api(cfg)
+    if problem is None:
+        return ""
+    root = repos.active_root(cfg)
+    if problem.proxy_port:
+        proxy.restore_frontend_change()  # the old proxy's change goes first, so this one undoes to the original
+        change = repos.point_frontend_to(root, f"http://localhost:{problem.proxy_port}")
+        if change:
+            proxy.remember_frontend_change(change)
+        return "pointed"
+    if problem.leftover and proxy.restore_frontend_change():
+        return "restored"
+    raise ActionError(_("Nothing answers on port {port}: start the proxy (pdms proxy -b), or change VITE_APP_API_URL "
+                        "in frontend/.env.local.", port=problem.port))
+
+
 # --------------------------------------------------------------------------- repos
 
 
