@@ -35,9 +35,12 @@ STATIC = resources.files("pdms_cli.ui") / "static"
 def pdms_executable(gui: bool = False) -> Path:
     """This ``pdms`` (``pdmsw`` on Windows when ``gui``: no console window), else the one on the PATH."""
     running = Path(sys.argv[0])
+    # On Windows the launcher's argv[0] may come without its .exe.
+    candidates = [running, running.with_name(running.name + ".exe")] if sys.platform == "win32" else [running]
+    mine = next((path for path in candidates if path.stem in ("pdms", "pdmsw") and path.is_file()), None)
     found = shutil.which("pdms")
-    if running.stem in ("pdms", "pdmsw") and running.is_file():
-        exe = running.absolute()
+    if mine:
+        exe = mine.absolute()
     else:
         exe = Path(found) if found else running.absolute()
     if exe.stem == "pdmsw":

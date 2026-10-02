@@ -29,6 +29,7 @@ from test_ui_server import TOKEN, post, request, wait_until
 def home(monkeypatch, tmp_path):
     """A home of its own, with the XDG folders inside it and pdms at ~/.local/bin/pdms."""
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() on Windows
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / ".local" / "share"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".local" / "state"))
@@ -42,6 +43,7 @@ def home(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- app menu and login
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX paths and permissions")
 def test_linux_menu_entry_icons_and_uninstall(home, monkeypatch) -> None:
     monkeypatch.setattr(desktop.sys, "platform", "linux")
     entry = desktop.install()
@@ -68,6 +70,7 @@ def test_desktop_exec_quotes_what_needs_it() -> None:
     assert desktop.desktop_quote('a"b$c') == '"a\\"b\\$c"'
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX paths and permissions")
 def test_macos_app_and_launch_agent(home, monkeypatch) -> None:
     monkeypatch.setattr(desktop.sys, "platform", "darwin")
     app = desktop.install()
@@ -256,6 +259,8 @@ def test_release_notes_between_two_versions(monkeypatch) -> None:
 
 
 def test_the_state_offers_a_newer_version(home, monkeypatch) -> None:
+    for name in ("CI", "PDMS_NO_UPDATE_CHECK"):  # both turn the automatic check off
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(update, "install_kind", lambda: "uv-tool")
     monkeypatch.setattr(update, "latest_version", lambda pre, timeout: "9.0.0")
     update.refresh(pre=False)
@@ -381,3 +386,15 @@ def test_self_update_on_windows_hands_over_to_the_helper(home, monkeypatch) -> N
     monkeypatch.setattr(proxy, "running_proxy", lambda: {"pid": 1, "port": 8000})
     result = CliRunner().invoke(cli.app, ["self-update"])
     assert result.exit_code == 1 and "pdms stop proxy" in result.output
+
+
+def test_the_entries_run_this_pdms_even_without_its_exe_suffix(home, monkeypatch) -> None:
+    bin_dir = home / "bin"
+    bin_dir.mkdir()
+    for name in ("pdms.exe", "pdmsw.exe"):
+        (bin_dir / name).write_text("")
+    monkeypatch.setattr(desktop.sys, "platform", "win32")
+    monkeypatch.setattr(desktop.sys, "argv", [str(bin_dir / "pdms"), "ui", "--install"])
+    monkeypatch.setattr(desktop.shutil, "which", lambda name: None)  # a fresh install is not on the PATH yet
+    assert desktop.pdms_executable() == bin_dir / "pdms.exe"
+    assert desktop.pdms_executable(gui=True) == bin_dir / "pdmsw.exe"

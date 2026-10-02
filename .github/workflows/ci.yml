@@ -139,9 +139,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # The Start menu shortcut that PDMS_MENU=1 asked for points to pdmsw.exe (no console window).
           $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\pdms.lnk"
-          $target = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
+          $target = if (Test-Path $lnk) { (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath } else { "" }
           Write-Output "pdms.lnk -> $target"
-          if (-not $target.EndsWith("pdmsw.exe")) { exit 1 }
+          if (-not "$target".EndsWith("pdmsw.exe")) {
+            $tail = (Get-Content installer.log -Tail 25) -join "%0A"
+            Write-Output "::error title=Start menu shortcut ($(Test-Path $lnk)) points to '$target'::$tail"
+            exit 1
+          }
           & (Join-Path (uv tool dir --bin).Trim() "pdms.exe") ui --uninstall
 
   flyway:
