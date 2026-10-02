@@ -31,6 +31,9 @@ class Check:
     status: str
     detail: str = ""
     hint: str = ""
+    # What pdms ui can do about it (its hint becomes a button): update, add_user, add_db, edit_db:<name>, add_repo,
+    # repos, edit_repo:<alias>, forget_stopped, services.
+    fix: str = ""
 
 
 def _run(cmd: list[str], timeout: float = 10) -> tuple[int, str]:
@@ -56,7 +59,7 @@ def check_pdms() -> list[Check]:
         latest = cache.get("latest")
         if latest and update.is_newer(latest):
             checks.append(Check(section, _("Updates"), WARN, _("{latest} is available", latest=latest),
-                                "pdms self-update"))
+                                "pdms self-update", fix="update"))
         elif latest:
             checks.append(Check(section, _("Updates"), OK, _("up to date")))
     return checks
@@ -152,12 +155,13 @@ def check_config(cfg: Config) -> list[Check]:
         checks.append(Check(section, _("Permissions"), OK if private else WARN, oct(mode),
                             "" if private else f"chmod 600 {path}"))
     checks.append(Check(section, _("Users"), OK if cfg.users else WARN, str(len(cfg.users)),
-                        "" if cfg.users else "pdms user add / pdms user import"))
+                        "" if cfg.users else "pdms user add / pdms user import", fix="" if cfg.users else "add_user"))
     no_password = [n for n, db in cfg.dbs.items() if not db.password]
     checks.append(Check(
         section, _("Databases"), OK if cfg.dbs and not no_password else WARN,
         str(len(cfg.dbs)) + (f" · {_('without password')}: {', '.join(no_password)}" if no_password else ""),
         "pdms db add" if not cfg.dbs else ("pdms db edit " + no_password[0] if no_password else ""),
+        fix="add_db" if not cfg.dbs else (f"edit_db:{no_password[0]}" if no_password else ""),
     ))
     return checks
 
@@ -174,7 +178,8 @@ def check_databases(cfg: Config, timeout: int) -> list[Check]:
             return Check(section, name, OK, f"{db.host}:{db.port} · {version.split(',')[0]}")
         except Exception as exc:  # noqa: BLE001 - any driver error is the result
             return Check(section, name, FAIL, f"{db.host}:{db.port} · {str(exc).strip().splitlines()[0]}",
-                         _("Check host/port/credentials with pdms db edit {name}, or the VPN.", name=name))
+                         _("Check host/port/credentials with pdms db edit {name}, or the VPN.", name=name),
+                         fix=f"edit_db:{name}")
 
     with ThreadPoolExecutor(max_workers=min(8, len(cfg.dbs))) as pool:
         return list(pool.map(probe, cfg.dbs.items()))
@@ -188,11 +193,11 @@ def check_repo(cfg: Config) -> list[Check]:
     root = repos.active_root(cfg)
     if root is None:
         return [Check(section, _("Current repo"), WARN, _("none"),
-                      _("Run pdms inside a PDMS checkout, or: pdms repo add <path>"))]
+                      _("Run pdms inside a PDMS checkout, or: pdms repo add <path>"), fix="add_repo")]
     alias = repos.alias_of(cfg, root) or root.name
     if not root.is_dir():
         return [Check(section, _("Current repo"), FAIL, f"{alias} · {root} ({_('missing')})",
-                      _("pdms repo remove {alias}, then pdms repo add <path>", alias=alias))]
+                      _("pdms repo remove {alias}, then pdms repo add <path>", alias=alias), fix="repos")]
     checks = [Check(section, _("Current repo"), OK, f"{alias} · {root}")]
     backend = root / "backend"
     count = len(runner.find_services_below(backend)) if backend.is_dir() else 0
@@ -205,12 +210,14 @@ def check_repo(cfg: Config) -> list[Check]:
     repo = cfg.repos.get(alias)
     remote = (repo.remote if repo else "") or repos.remote_from_frontend(root)
     checks.append(Check(section, _("Remote API for the proxy"), OK if remote else WARN, remote or _("not configured"),
-                        "" if remote else _("pdms proxy --remote <url> (or set VITE_APP_API_URL in frontend/.env)")))
+                        "" if remote else _("pdms proxy --remote <url> (or set VITE_APP_API_URL in frontend/.env)"),
+                        fix="" if remote or not repo else f"edit_repo:{alias}"))
     saved = repo.migrations if repo and repo.migrations and migrations.is_migrations_repo(Path(repo.migrations)) else ""
     near = migrations.siblings(root)
     guess = saved or (str(near[0]) if len(near) == 1 else str(migrations.best_match(root, near) or ""))
     checks.append(Check(section, _("Migrations repo (Flyway)"), OK if guess else WARN, guess or _("not found"),
-                        "" if guess else _("Clone pdms-db-migrations next to the PDMS repo, or pdms migrate --migrations PATH")))
+                        "" if guess else _("Clone pdms-db-migrations next to the PDMS repo, or pdms migrate --migrations PATH"),
+                        fix="" if guess or not repo else f"edit_repo:{alias}"))
     return checks
 
 
@@ -273,13 +280,16 @@ def check_instances() -> list[Check]:
         by_state.setdefault(health.state, []).append(key)
     checks = [Check(section, _("Instances"), OK, ", ".join(f"{len(v)} {k}" for k, v in sorted(by_state.items())))]
     if by_state.get("error"):
-        checks.append(Check(section, _("With errors"), FAIL, ", ".join(by_state["error"]), "pdms ps / pdms logs <instance>"))
+        checks.append(Check(section, _("With errors"), FAIL, ", ".join(by_state["error"]), "pdms ps / pdms logs <instance>",
+                            fix="services"))
     if by_state.get("stopped"):
-        checks.append(Check(section, _("Stopped"), WARN, ", ".join(by_state["stopped"]), "pdms ps --clean"))
+        checks.append(Check(section, _("Stopped"), WARN, ", ".join(by_state["stopped"]), "pdms ps --clean",
+                            fix="forget_stopped"))
     stale = [i.key for i in items if healths[i.key].state != "stopped" and i.deps
              and installer.changed_parts(i.deps, Path(i.service))]
     if stale:
-        checks.append(Check(section, _("Outdated installed code"), WARN, ", ".join(stale), "pdms restart <instance>"))
+        checks.append(Check(section, _("Outdated installed code"), WARN, ", ".join(stale), "pdms restart <instance>",
+                            fix="services"))
     return checks
 
 

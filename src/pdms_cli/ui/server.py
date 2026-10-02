@@ -145,6 +145,10 @@ def decision_body(decision: actions.Decision) -> dict:
         return {"decision": "port_busy", "port": decision.port, "free": decision.free}
     if isinstance(decision, actions.PointFrontend):
         return {"decision": "point_frontend", "url": decision.url}
+    if isinstance(decision, ui_jobs.LeftRunning):
+        switch = decision.switch
+        return {"decision": "repo_switch", "old": switch.old, "proxy": switch.proxy,
+                "running": [{"key": inst.key, "movable": target is not None} for inst, target in switch.running]}
     return {"decision": type(decision).__name__, "error": str(decision)}
 
 
@@ -318,7 +322,9 @@ def make_handler(
             elif url.path == "/api/services":
                 self.services()
             elif url.path == "/api/config":
-                self.reply_json(200, ui_jobs.settings(Config.load()))
+                self.reply_json(200, {**ui_jobs.settings(Config.load()), "pick_folder": control.pick_folder is not None})
+            elif url.path == "/api/doctor":
+                self.reply_json(200, {"latest": jobs.doctor.latest(), "running": jobs.doctor.running})
             elif url.path == "/api/frontend/options":
                 try:
                     self.reply_json(200, ui_jobs.frontend_options(Config.load()))
@@ -469,6 +475,19 @@ def make_handler(
                 return 200, {"forgotten": ui_jobs.forget_stopped()}
             if path.startswith("/api/update/"):
                 return self.act_on_update(path.rsplit("/", 1)[-1], body)
+            if path == "/api/doctor/run":
+                databases = body.get("databases", False)
+                if not isinstance(databases, bool):
+                    raise actions.ActionError("databases must be true or false")
+                return (202, {}) if jobs.doctor.run(databases=databases) else (409, {"error": "Doctor is running."})
+            if path == "/api/ui/pick-folder":
+                if control.pick_folder is None:
+                    return 404, {"error": "only in the window"}
+                return 200, {"path": control.pick_folder(str(body.get("start") or ""))}
+            if path == "/api/repos/check":
+                return 200, ui_jobs.look_at_repo(body)
+            if path == "/api/repos/add":
+                return 200, {"name": ui_jobs.add_repo(body)}
             if path == "/api/proxy/start":
                 return 202, {"job": jobs.start_proxy(**proxy_options(body)).key}
             if path == "/api/run":
@@ -500,6 +519,8 @@ def make_handler(
             parts = path.split("/")
             if len(parts) == 5 and parts[:2] == ["", "api"] and parts[2] in ("dbs", "users"):
                 return self.act_on_setting(parts[2], unquote(parts[3]), parts[4], body)
+            if len(parts) == 5 and parts[:3] == ["", "api", "repos"]:
+                return self.act_on_repo(unquote(parts[3]), parts[4], body)
             if len(parts) != 5 or parts[:2] != ["", "api"] or parts[2] not in ("instances", "stacks"):
                 return 404, {"error": "not found"}
             if parts[2] == "stacks":
@@ -516,6 +537,18 @@ def make_handler(
             if verb == "dismiss":
                 jobs.dismiss(key)
                 return 200, {}
+            return 404, {"error": "not found"}
+
+        def act_on_repo(self, name: str, verb: str, body: dict) -> tuple[int, dict]:
+            if verb == "use":
+                running = body.get("running")
+                if running is not None and not isinstance(running, str):
+                    raise actions.ActionError("running must be keep, stop or move")
+                return 200, jobs.use_repo(name, running)
+            if verb == "save":
+                return 200, {"name": ui_jobs.save_repo(name, body)}
+            if verb == "remove":
+                return 200, {"current": ui_jobs.remove_repo(name)}
             return 404, {"error": "not found"}
 
         def act_on_update(self, verb: str, body: dict) -> tuple[int, dict]:
@@ -661,7 +694,7 @@ def make_app() -> tuple[Hub, ui_jobs.Jobs]:
     jobs = ui_jobs.Jobs(lambda: hub.poke())
 
     def build() -> dict:
-        state = build_state(jobs=jobs.snapshot())
+        state = build_state(jobs=jobs.snapshot(), doctor=jobs.doctor.summary())
         i18n.set_language(state["language"])  # the server's own messages follow a change made in the CLI too
         return state
 

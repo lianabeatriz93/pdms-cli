@@ -309,6 +309,17 @@ imported from the `pdms_user` table of a database, like `pdms user import`. **Ex
 `pdms config export` and `pdms config import` do: choose the sections, the passwords only if asked, and on import see
 what is new or changed and which of your entries to overwrite (the previous file is kept as a backup).
 Deleting a database or a user that a stack uses makes that stack ask for one when it starts.
+Its first tab, **Repos**, adds (checking the folder as you type it; **Browse…** in the window), edits (name,
+migrations repo, remote API for the proxy) and removes repos, like `pdms repo add/edit/remove`, and **Use** makes one
+the current repo: when services of the old one are running it asks, like `pdms repo use`, whether to keep them, stop
+them or restart them from the new repo with the same user, database and port. The repo chip in the title bar lists the
+repos to switch to.
+
+**Doctor** (in the sidebar) runs the checks of `pdms doctor`, grouped by section, with a filter, "Problems only" and,
+if asked, the database connections. Where pdms ui can fix something the hint is a button (edit that database, set the
+repo's migrations, forget stopped services...); otherwise it shows the command, ready to copy. **Copy report** copies
+them all as text. They run when pdms ui starts and every 15 minutes, so the sidebar shows how many warnings and
+problems there are, and Home's "Needs attention" lists the problems.
 
 The page uses the language of pdms (`pdms config language`, or `PDMS_LANG`) and changes with it while it is open.
 

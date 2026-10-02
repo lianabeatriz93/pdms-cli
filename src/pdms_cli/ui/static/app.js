@@ -53,6 +53,7 @@ function failedText(job) {
   if (job.action === "stop" || job.action === "down") return t("Stop failed: {error}", { error });
   if (job.action === "restart") return t("Restart failed: {error}", { error });
   if (job.action === "update") return t("Update failed: {error}", { error });
+  if (job.action === "move") return t("Moving to the new repo failed: {error}", { error });
   return t("{action} failed: {error}", { action: job.action, error });
 }
 
@@ -107,7 +108,9 @@ function userChip() {
 }
 
 function paintContext() {
-  const chips = [chip(t("repo"), state.repo && state.repo.alias), userChip(), chip(t("db"), state.db)];
+  const repo = el("button", { class: "chip repo-chip", type: "button", "aria-haspopup": "menu", onclick: toggleRepoMenu },
+    t("repo"), el("b", {}, (state.repo && state.repo.alias) || "-"));
+  const chips = [repo, userChip(), chip(t("db"), state.db)];
   chips.push(chip(t("proxy"), state.proxy ? `:${state.proxy.port}` : t("off")));
   chips.push(chip(t("events"), state.events.up ? `:${state.events.port}` : t("off")));
   $("ctx").replaceChildren(...chips);
@@ -245,6 +248,11 @@ function paint(next) {
   const relabel = useLanguage(state.language);
   paintContext();
   paintUpdate();
+  paintDoctorBadge();
+  if (currentView() === "doctor") {
+    if (state.doctor.at !== doctorView.at) loadDoctor();
+    else paintDoctor();
+  }
   paintHome();
   paintServices();
   paintStacks();
@@ -1602,7 +1610,7 @@ async function submitSend(event) {
 
 const REVEAL_FOR = 30000; // a shown password hides again by itself
 const settingsView = {
-  tab: "dbs", data: null, seen: "", revealed: {}, timers: {}, tests: {}, db: null, user: null, passwordTouched: false,
+  tab: "repos", data: null, seen: "", revealed: {}, timers: {}, tests: {}, db: null, user: null, passwordTouched: false,
   protectedTouched: false,
 };
 // [key, label, kind, help]: the rows of the Defaults tab, in the order of pdms config defaults (label and help
@@ -1642,7 +1650,7 @@ async function loadSettings() {
 
 // The CLI may change the databases or users while the tab is open: the state's names tell when to load them again.
 function syncSettings() {
-  const seen = JSON.stringify([state.users, state.dbs]);
+  const seen = JSON.stringify([state.users, state.dbs, state.repos, state.repo]);
   if (seen === settingsView.seen) return;
   settingsView.seen = seen;
   if (currentView() === "settings") loadSettings();
@@ -1650,7 +1658,7 @@ function syncSettings() {
 
 function paintSettings() {
   for (const tab of $("settings-tabs").children) tab.setAttribute("aria-selected", String(tab.dataset.tab === settingsView.tab));
-  for (const name of ["dbs", "users", "defaults"]) $(`settings-${name}`).hidden = name !== settingsView.tab;
+  for (const name of ["repos", "dbs", "users", "defaults"]) $(`settings-${name}`).hidden = name !== settingsView.tab;
   const data = settingsView.data;
   if (!data) return;
   const dbs = data.dbs.length;
@@ -1661,6 +1669,7 @@ function paintSettings() {
   ].join(" · ");
   $("settings-path").textContent = data.path;
   $("settings-path").title = data.path;
+  paintRepos();
   paintDbs();
   paintUsers();
   if (!defaultsChanged()) paintDefaults();
@@ -2628,6 +2637,15 @@ function attention() {
   if ((state.setup || {}).events && !state.events.up && !state.jobs[EVENTS_JOB]) {
     items.push(["warn", t("The local events are off"), t("The services publish to AWS until they are on."), [button(t("Start"), openEventsUp)]]);
   }
+  const fromDoctor = (state.doctor.problems || []).filter((check) => !HOME_COVERS.has(check.fix));
+  for (const check of fromDoctor.filter((c) => c.status === "fail")) {
+    items.push(["bad", `${check.section} · ${check.name}`, check.detail, [check.fix ? fixButton(check) : button(t("Doctor"), () => { location.hash = "#doctor"; })]]);
+  }
+  const warnings = fromDoctor.filter((c) => c.status === "warn").length;
+  if (warnings) {
+    items.push(["warn", warnings === 1 ? t("Doctor found 1 warning") : t("Doctor found {n} warnings", { n: warnings }),
+      fromDoctor.filter((c) => c.status === "warn").map((c) => `${c.section}: ${c.name}`).join(" · "), [button(t("Open Doctor"), () => { location.hash = "#doctor"; })]]);
+  }
   const offer = updateOffer();
   if (offer && !state.jobs[UPDATE_JOB]) {
     items.push(["info", offerTitle(offer), offerText(offer), [button(offer.kind === "restart" ? t("Restart pdms ui") : t("See what is new"), openUpdate)]]);
@@ -2895,9 +2913,304 @@ async function copyCommand() {
   }
 }
 
+// ---------------------------------------------------------------------------- repos
+
+function toggleRepoMenu(event) {
+  event.stopPropagation();
+  const menu = $("repo-menu");
+  if (!menu.hidden) { menu.hidden = true; return; }
+  const current = state.repo && state.repo.alias;
+  menu.replaceChildren(...state.repos.map((repo) => el("button", {
+    type: "button", role: "menuitem", class: repo.name === current ? "cur" : "",
+    onclick: () => { menu.hidden = true; if (repo.name !== current) useRepo(repo.name); },
+  }, el("b", {}, repo.name), el("small", {}, repo.path))), el("hr"), el("button", {
+    type: "button", role: "menuitem", onclick: () => { menu.hidden = true; openSetting("repos"); },
+  }, t("Manage repos…")));
+  menu.hidden = false;
+  menu.querySelector("button").focus();
+}
+
+async function openSetting(tab, open = null) {
+  settingsView.tab = tab;
+  location.hash = "#settings";
+  route();
+  await loadSettings();
+  if (open && settingsView.data) open(settingsView.data);
+}
+
+function repoRow(repo) {
+  const path = el("td", { class: "mono" }, repo.path);
+  if (!repo.exists) path.append(" ", el("span", { class: "not-set" }, t("missing")));
+  const migrations = el("td", { class: "mono" }, repo.migrations || el("span", { class: "found-note" }, t("not set")));
+  const remote = el("td", { class: "mono" }, repo.remote
+    || el("span", { class: "found-note" }, repo.remote_found ? t("from frontend/.env: {url}", { url: repo.remote_found }) : t("not set")));
+  const name = el("td", {}, el("b", {}, repo.name));
+  if (repo.current) name.append(el("span", { class: "tag current" }, t("current")));
+  return el("tr", { class: repo.current ? "current" : "" },
+    el("td", { class: "cur-dot" }, repo.current ? "●" : ""), name, path, migrations, remote,
+    el("td", { class: "num" }, repo.running ? String(repo.running) : ""),
+    el("td", { class: "row-actions" },
+      ...(repo.current ? [] : [button(t("Use"), () => useRepo(repo.name))]),
+      button(t("Edit"), () => openRepo(repo)),
+      button(t("Remove"), () => removeRepo(repo), { class: "btn small bad" })));
+}
+
+function paintRepos() {
+  const all = settingsView.data.repos;
+  const text = $("repo-filter").value.trim().toLowerCase();
+  const shown = all.filter((repo) => matches(text, [repo.name, repo.path]));
+  $("repo-rows").replaceChildren(...shown.map(repoRow));
+  $("repo-count").textContent = all.length ? t("{shown} of {total}", { shown: shown.length, total: all.length }) : "";
+  $("repo-empty").hidden = shown.length > 0;
+  $("repo-empty").textContent = all.length ? t("No repo matches the filter.") : t("No repos yet: add the folder of a PDMS checkout.");
+}
+
+const repoForm = { repo: null, nameTouched: false, timer: null, looked: "" };
+const REPO_FIELDS = ["path", "name", "migrations", "remote"];
+
+function openRepo(repo = null) {
+  Object.assign(repoForm, { repo, nameTouched: Boolean(repo), looked: "" });
+  $("repo-title").textContent = repo ? t("Edit {name}", { name: repo.name }) : t("Add repo");
+  $("repo-hint").textContent = repo ? t("Changes apply to services started from now on.")
+    : t("A PDMS checkout: the folder with backend/snakesdk. Like pdms repo add.");
+  $("repo-path").value = repo ? repo.path : "";
+  $("repo-path").disabled = Boolean(repo);
+  $("repo-browse").hidden = Boolean(repo) || !settingsView.data.pick_folder;
+  $("repo-found").hidden = true;
+  $("repo-name").value = repo ? repo.name : "";
+  $("repo-migrations").value = repo ? repo.migrations : "";
+  $("repo-remote").value = repo ? repo.remote : "";
+  $("repo-remote").placeholder = repo && repo.remote_found ? repo.remote_found : t("from frontend/.env (VITE_APP_API_URL)");
+  $("repo-use-label").hidden = Boolean(repo);
+  $("repo-save").textContent = repo ? t("Save") : t("Add");
+  resetForm("repo", REPO_FIELDS);
+  $("repo-dialog").showModal();
+  (repo ? $("repo-name") : $("repo-path")).focus();
+}
+
+// The folder typed (or picked) is looked at as it changes: is it a PDMS checkout, and how many services it has.
+function repoPathChanged() {
+  clearTimeout(repoForm.timer);
+  repoForm.timer = setTimeout(lookAtRepo, 400);
+}
+
+async function lookAtRepo() {
+  const path = $("repo-path").value.trim();
+  if (!path || path === repoForm.looked) return;
+  repoForm.looked = path;
+  resetForm("repo", REPO_FIELDS);
+  const { status, data } = await post("/api/repos/check", { path });
+  if (repoForm.looked !== path) return;
+  if (status !== 200) { $("repo-found").hidden = true; formError("repo", data, t("pdms ui answered {status}", { status })); return; }
+  $("repo-found").textContent = data.registered
+    ? t("Already registered as '{name}'.", { name: data.registered })
+    : t("✓ PDMS repo found: {root} · {n} services", { root: data.root, n: data.services });
+  $("repo-found").classList.toggle("warn", Boolean(data.registered));
+  $("repo-found").hidden = false;
+  if (!repoForm.nameTouched) $("repo-name").value = data.name;
+}
+
+async function browseRepo() {
+  const { status, data } = await post("/api/ui/pick-folder", { start: $("repo-path").value.trim() });
+  if (status === 200 && data.path) { $("repo-path").value = data.path; lookAtRepo(); }
+}
+
+async function saveRepo(event) {
+  event.preventDefault();
+  resetForm("repo", REPO_FIELDS);
+  const current = repoForm.repo;
+  const body = { name: $("repo-name").value.trim(), migrations: $("repo-migrations").value.trim(), remote: $("repo-remote").value.trim() };
+  const path = current ? `/api/repos/${encodeURIComponent(current.name)}/save` : "/api/repos/add";
+  if (!current) body.path = $("repo-path").value.trim();
+  $("repo-save").disabled = true;
+  try {
+    const { status, data } = await post(path, body);
+    if (status !== 200) { formError("repo", data, t("pdms ui answered {status}", { status })); return; }
+    $("repo-dialog").close();
+    toast(t("'{name}' saved.", { name: data.name }), "info");
+    await loadSettings();
+    if (!current && $("repo-use").checked && !(state.repo && state.repo.alias === data.name)) useRepo(data.name);
+  } catch {
+    formError("repo", {}, t("pdms ui is not reachable: is it still running?"));
+  } finally {
+    $("repo-save").disabled = false;
+  }
+}
+
+async function removeRepo(repo) {
+  const others = settingsView.data.repos.filter((r) => r.name !== repo.name);
+  let text = t("pdms forgets it; the folder stays on disk. Instances running from it keep running.");
+  if (repo.current) text += " " + (others.length ? t("It is the current repo: {name} becomes current.", { name: others[0].name }) : t("It is the current repo, and the only one."));
+  if (!await confirmDialog(t("Remove {name}?", { name: repo.name }), text, t("Remove"))) return;
+  act(`/api/repos/${encodeURIComponent(repo.name)}/remove`, {}, () => { toast(t("'{name}' deleted.", { name: repo.name }), "info"); loadSettings(); });
+}
+
+const switching = { name: "" };
+
+async function useRepo(name, running = null) {
+  try {
+    const { status, data } = await post(`/api/repos/${encodeURIComponent(name)}/use`, running ? { running } : {});
+    if (status === 409 && data.decision === "repo_switch") { openSwitch(name, data); return; }
+    if (status >= 400) { if ($("switch-dialog").open) { $("switch-error").textContent = data.error; $("switch-error").hidden = false; } else toast(data.error || t("pdms ui answered {status}", { status })); return; }
+    if ($("switch-dialog").open) $("switch-dialog").close();
+    toast(t("Current repo: {name}. Services, stacks and proxy routes now come from it.", { name }), "info");
+    if (data.left && data.left.length) toast(t("Not in '{name}', so still running: {keys}", { name, keys: data.left.join(", ") }), "info");
+    if (data.proxy) toast(t("The proxy still routes to '{old}': restart it to use '{name}'.", { old: data.old, name }), "info");
+    if (currentView() === "settings") loadSettings();
+  } catch {
+    toast(t("pdms ui is not reachable: is it still running?"));
+  }
+}
+
+function openSwitch(name, data) {
+  switching.name = name;
+  const keys = data.running.map((item) => item.key);
+  $("switch-title").textContent = t("Use {name} as the current repo", { name });
+  $("switch-text").textContent = t("{n} instances are running from '{old}': {keys}. What should pdms do with them?", { n: keys.length, old: data.old, keys: keys.join(", ") });
+  const stay = data.running.filter((item) => !item.movable).map((item) => item.key);
+  $("switch-move").textContent = t("Restart them from '{name}' (same user, database and port)", { name })
+    + (stay.length ? " " + t("(not in '{name}', so they keep running: {keys})", { name, keys: stay.join(", ") }) : "");
+  $("switch-proxy").hidden = !data.proxy;
+  $("switch-proxy").textContent = data.proxy ? t("The proxy is running for '{old}'. Restart it afterwards to route to '{name}'.", { old: data.old, name }) : "";
+  $("switch-error").hidden = true;
+  $("switch-go").textContent = t("Use {name}", { name });
+  $("switch-form").querySelector('input[value="keep"]').checked = true;
+  $("switch-dialog").showModal();
+}
+
+function submitSwitch(event) {
+  event.preventDefault();
+  useRepo(switching.name, $("switch-form").querySelector('input[name="running"]:checked').value);
+}
+
+// ---------------------------------------------------------------------------- doctor
+
+const doctorView = { latest: null, at: null };
+const CHECK_ICONS = { ok: "✓", warn: "!", fail: "✗" };
+// What Home already shows by itself (services, updates), so its Doctor lines leave them out.
+const HOME_COVERS = new Set(["services", "forget_stopped", "update"]);
+// A hint that is a command to run, shown with a Copy button.
+const COMMAND = /^(pdms|chmod|nvm|npm|uv|sudo|yarn) \S.*[^.]$/;
+
+function paintDoctorBadge() {
+  const counts = state.doctor.counts || {};
+  const problems = (counts.warn || 0) + (counts.fail || 0);
+  $("doctor-badge").hidden = !problems;
+  $("doctor-badge").textContent = String(problems);
+  $("doctor-badge").classList.toggle("bad", Boolean(counts.fail));
+  $("doctor-badge").title = t("{fail} problems · {warn} warnings", { fail: counts.fail || 0, warn: counts.warn || 0 });
+}
+
+async function loadDoctor() {
+  doctorView.at = state ? state.doctor.at : null;
+  const { data, error } = await getJson("/api/doctor");
+  if (error) { toast(error); return; }
+  doctorView.latest = data.latest;
+  paintDoctor();
+}
+
+function fixLabel(fix) {
+  const [kind, name] = fix.split(/:(.*)/s);
+  if (kind === "update") return t("Update…");
+  if (kind === "add_user") return t("Add a user");
+  if (kind === "add_db") return t("Add a database");
+  if (kind === "edit_db") return t("Edit {name}", { name });
+  if (kind === "add_repo") return t("Add repo");
+  if (kind === "repos") return t("Open Repos");
+  if (kind === "edit_repo") return t("Edit {name}", { name });
+  if (kind === "forget_stopped") return t("Forget stopped");
+  return t("Open Services");
+}
+
+function runFix(fix) {
+  const [kind, name] = fix.split(/:(.*)/s);
+  if (kind === "update") openUpdate();
+  else if (kind === "add_user") openSetting("users", () => openUser());
+  else if (kind === "add_db") openSetting("dbs", () => openDb());
+  else if (kind === "edit_db") openSetting("dbs", (data) => { const db = data.dbs.find((d) => d.name === name); if (db) openDb(db); });
+  else if (kind === "add_repo") openSetting("repos", () => openRepo());
+  else if (kind === "repos") openSetting("repos");
+  else if (kind === "edit_repo") openSetting("repos", (data) => { const repo = data.repos.find((r) => r.name === name); if (repo) openRepo(repo); });
+  else if (kind === "forget_stopped") act("/api/clean", {}, (data) => { toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info"); act("/api/doctor/run", { databases: false }); });
+  else location.hash = "#services";
+}
+
+function fixButton(check) {
+  return button(`${fixLabel(check.fix)} →`, () => runFix(check.fix));
+}
+
+function copyText(text, done) {
+  navigator.clipboard.writeText(text).then(() => toast(done, "info"), () => toast(t("The browser did not allow copying.")));
+}
+
+function checkRow(check) {
+  const row = el("div", { class: `check ${check.status === "ok" ? "" : check.status}` },
+    el("span", { class: `icon ${check.status}`, "aria-label": statusWord(check.status) }, CHECK_ICONS[check.status] || "?"),
+    el("div", { class: "what" }, el("b", {}, check.name), el("span", { class: "detail" }, check.detail)));
+  if (check.status !== "ok" && (check.hint || check.fix)) {
+    const hint = el("div", { class: "hint" });
+    if (check.fix) hint.append(el("span", { class: "muted" }, check.hint), fixButton(check));
+    else if (COMMAND.test(check.hint)) hint.append(el("code", {}, check.hint), button(t("Copy"), () => copyText(check.hint, t("Copied."))));
+    else hint.append(el("span", { class: "muted" }, check.hint));
+    row.append(hint);
+  }
+  return row;
+}
+
+function statusWord(status) {
+  return status === "ok" ? t("ok") : status === "warn" ? t("warning") : t("problem");
+}
+
+function paintDoctor() {
+  const latest = doctorView.latest;
+  const running = state && state.doctor.running;
+  $("doctor-running").hidden = !running;
+  $("doctor-run").disabled = Boolean(running);
+  $("doctor-error").hidden = !(latest && latest.error);
+  $("doctor-error").textContent = latest ? latest.error : "";
+  if (!latest) { $("doctor-checks").replaceChildren(); $("doctor-summary").replaceChildren(); $("doctor-when").textContent = ""; return; }
+  const checks = latest.checks;
+  const count = (status) => checks.filter((c) => c.status === status).length;
+  const summary = [el("span", { class: "st ok" }, t("{n} ok", { n: count("ok") }))];
+  if (count("warn")) summary.push(el("span", { class: "st warn" }, count("warn") === 1 ? t("1 warning") : t("{n} warnings", { n: count("warn") })));
+  if (count("fail")) summary.push(el("span", { class: "st fail" }, count("fail") === 1 ? t("1 problem") : t("{n} problems", { n: count("fail") })));
+  $("doctor-summary").replaceChildren(...summary);
+  $("doctor-when").textContent = t("Last run {when} · took {seconds} s{dbs}", {
+    when: new Date(latest.at).toLocaleTimeString(), seconds: latest.took,
+    dbs: latest.databases ? "" : " · " + t("databases not tested"),
+  });
+  const text = $("doctor-filter").value.trim().toLowerCase();
+  const problemsOnly = $("doctor-problems").checked;
+  const sections = [...new Set(checks.map((c) => c.section))];
+  const cards = [];
+  for (const section of sections) {
+    const all = checks.filter((c) => c.section === section);
+    const shown = all.filter((c) => (!problemsOnly || c.status !== "ok") && matches(text, [section, c.name, c.detail, c.hint]));
+    if (!shown.length) continue;
+    const worst = all.some((c) => c.status === "fail") ? "fail" : all.some((c) => c.status === "warn") ? "warn" : "ok";
+    const label = worst === "ok" ? t("all ok") : worst === "warn" ? t("warning") : t("problem");
+    cards.push(el("section", { class: "card check-section" },
+      el("h2", {}, section, el("span", { class: `st ${worst}` }, label)), ...shown.map(checkRow)));
+  }
+  $("doctor-checks").replaceChildren(...cards);
+  $("doctor-none").hidden = cards.length > 0 || !checks.length;
+}
+
+function runDoctor() {
+  act("/api/doctor/run", { databases: $("doctor-dbs").checked });
+}
+
+function doctorReport() {
+  const latest = doctorView.latest;
+  if (!latest) return;
+  const lines = [`pdms ${state.version} · doctor · ${latest.at}`];
+  for (const c of latest.checks) lines.push(`[${c.status}] ${c.section} · ${c.name}: ${c.detail}${c.hint && c.status !== "ok" ? `  → ${c.hint}` : ""}`);
+  copyText(lines.join("\n"), t("Report copied: paste it in a chat or an issue."));
+}
+
 // ---------------------------------------------------------------------------- views
 
-const VIEWS = ["home", "services", "stacks", "proxy", "events", "settings"];
+const VIEWS = ["home", "services", "stacks", "proxy", "events", "doctor", "settings"];
 
 function currentView() {
   const view = location.hash.slice(1);
@@ -2913,6 +3226,7 @@ function route() {
   paintEvents();
   if (view === "events") showEventsTab(eventsView.tab);
   if (view === "settings") loadSettings();
+  if (view === "doctor") loadDoctor();
 }
 
 // ---------------------------------------------------------------------------- wiring
@@ -3028,6 +3342,22 @@ $("front-form").addEventListener("change", (event) => {
 });
 $("home-start").addEventListener("click", () => startAll());
 $("update-chip").addEventListener("click", openUpdate);
+document.addEventListener("click", (event) => { if (!$("repo-menu").contains(event.target)) $("repo-menu").hidden = true; });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") $("repo-menu").hidden = true; });
+$("repo-filter").addEventListener("input", () => settingsView.data && paintRepos());
+$("repo-new").addEventListener("click", () => openRepo());
+$("repo-form").addEventListener("submit", saveRepo);
+$("repo-cancel").addEventListener("click", () => $("repo-dialog").close());
+$("repo-browse").addEventListener("click", browseRepo);
+$("repo-path").addEventListener("input", repoPathChanged);
+$("repo-name").addEventListener("input", () => { repoForm.nameTouched = true; });
+$("repo-form").addEventListener("input", (event) => event.target.removeAttribute("aria-invalid"));
+$("switch-form").addEventListener("submit", submitSwitch);
+$("switch-cancel").addEventListener("click", () => $("switch-dialog").close());
+$("doctor-run").addEventListener("click", runDoctor);
+$("doctor-copy").addEventListener("click", doctorReport);
+$("doctor-filter").addEventListener("input", paintDoctor);
+$("doctor-problems").addEventListener("change", paintDoctor);
 $("version-open").addEventListener("click", openUpdate);
 $("version-check").addEventListener("click", checkNow);
 $("update-form").addEventListener("submit", submitUpdate);

@@ -20,10 +20,21 @@ from ..config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUs
 from ..i18n import _
 from . import updates as ui_updates
 from .control import Control
+from .doctor import Doctor
 
 PROXY_PORT = 8000  # pdms proxy's --port default
 EVENTS_KEY = "events:elasticmq"  # the job of pdms events up/down (not an instance: no row of its own in Services)
 HOME_KEY = "home"  # the job of Home's Start everything / Stop everything
+REPO_KEY = "repo"  # the job of switching the current repo (stopping or moving what ran from the old one)
+SWITCH_CHOICES = ("keep", "stop", "move")
+
+
+class LeftRunning(actions.Decision):
+    """Switching repos leaves instances of the old one running: keep, stop or move them (``running``)."""
+
+    def __init__(self, switch: actions.RepoSwitch) -> None:
+        super().__init__(f"{len(switch.running)} instances run from {switch.old}")
+        self.switch = switch
 
 
 def install_log(key: str) -> Path:
@@ -51,6 +62,7 @@ class Jobs:
         self.on_change = on_change
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
+        self.doctor = Doctor(on_change)
 
     def snapshot(self) -> dict[str, dict]:
         with self._lock:
@@ -107,6 +119,43 @@ class Jobs:
         with self._lock:
             self._jobs[key] = Job(key, action, "", time.time(), error=error, log_key=log_key)
         self.on_change()
+
+    # ------------------------------------------------------------------ repos
+
+    def use_repo(self, alias: str, running: str | None = None) -> dict:
+        """Make ``alias`` the current repo, like ``pdms repo use``. What runs from the old one is kept, stopped or
+        restarted from the new one (``running``); without an answer :class:`LeftRunning` asks first."""
+        cfg = Config.load()
+        switch = actions.plan_repo_switch(cfg, alias)
+        if running is not None and running not in SWITCH_CHOICES:
+            raise actions.ActionError(f"running must be one of: {', '.join(SWITCH_CHOICES)}")
+        if switch.running and running is None:
+            raise LeftRunning(switch)
+        if self.busy(REPO_KEY):
+            raise actions.ActionError(_("{key} is busy.", key=REPO_KEY))
+        actions.use_repo(cfg, alias)
+        answer = {"proxy": switch.proxy, "old": switch.old, "job": None, "left": []}
+        if not switch.running or running == "keep":
+            return answer
+        if running == "move":
+            answer["left"] = [inst.key for inst, target in switch.running if target is None]
+
+        def work(job: Job) -> None:
+            for inst, target in switch.running:
+                if running == "move" and target is None:
+                    continue  # not in the new repo: it keeps running
+                self.phase(job, f"stopping {inst.name}")
+                actions.stop_service(inst)
+                if running == "move":
+                    self.phase(job, f"starting {inst.name}")
+                    launch = actions.plan_service(cfg, target, user_name=inst.user, db_name=inst.db, port=inst.port,
+                                                  host=inst.host, reload=inst.reload)
+                    key = instances.make_key(launch.service, launch.port)
+                    self.install(cfg, job, launch.service, key, None, inst.name)
+                    actions.start_service(cfg, launch)
+
+        answer["job"] = self.run(REPO_KEY, "move" if running == "move" else "stop", "stopping", work).key
+        return answer
 
     # ------------------------------------------------------------------ pdms itself
 
@@ -701,11 +750,57 @@ def settings(cfg: Config) -> dict:
             for name, db in cfg.dbs.items()
         ],
         "users": [{"name": name, **asdict(user), "stacks": used_by("user", name)} for name, user in cfg.users.items()],
+        "repos": repo_settings(cfg),
         "defaults": asdict(cfg.defaults),
         "roles": actions.known_roles(cfg),
         "sections": list(transfer.SECTIONS),
         "choices": {"language": i18n.LANGUAGES, "logging_level": list(LOG_LEVELS), "events": list(EVENTS_MODES)},
     }
+
+
+def repo_settings(cfg: Config) -> list[dict]:
+    """The Repos tab: each repo with its folders, the remote API (saved or read from frontend/.env) and how many
+    instances run from it."""
+    live = [inst for inst in instances.load().values() if inst.alive()]
+    rows = []
+    for alias, repo in cfg.repos.items():
+        root = repo.root
+        rows.append({
+            "name": alias, "path": str(root), "exists": root.is_dir(), "backend": repo.backend,
+            "migrations": repo.migrations, "remote": repo.remote,
+            "remote_found": "" if repo.remote or not root.is_dir() else (repos.remote_from_frontend(root) or ""),
+            "current": alias == cfg.current_repo,
+            "running": sum(repos.repo_of(cfg, inst.service) == alias for inst in live),
+        })
+    return rows
+
+
+def look_at_repo(body: dict) -> dict:
+    """What the Add repo dialog says about a folder: its PDMS checkout, how many services and a name for it."""
+    cfg = Config.load()
+    root = actions.repo_root(_text(body, "path"))
+    backend = root / "backend"
+    return {"root": str(root), "services": len(runner.find_services_below(backend)) if backend.is_dir() else 0,
+            "name": repos.alias_of(cfg, root) or repos.suggest_alias(cfg, root),
+            "registered": repos.alias_of(cfg, root) or ""}
+
+
+def add_repo(body: dict) -> str:
+    """Register a repo with its migrations and remote API (each checked before anything is saved)."""
+    cfg = Config.load()
+    migrations_path = actions.migrations_repo(_text(body, "migrations"))
+    remote = actions.remote_api(_text(body, "remote"))
+    alias = actions.add_repo(cfg, _text(body, "path"), _text(body, "name"))
+    return actions.edit_repo(Config.load(), alias, migrations_path=migrations_path, remote=remote)
+
+
+def save_repo(name: str, body: dict) -> str:
+    return actions.edit_repo(Config.load(), name, new_alias=_text(body, "name", name),
+                             migrations_path=_text(body, "migrations"), remote=_text(body, "remote"))
+
+
+def remove_repo(name: str) -> str:
+    return actions.remove_repo(Config.load(), name)
 
 
 def _text(body: dict, key: str, default: str = "") -> str:
