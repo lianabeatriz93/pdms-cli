@@ -233,13 +233,10 @@
         <button class="btn primary" id="events-off-start" type="button">Start local events</button>
         <button class="btn" id="events-off-browse" type="button">See the queues</button>
       </div>
+      <div class="checks-mini" id="events-off-checks"></div>
       <p class="muted note">Services already running keep publishing to AWS until they restart.</p>
     </div>
-    <ol class="flow" aria-label="Where an event goes with local events">
-      <li>A service publishes an event <span class="muted">(pdms logs sns)</span></li>
-      <li><span class="mono" id="events-off-broker">broker-sqs-queue.fifo</span> → <span class="muted">the broker</span></li>
-      <li>The queue of its type → <span class="muted">its consumer</span></li>
-    </ol>
+    <ol class="flow" id="events-off-flow" aria-label="Where an event goes with local events"></ol>
   </section>
 
   <div class="tabs view-tabs" id="events-tabs" role="tablist">

@@ -379,6 +379,8 @@ function tickUptimes() {
 }
 
 // Settings → Defaults → Look: like the computer ("system"), or always light or dark.
+let themePreview = ""; // a look picked in Settings → Defaults and not saved yet
+
 function useTheme(theme) {
   if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
   else delete document.documentElement.dataset.theme;
@@ -412,7 +414,8 @@ function paint(next) {
   else if (next.version !== updateView.loaded) { location.reload(); return; }
   state = { jobs: {}, users: [], dbs: [], stacks: [], ...next };
   const relabel = useLanguage(state.language);
-  useTheme(state.theme);
+  if (themePreview === state.theme) themePreview = ""; // saved, or picked back
+  useTheme(themePreview || state.theme);
   paintContext();
   paintUpdate();
   paintDoctorBadge();
@@ -1315,7 +1318,10 @@ const EVENTS_JOB = "events:elasticmq";
 const SNS_LINES = 20000;
 const MAX_SNS = 2000;
 const SNS_HEADER = /^(\S+) (\S+) → (\S+)(.*)$/; // events' sitecustomize.write_log: when, who → topic, extras
-const eventsView = { browse: false, tab: "queues", queues: null, map: null, peek: null, sns: [], snsStream: null, topics: "" };
+const eventsView = {
+  browse: false, tab: "queues", queues: null, map: null, peek: null, sns: [], snsStream: null, topics: "",
+  ready: null, readyAt: 0, readyLoading: false, readyFailed: false, // GET /api/events/ready, while they are off
+};
 
 function eventsJob() {
   return state.jobs[EVENTS_JOB] || null;
@@ -1347,8 +1353,9 @@ function paintEvents() {
   $("events-off").hidden = !intro;
   card.hidden = intro;
   $("events-tabs").hidden = intro;
-  if (data && data.broker) $("events-off-broker").textContent = data.broker;
-  $("events-off-browse").textContent = data && data.queues ? t("See the {n} queues", { n: data.queues.length }) : t("See the queues");
+  if (intro) paintEventsOff();
+  const queues = data && data.queues ? data.queues.length : eventsView.ready && eventsView.ready.queues;
+  $("events-off-browse").textContent = queues ? t("See the {n} queues", { n: queues }) : t("See the queues");
   if (up) {
     const consumers = state.instances.filter((i) => i.queue && i.status !== "stopped");
     const broker = data && data.broker ? consumers.find((i) => i.queue === data.broker) : null;
@@ -1398,6 +1405,46 @@ async function getJson(path) {
   } catch {
     return { error: t("pdms ui is not reachable: is it still running?") };
   }
+}
+
+// ---- off: what starting them needs, and an event of the repo on its way
+
+const READY_TTL = 30_000; // Docker can be started meanwhile: look again when the screen comes back after a while
+
+function paintEventsOff() {
+  const ready = eventsView.ready;
+  if ((!ready || Date.now() - eventsView.readyAt > READY_TTL) && !eventsView.readyLoading) loadReady();
+  const checks = [];
+  if (!ready) {
+    if (!eventsView.readyFailed) checks.push(el("span", { class: "st starting" }, t("checking Docker…")));
+  } else {
+    checks.push(ready.docker.ok ? el("span", { class: "st ok" }, t("Docker {version}", { version: ready.docker.version }))
+      : el("span", { class: "st error" }, t("Docker is not running")));
+    checks.push(el("span", { class: `st ${ready.port.free ? "ok" : "error"}` },
+      ready.port.free ? t("port {port} free", { port: ready.port.port }) : t("port {port} in use", { port: ready.port.port })));
+  }
+  $("events-off-checks").replaceChildren(...checks);
+  const example = ready && ready.example;
+  const hop = (...parts) => el("li", {}, ...parts);
+  $("events-off-flow").replaceChildren(...(example ? [
+    hop(t("A service publishes"), el("code", {}, example.type), el("span", { class: "muted" }, "(pdms logs sns)")),
+    hop(el("span", { class: "mono" }, example.broker), "→", el("span", { class: "muted" }, t("the broker"))),
+    hop(el("span", { class: "mono" }, example.queue), "→", el("span", { class: "mono" }, example.consumer)),
+  ] : [
+    hop(t("A service publishes an event"), el("span", { class: "muted" }, "(pdms logs sns)")),
+    hop(el("span", { class: "mono" }, (eventsView.queues && eventsView.queues.broker) || "broker-sqs-queue.fifo"), "→", el("span", { class: "muted" }, t("the broker"))),
+    hop(t("The queue of its type"), "→", el("span", { class: "muted" }, t("its consumer"))),
+  ]));
+}
+
+async function loadReady() {
+  eventsView.readyLoading = true;
+  const { data } = await getJson(eventsPath("ready"));
+  eventsView.readyLoading = false;
+  eventsView.readyAt = Date.now();
+  eventsView.readyFailed = !data;
+  if (data) eventsView.ready = data;
+  if (currentView() === "events") paintEvents();
 }
 
 // ---- queues
@@ -1873,7 +1920,7 @@ const settingsView = {
 const THEME_NAMES = { system: N_("Like the computer"), light: N_("Light"), dark: N_("Dark") };
 const DEFAULTS = [
   ["language", N_("Language"), "select", N_("Of the CLI, of this page and of the messages pdms ui gets from the CLI.")],
-  ["theme", N_("Look"), "select", N_("Light or dark like the computer, or always one of them.")],
+  ["theme", N_("Look"), "theme", N_("Light or dark like the computer, or always one of them. Try one: this page changes as you pick it.")],
   ["host", N_("uvicorn host"), "text", N_("Where services listen (0.0.0.0: every interface).")],
   ["port", N_("Default port"), "number", N_("The first port tried for a service; the next free one when it is busy.")],
   ["logging_level", N_("LOGGING_LEVEL"), "select", N_("Passed to every service.")],
@@ -2238,6 +2285,16 @@ function settingInput(key, kind, value) {
     options(select, Object.keys(names), value, (code) => names[code]);
     return select;
   }
+  if (kind === "theme") {
+    // Cards with a small picture of each look; picking one shows it on this page until saved or discarded.
+    const group = el("div", { class: "theme-cards", id, role: "radiogroup", "aria-label": t("Look") });
+    for (const choice of settingsView.data.choices.theme) {
+      const radio = el("input", { type: "radio", name: "default-theme", value: choice, onchange: () => { themePreview = choice; useTheme(choice); } });
+      radio.checked = choice === value;
+      group.append(el("label", {}, radio, el("span", { class: `swatch ${choice}` }, el("i")), t(THEME_NAMES[choice] || choice)));
+    }
+    return group;
+  }
   if (kind === "env") {
     const rows = el("div", { class: "env-rows", id });
     for (const [name, text] of Object.entries(value)) rows.append(envRow(name, text));
@@ -2257,11 +2314,14 @@ function envRow(name, value) {
 
 function paintDefaults() {
   const values = settingsView.data.defaults;
+  // What is saved; right after a save the state may still bring the old one for a moment.
+  themePreview = values.theme !== state.theme ? values.theme : "";
+  useTheme(values.theme);
   $("defaults-form").replaceChildren(...DEFAULTS.map(([key, label, kind, help]) => {
     const what = el("div", { class: "what" }, el("span", {}, el("b", {}, t(label)), el("code", {}, key)), el("small", {}, t(help)));
-    const row = el(kind === "env" ? "div" : "label", { class: "setting", "data-key": key, "data-search": `${key} ${t(label)} ${t(help)}`.toLowerCase() },
+    const row = el(kind === "env" || kind === "theme" ? "div" : "label", { class: "setting", "data-key": key, "data-search": `${key} ${t(label)} ${t(help)}`.toLowerCase() },
       what, settingInput(key, kind, values[key]));
-    if (kind !== "env") row.setAttribute("for", `default-${key}`);
+    if (kind !== "env" && kind !== "theme") row.setAttribute("for", `default-${key}`);
     return row;
   }));
   $("defaults-error").hidden = true;
@@ -2283,7 +2343,8 @@ function defaultsValues() {
   for (const [key, , kind] of DEFAULTS) {
     const input = $(`default-${key}`);
     if (!input) return null;
-    values[key] = kind === "check" ? input.checked : kind === "env" ? envValues() : input.value;
+    values[key] = kind === "check" ? input.checked : kind === "env" ? envValues()
+      : kind === "theme" ? (input.querySelector("input:checked") || {}).value || "system" : input.value;
   }
   return values;
 }

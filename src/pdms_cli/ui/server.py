@@ -335,7 +335,8 @@ def make_handler(
                     self.reply_json(400, {"error": plain(exc.message)})
             elif url.path in ("/api/proxy/options", "/api/proxy/routes", "/api/proxy/request"):
                 self.proxy_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
-            elif url.path in ("/api/events/queues", "/api/events/map", "/api/events/peek", "/api/events/template"):
+            elif url.path in ("/api/events/queues", "/api/events/map", "/api/events/peek", "/api/events/template",
+                              "/api/events/ready"):
                 self.events_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
             elif url.path == "/api/update/notes":
                 try:
@@ -430,6 +431,8 @@ def make_handler(
                     data: object = ui_jobs.events_queues(cfg)
                 elif which == "map":
                     data = ui_jobs.events_map(cfg)
+                elif which == "ready":
+                    data = ui_jobs.events_ready(cfg)
                 elif which == "template":
                     data = ui_jobs.events_template(cfg, arg("type"))
                 else:
