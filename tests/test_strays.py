@@ -135,7 +135,23 @@ def test_adopting_one_without_a_log_writes_where_its_output_went(cfg, orphan) ->
     [stray] = wait_for(lambda: actions.strays(cfg), "the orphan")
     stray.process.log = ""
     inst = instances.adopt(stray.process, user="", db="")
-    assert "pdms restart lead-tp-list@28155" in Path(inst.log).read_text(encoding="utf-8")
+    if WINDOWS:  # the file it writes cannot be moved away: that is its log
+        assert inst.log == str(instances.log_path("lead-tp-list@28155"))
+    else:
+        assert "pdms restart lead-tp-list@28155" in Path(inst.log).read_text(encoding="utf-8")
+
+
+def test_adopting_on_windows_keeps_the_log_the_service_holds_open(cfg, orphan, monkeypatch) -> None:
+    """Simulated on every system: the log cannot be rotated because the service still writes it."""
+    [stray] = wait_for(lambda: actions.strays(cfg), "the orphan")
+    stray.process.log = ""
+
+    def in_use(log):
+        raise PermissionError(32, "The process cannot access the file because it is being used by another process")
+
+    monkeypatch.setattr(instances, "rotate_log", in_use)
+    inst = instances.adopt(stray.process, user="", db="")
+    assert inst.log == str(instances.log_path("lead-tp-list@28155"))
 
 
 def test_stopping_them_ends_the_process(cfg, orphan) -> None:
