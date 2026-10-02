@@ -136,7 +136,7 @@ jobs:
             exit $code
           }
           & (Join-Path (uv tool dir --bin).Trim() "pdms.exe") --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error title=pdms --version failed ($LASTEXITCODE)::"; exit $LASTEXITCODE }
           # The Start menu shortcut that PDMS_MENU=1 asked for points to pdmsw.exe (no console window).
           $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\pdms.lnk"
           $target = if (Test-Path $lnk) { (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath } else { "" }
@@ -146,7 +146,12 @@ jobs:
             Write-Output "::error title=Start menu shortcut ($(Test-Path $lnk)) points to '$target'::$tail"
             exit 1
           }
-          & (Join-Path (uv tool dir --bin).Trim() "pdms.exe") ui --uninstall
+          $out = & (Join-Path (uv tool dir --bin).Trim() "pdms.exe") ui --uninstall 2>&1 | Out-String
+          Write-Output $out
+          if ($LASTEXITCODE -ne 0) {
+            Write-Output "::error title=pdms ui --uninstall failed ($LASTEXITCODE)::$($out -replace "`r?`n", '%0A')"
+            exit $LASTEXITCODE
+          }
 
   flyway:
     name: flyway (pdms migrate, real image)
