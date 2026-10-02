@@ -154,6 +154,9 @@ def ask_defaults(current: Defaults) -> Defaults:
     update_check = questionary.confirm(
         _("Tell me when a new pdms version is available?"), default=current.update_check
     ).unsafe_ask()
+    ui_at_login = questionary.confirm(
+        _("Open pdms ui when you log in to the computer (in the tray)?"), default=current.ui_at_login
+    ).unsafe_ask()
     db_timeout = questionary.text(
         _("Connection test timeout (seconds):"), default=str(current.db_timeout), validate=_is_int
     ).unsafe_ask()
@@ -175,5 +178,5 @@ def ask_defaults(current: Defaults) -> Defaults:
     return Defaults(
         language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
         smart_install=smart_install if install else current.smart_install, update_check=update_check, events=events_mode, banner=banner,
-        db_timeout=int(db_timeout), proxy_timeout=int(proxy_timeout), env=env,
+        ui_at_login=ui_at_login, db_timeout=int(db_timeout), proxy_timeout=int(proxy_timeout), env=env,
     )

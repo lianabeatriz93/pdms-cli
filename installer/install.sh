@@ -7,6 +7,7 @@
 #   PDMS_VERSION=0.2.0   install that version instead of the latest release
 #   PDMS_PRERELEASE=1    install the latest release including alpha/beta pre-releases
 #   PDMS_WHEEL=<path|url> install that package file instead of downloading a release (used by CI)
+#   PDMS_MENU=1|0        add pdms to the app menu (pdms ui --install) without asking, or do not
 set -eu
 
 REPO="lianabeatriz93/pdms-cli"
@@ -59,6 +60,17 @@ say "Installing pdms from $SOURCE"
 
 BIN_DIR="$("$UV" tool dir --bin)"
 "$BIN_DIR/pdms" --version || fail "pdms was installed but does not start"
+
+# The app menu entry (pdms ui --install). Piped into sh, the question goes to the terminal itself.
+MENU="${PDMS_MENU:-}"
+if [ -z "$MENU" ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    printf 'Add pdms to the app menu (pdms ui in a window of its own)? [Y/n] ' > /dev/tty
+    read -r answer < /dev/tty || answer=n
+    case "$answer" in [nN]*) MENU=0 ;; *) MENU=1 ;; esac
+fi
+if [ "$MENU" = "1" ]; then
+    "$BIN_DIR/pdms" ui --install || say "Could not add pdms to the app menu; try later with: pdms ui --install"
+fi
 
 if ! command -v pdms >/dev/null 2>&1; then
     say "Open a new terminal to use pdms (it is installed in $BIN_DIR)."

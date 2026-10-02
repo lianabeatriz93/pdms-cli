@@ -16,9 +16,11 @@ dependencies = [
 
 [project.optional-dependencies]
 # pdms ui --window. Linux uses the Qt backend: its wheels need no system packages to build, unlike GTK's PyGObject.
+# The tray icon is Qt's on Linux and pystray's elsewhere.
 desktop = [
     "pywebview>=5",
     "pywebview[qt]>=5; sys_platform == 'linux'",
+    "pystray>=0.19; sys_platform != 'linux'",
 ]
 
 [dependency-groups]
@@ -29,6 +31,10 @@ dev = [
 
 [project.scripts]
 pdms = "pdms_cli.launcher:main"
+
+# The same pdms without a console window on Windows, for the app menu shortcut (pdms ui --install).
+[project.gui-scripts]
+pdmsw = "pdms_cli.launcher:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -112,15 +112,20 @@ jobs:
       - name: Install with install.sh
         if: runner.os != 'Windows'
         run: |
-          export PDMS_WHEEL="$(ls "$PWD"/dist/*.whl)"
+          export PDMS_WHEEL="$(ls "$PWD"/dist/*.whl)" PDMS_MENU=1
           sh installer/install.sh
           "$(uv tool dir --bin)/pdms" --version
           "$(uv tool dir --bin)/pdms" --help > /dev/null
+          # The app menu entry that PDMS_MENU=1 asked for, and that it goes away.
+          if [ "$RUNNER_OS" = macOS ]; then test -x ~/Applications/pdms.app/Contents/MacOS/pdms
+          else test -f ~/.local/share/applications/pdms.desktop; fi
+          "$(uv tool dir --bin)/pdms" ui --uninstall
       - name: Install with install.ps1 (Windows PowerShell 5.1)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           $env:PDMS_WHEEL = (Get-ChildItem dist\*.whl).FullName
+          $env:PDMS_MENU = "1"
           $ErrorActionPreference = "Continue"
           powershell -ExecutionPolicy ByPass -File installer\install.ps1 *> installer.log
           $code = $LASTEXITCODE
@@ -132,6 +137,12 @@ jobs:
           }
           & (Join-Path (uv tool dir --bin).Trim() "pdms.exe") --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The Start menu shortcut that PDMS_MENU=1 asked for points to pdmsw.exe (no console window).
+          $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\pdms.lnk"
+          $target = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
+          Write-Output "pdms.lnk -> $target"
+          if (-not $target.EndsWith("pdmsw.exe")) { exit 1 }
+          & (Join-Path (uv tool dir --bin).Trim() "pdms.exe") ui --uninstall
 
   flyway:
     name: flyway (pdms migrate, real image)

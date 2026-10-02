@@ -268,7 +268,10 @@ cannot download them, log in with `./codeartifact-login.sh` (in `frontend/`).
 ```bash
 pdms ui                    # opens http://127.0.0.1:8765 in the browser; Ctrl+C to stop it
 pdms ui --no-browser -p 9000
-pdms ui --window           # the same page in a window of its own; closing it stops pdms ui
+pdms ui --window           # the same page in a window of its own
+pdms ui --install          # pdms in the app menu (Start menu, ~/Applications); --uninstall removes it
+pdms ui --at-login         # open it in the tray when you log in (--not-at-login to stop)
+pdms logs ui               # what pdms ui writes when opened from the app menu
 ```
 
 A page with the background services, the stacks, the proxy, the frontend, the local events and the settings, updated
@@ -309,13 +312,32 @@ Deleting a database or a user that a stack uses makes that stack ask for one whe
 
 The page uses the language of pdms (`pdms config language`, or `PDMS_LANG`) and changes with it while it is open.
 
+**Updates.** When a new pdms is published (the same daily check as the CLI), the title bar shows **⬆ <version>** and
+Home lists it; it opens the release notes and **Update and restart**, which does what `pdms self-update` does and then
+restarts pdms ui on the same port, so the page or the window comes back by itself. Services, the frontend and the
+local events keep running; the background proxy runs on pdms's own code, so it is restarted with the new version
+unless you untick it. On Windows, where a running pdms cannot replace its own files, a small PowerShell helper updates
+it once pdms ui has closed and then opens it again (`pdms self-update` on Windows uses the same helper, in a window of
+its own). Settings → Defaults shows the version and has **Check now**. If pdms was updated from the terminal, the
+chip offers to restart pdms ui with the new version.
+
+**In the system.** `pdms ui --install` adds pdms to the app menu with its icon: a `.desktop` file in
+`~/.local/share/applications` on Linux, a Start menu shortcut on Windows (to `pdmsw.exe`, the same pdms without a
+console window) and `~/Applications/pdms.app` on macOS. The installers offer it at the end (`PDMS_MENU=1` or `0` to
+answer beforehand). The entry opens `pdms ui --window` (in the browser when the desktop extra is not installed), and
+opening it again shows the pdms ui that is already open instead of starting another one. With the window there is a
+tray icon (Open, Open in the browser, Quit): closing the window keeps pdms ui in the tray, and **Quit** stops it;
+without a tray, closing the window stops it. "Open pdms ui when I log in" (Settings → Defaults, or
+`pdms ui --at-login`) starts it in the tray at login. Opened from the menu there is no terminal, so its output goes
+to `pdms logs ui`, and an error that stops it shows as a notification.
+
 It only listens on `127.0.0.1`, and only the link `pdms ui` prints opens it: that link carries a random token for the
 session, which the browser keeps as a cookie. Requests from other web pages are rejected, and a database password
 only reaches the page when you click its eye to show it (in the table it hides again after 30 seconds).
 
 The window (`--window`) uses [pywebview](https://pywebview.flowrl.com/), which comes with the optional `desktop`
 extra: Edge WebView2 on Windows and WebKit on macOS (both part of the system), Qt on Linux (installed with the extra,
-about 210 MB to download). On Windows and macOS `pdms ui --window` installs pywebview by itself the first time
+about 210 MB to download; its tray icon is Qt's, pystray's on Windows and macOS). On Windows and macOS `pdms ui --window` installs pywebview by itself the first time
 (into pdms's own environment, with `uv pip`); on Linux add it to an install with `uv tool install --force 'pdms-cli[desktop] @ <wheel URL of the release>'`
 (`pdms ui --window` prints the exact command), or `uv tool install -e '.[desktop]' --force` from a checkout;
 `pdms self-update` keeps it.
@@ -509,7 +531,7 @@ do it later).
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |
 | `pdms front` | The PDMS web app: `yarn dev`, or a production build with `--build` |
-| `pdms ui` | Web interface with the services, the proxy and the events, live (preview); `--window` in a window of its own |
+| `pdms ui` | Web interface with the services, the proxy and the events, live (preview); `--window` in a window of its own, `--install` in the app menu |
 | `pdms events` | Local SQS: map, ElasticMQ and broker (`map`, `up`, `status`, `send`, `peek`, `purge`, `down`) |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
@@ -534,6 +556,7 @@ reload = true
 install = true
 smart_install = true                      # skip the install when nothing changed
 update_check = true                       # tell when a new pdms version is out
+ui_at_login = false                       # open pdms ui in the tray at login (pdms ui --at-login; an import keeps yours)
 banner = true                             # big PDMS banner when the menu opens (or PDMS_NO_BANNER=1)
 events = "auto"                           # auto | local | aws: where services publish SQS events
 events_port = 9324                        # local ElasticMQ (pdms events up)

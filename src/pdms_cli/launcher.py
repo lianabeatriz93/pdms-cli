@@ -6,6 +6,14 @@ import sys
 
 
 def main() -> None:
+    if sys.stdout is None or sys.stderr is None:
+        # pdmsw.exe (the app menu shortcut on Windows) has no console: write to pdms logs ui instead.
+        try:
+            from .ui.instance import redirect_output
+
+            redirect_output()
+        except Exception:  # noqa: BLE001 - a missing dependency is reported below, and there is nowhere to show it
+            pass
     try:
         from .cli import _entrypoint
     except ModuleNotFoundError as exc:

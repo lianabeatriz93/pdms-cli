@@ -940,8 +940,6 @@ ES: dict[str, str] = {
         "Cambiar el nombre de un usuario (también en los stacks que lo usan).",
     "Instance (or part of the service name), proxy or frontend.":
         "Instancia (o parte del nombre del servicio), proxy o frontend.",
-    "Instances (or parts of the service name), proxy, frontend, or sns (what was published to SNS locally).":
-        "Instancias (o partes del nombre del servicio), proxy, frontend, o sns (lo publicado en SNS en local).",
     "New name for '{name}':":
         "Nuevo nombre para '{name}':",
     "Node.js was not found. Install Node 22 or 24 (for example with nvm install 22).":
@@ -1010,4 +1008,60 @@ ES: dict[str, str] = {
         "{port} · lo usa el frontend de pdms",
     "⚠ The frontend is not responding yet; check its log.":
         "⚠ El frontend todavía no responde; revisa su log.",
+    "Add pdms to the app menu of this computer.":
+        "Añade pdms al menú de aplicaciones de este equipo.",
+    "Could not add pdms to the app menu: {error}":
+        "No se pudo añadir pdms al menú de aplicaciones: {error}",
+    "Could not change the login items: {error}":
+        "No se pudieron cambiar los elementos de inicio de sesión: {error}",
+    "Instances (or parts of the service name), proxy, frontend, sns (what was published to SNS locally) or ui.":
+        "Instancias (o partes del nombre del servicio), proxy, frontend, sns (lo publicado en SNS en local) o ui.",
+    "Open in the browser":
+        "Abrir en el navegador",
+    "Open pdms":
+        "Abrir pdms",
+    "Open pdms ui in the tray when you log in, or stop doing it.":
+        "Abrir pdms ui en la bandeja al iniciar sesión, o dejar de hacerlo.",
+    "Open pdms ui when you log in to the computer (in the tray)?":
+        "¿Abrir pdms ui al iniciar sesión en el equipo (en la bandeja)?",
+    "Quit pdms ui":
+        "Salir de pdms ui",
+    "Remove pdms from the app menu (and from login).":
+        "Quita pdms del menú de aplicaciones (y del inicio de sesión).",
+    "Restarting pdms ui with the new version...":
+        "Reiniciando pdms ui con la versión nueva...",
+    "The proxy runs from pdms's own files, which the update replaces: stop it first (pdms stop proxy).":
+        "El proxy corre desde los ficheros de pdms, que la actualización reemplaza: detenlo antes (pdms stop proxy).",
+    "The update failed (exit code {code}); its log says why.":
+        "Falló la actualización (código de salida {code}); su log dice por qué.",
+    "The update to {version} did not finish (pdms {current} is still installed); its log says why.":
+        "La actualización a {version} no terminó (sigue instalado pdms {current}); su log dice por qué.",
+    "This pdms was not installed with uv tool, so it cannot update itself; run the command shown.":
+        "Este pdms no se instaló con uv tool, así que no puede actualizarse solo; ejecuta el comando que se muestra.",
+    "Updating to {version} in a new window, once this pdms exits.":
+        "Actualizando a {version} en una ventana nueva, en cuanto este pdms termine.",
+    "[dim]It opens in the browser until the desktop extra is installed:[/] {command}":
+        "[dim]Se abre en el navegador hasta que se instale el extra desktop:[/] {command}",
+    "[dim]The proxy still runs the previous version until it restarts.[/]":
+        "[dim]El proxy sigue con la versión anterior hasta que se reinicie.[/]",
+    "[dim]pdms ui still runs the previous version: it offers to restart itself.[/]":
+        "[dim]pdms ui sigue con la versión anterior: ofrece reiniciarse.[/]",
+    "pdms is in the app menu ({path}).":
+        "pdms está en el menú de aplicaciones ({path}).",
+    "pdms is no longer in the app menu.":
+        "pdms ya no está en el menú de aplicaciones.",
+    "pdms ui has no log: it only writes one when opened from the app menu.":
+        "pdms ui no tiene log: solo escribe uno cuando se abre desde el menú de aplicaciones.",
+    "pdms ui is already running at {url}; showing it.":
+        "pdms ui ya está corriendo en {url}; se muestra.",
+    "pdms ui is open: update from it (the ⬆ in its title bar) or close it first.":
+        "pdms ui está abierto: actualiza desde él (el ⬆ de su barra de título) o ciérralo antes.",
+    "pdms ui no longer opens when you log in.":
+        "pdms ui ya no se abre al iniciar sesión.",
+    "pdms ui opens in the browser: the window needs the desktop extra (see pdms logs ui).":
+        "pdms ui se abre en el navegador: la ventana necesita el extra desktop (mira pdms logs ui).",
+    "pdms ui opens in the tray when you log in.":
+        "pdms ui se abre en la bandeja al iniciar sesión.",
+    "pdms was not in the app menu.":
+        "pdms no estaba en el menú de aplicaciones.",
 }

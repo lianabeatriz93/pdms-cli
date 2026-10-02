@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .. import __version__, events, frontend, i18n, instances, proxy, repos
 from ..config import Config
+from . import updates
 
 
 def instance_state(cfg: Config, inst: instances.Instance, health: instances.Health) -> dict:
@@ -128,5 +129,6 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None) 
         "sns": sns_state(cfg, events_up),
         "frontend": frontend_state(cfg),
         "setup": asdict(cfg.setup),
+        "update": updates.state(cfg),
         "jobs": jobs or {},
     }
