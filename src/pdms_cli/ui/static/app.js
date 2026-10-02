@@ -696,17 +696,6 @@ function showLogs(key, which = "current", find = null) {
 }
 
 // The stack's services by domain (lead/lead-tp-list → lead), in the stack's order.
-function stackGroups(services) {
-  const groups = new Map();
-  for (const svc of services) {
-    const cut = svc.path.indexOf("/");
-    const domain = cut < 0 ? "" : svc.path.slice(0, cut);
-    if (!groups.has(domain)) groups.set(domain, []);
-    groups.get(domain).push({ ...svc, name: cut < 0 ? svc.path : svc.path.slice(cut + 1) });
-  }
-  return [...groups];
-}
-
 function stackFilterText() {
   return $("stack-filter").value.trim().toLowerCase();
 }
@@ -718,52 +707,60 @@ function stackShown(stack) {
     .join(" ").toLowerCase().includes(text);
 }
 
+// Stopped stacks are folded to one line; these were opened by hand (running ones are always open).
+const stacksView = { open: new Set() };
+
+function stackChip(svc, text) {
+  const cut = svc.path.lastIndexOf("/");
+  const name = cut < 0 ? svc.path : svc.path.slice(cut + 1);
+  const failing = svc.running.some((key) => (state.instances.find((i) => i.key === key) || {}).status === "error");
+  const kind = ["svc", svc.running.length ? (failing ? "bad" : "on") : "", text && svc.path.toLowerCase().includes(text) ? "hit" : ""];
+  return el("li", { class: kind.filter(Boolean).join(" "), title: svc.path },
+    el("span", { class: "name" }, name),
+    ...svc.running.map((key) => button(key.slice(key.indexOf("@") + 1), () => showLogs(key), {
+      class: "btn tiny link", title: t("Logs of {key}", { key }),
+    })));
+}
+
 function stackCard(stack) {
   const text = stackFilterText();
   const job = state.jobs[`stack:${stack.name}`];
   const busy = job && !job.error;
   const total = stack.services.length;
   const up = stack.services.filter((svc) => svc.running.length).length;
+  const failing = stack.services.filter((svc) => svc.running.some((key) => (state.instances.find((i) => i.key === key) || {}).status === "error")).length;
   const status = busy
     ? el("span", { class: "st starting" }, phaseLabel(job.phase))
-    : el("span", { class: `st ${up === total ? "ok" : up ? "starting" : "stopped"}` },
-      up === total ? t("running") : up ? t("{up} of {total} running", { up, total }) : t("stopped"));
+    : el("span", { class: `st ${failing ? "fail" : up === total ? "ok" : up ? "starting" : "off"}` },
+      failing ? t("{up}/{total} · {n} failing", { up, total, n: failing })
+        : up === total ? t("running") : up ? t("{up} of {total} running", { up, total }) : t("stopped"));
+  const open = up > 0 || busy || Boolean(text) || stacksView.open.has(stack.name);
+  const toggle = el("button", {
+    class: "fold", type: "button", "aria-expanded": String(open), title: open ? t("Fold") : t("Show its services"),
+    onclick: () => { if (stacksView.open.has(stack.name)) stacksView.open.delete(stack.name); else stacksView.open.add(stack.name); paintStacks(); },
+  }, icon("chevron"));
+  if (up > 0 || busy) toggle.disabled = true;
 
-  const list = el("div", { class: "stack-groups" }, ...stackGroups(stack.services).map(([domain, services]) => {
-    const running = services.filter((svc) => svc.running.length).length;
-    return el("section", { class: "stack-group" },
-      el("h3", {}, el("span", { class: "mono" }, domain || t("(repo root)")),
-        el("span", { class: "muted" }, `${running}/${services.length}`)),
-      el("ul", { class: "stack-services" }, ...services.map((svc) => el("li", {
-        title: svc.path, ...(text && svc.path.toLowerCase().includes(text) ? { class: "hit" } : {}),
-      },
-        el("span", { class: `dot ${svc.running.length ? "on" : ""}` }),
-        el("span", { class: "mono name" }, svc.name),
-        el("span", { class: "ports" }, ...svc.running.map((key) => button(key.slice(key.indexOf("@")), () => showLogs(key), {
-          class: "btn tiny link", title: t("Logs of {key}", { key }),
-        }))),
-      ))),
-    );
-  }));
-
-  const card = el("article", { class: "card stack" },
-    el("header", {}, el("h2", { class: "mono" }, stack.name), status),
-    list,
+  const actions = el("div", { class: "stack-actions" });
+  if (job && job.log_key) actions.append(button(t("Install log"), () => showLogs(job.log_key, "install")));
+  if (job && job.error) actions.append(button(t("Dismiss"), () => act(`${stackPath(stack.name)}/dismiss`)));
+  if (!busy) {
+    if (up < total) actions.append(button(t("Start"), () => openUp(stack), { class: "btn small primary" }));
+    if (up) actions.append(button(t("Stop"), () => act(`${stackPath(stack.name)}/down`), { class: "btn small bad" }));
+    actions.append(button(t("Edit"), () => openEditor(stack)));
+    actions.append(button(t("Delete"), () => removeStack(stack), { class: "btn small ghost" }));
+  }
+  const card = el("article", { class: `card stack${open ? "" : " folded"}` },
+    el("header", {}, toggle, el("h2", { class: "mono" }, stack.name), status, actions),
     el("p", { class: "muted meta" }, t("user {user} · db {db}", { user: stack.user || ask(), db: stack.db || ask() })),
   );
-  if (job && job.error) {
-    card.append(el("p", { class: "error" }, failedText(job)));
+  if (open) card.append(el("ul", { class: "svc-chips" }, ...stack.services.map((svc) => stackChip(svc, text))));
+  else {
+    const names = stack.services.map((svc) => svc.path.slice(svc.path.lastIndexOf("/") + 1));
+    card.append(el("p", { class: "folded-list mono" }, names.slice(0, 3).join(", ")
+      + (names.length > 3 ? ` ${t("+{n} more", { n: names.length - 3 })}` : "")));
   }
-  const footer = el("footer", {});
-  if (job && job.log_key) footer.append(button(t("Install log"), () => showLogs(job.log_key, "install")));
-  if (job && job.error) footer.append(button(t("Dismiss"), () => act(`${stackPath(stack.name)}/dismiss`)));
-  if (!busy) {
-    if (up < total) footer.append(button(t("Start"), () => openUp(stack), { class: "btn small primary" }));
-    if (up) footer.append(button(t("Stop"), () => act(`${stackPath(stack.name)}/down`), { class: "btn small bad" }));
-    footer.append(button(t("Edit"), () => openEditor(stack)));
-    footer.append(button(t("Delete"), () => removeStack(stack), { class: "btn small ghost" }));
-  }
-  card.append(footer);
+  if (job && job.error) card.append(el("p", { class: "error" }, failedText(job)));
   return card;
 }
 
@@ -1187,7 +1184,7 @@ const EVENTS_JOB = "events:elasticmq";
 const SNS_LINES = 20000;
 const MAX_SNS = 2000;
 const SNS_HEADER = /^(\S+) (\S+) → (\S+)(.*)$/; // events' sitecustomize.write_log: when, who → topic, extras
-const eventsView = { tab: "queues", queues: null, map: null, peek: null, sns: [], snsStream: null, topics: "" };
+const eventsView = { browse: false, tab: "queues", queues: null, map: null, peek: null, sns: [], snsStream: null, topics: "" };
 
 function eventsJob() {
   return state.jobs[EVENTS_JOB] || null;
@@ -1204,7 +1201,8 @@ function paintEvents() {
   $("events-on").classList.toggle("on", Boolean(up));
   $("events-on").title = up ? t("on :{port}", { port: state.events.port }) : t("off");
   $("events-summary").textContent = busy ? phaseLabel(job.phase) : up ? t("ElasticMQ running on :{port}", { port: state.events.port }) : t("off");
-  $("events-start").hidden = up || busy;
+  if (up) eventsView.browse = false;
+  $("events-start").hidden = up || busy || (!eventsView.browse && !(job && job.error));
   $("events-stop").hidden = !up || busy;
   $("events-send").hidden = !up;
   const brokerRow = up && !busy ? brokerQueue() : null;
@@ -1213,6 +1211,13 @@ function paintEvents() {
 
   const card = $("events-info");
   const data = eventsView.queues;
+  // Off: what local events are and how to start them, instead of tables of dashes (they stay a click away).
+  const intro = !up && !busy && !(job && job.error) && !eventsView.browse;
+  $("events-off").hidden = !intro;
+  card.hidden = intro;
+  $("events-tabs").hidden = intro;
+  if (data && data.broker) $("events-off-broker").textContent = data.broker;
+  $("events-off-browse").textContent = data && data.queues ? t("See the {n} queues", { n: data.queues.length }) : t("See the queues");
   if (up) {
     const consumers = state.instances.filter((i) => i.queue && i.status !== "stopped");
     const broker = data && data.broker ? consumers.find((i) => i.queue === data.broker) : null;
@@ -1236,9 +1241,9 @@ function paintEvents() {
     card.append(row);
   }
   for (const tab of $("events-tabs").children) tab.setAttribute("aria-selected", String(tab.dataset.tab === eventsView.tab));
-  $("events-queues").hidden = eventsView.tab !== "queues";
-  $("events-types").hidden = eventsView.tab !== "types";
-  $("events-sns").hidden = eventsView.tab !== "sns";
+  $("events-queues").hidden = intro || eventsView.tab !== "queues";
+  $("events-types").hidden = intro || eventsView.tab !== "types";
+  $("events-sns").hidden = intro || eventsView.tab !== "sns";
   if (eventsView.tab === "queues") paintQueues(); // a consumer's start shows as it goes
   syncSns();
 }
@@ -3105,8 +3110,8 @@ function repoRow(repo) {
   if (!repo.exists) path.append(" ", el("span", { class: "not-set" }, t("missing")));
   const migrations = el("td", { class: "mono", title: repo.migrations || "" },
     repo.migrations ? shortPath(repo.migrations) : el("span", { class: "found-note" }, t("not set")));
-  const remote = el("td", { class: "mono", title: repo.remote || repo.remote_found || "" }, repo.remote ? shortPath(repo.remote)
-    : el("span", { class: "found-note" }, repo.remote_found ? t("from frontend/.env: {url}", { url: shortPath(repo.remote_found) }) : t("not set")));
+  const remote = el("td", { class: "mono", title: repo.remote || repo.remote_found || "" }, repo.remote ? shortPath(repo.remote, 36)
+    : el("span", { class: "found-note" }, repo.remote_found ? t("from frontend/.env: {url}", { url: shortPath(repo.remote_found, 30) }) : t("not set")));
   const name = el("td", {}, el("b", {}, repo.name));
   if (repo.current) name.append(el("span", { class: "tag current" }, t("current")));
   return el("tr", { class: repo.current ? "current" : "" },
@@ -3413,7 +3418,9 @@ function paintDoctor() {
   });
   const text = $("doctor-filter").value.trim().toLowerCase();
   const problemsOnly = $("doctor-problems").checked;
-  const sections = [...new Set(checks.map((c) => c.section))];
+  const worst = (section) => checks.some((c) => c.section === section && c.status === "fail") ? 0
+    : checks.some((c) => c.section === section && c.status === "warn") ? 1 : 2;
+  const sections = [...new Set(checks.map((c) => c.section))].sort((a, b) => worst(a) - worst(b));
   const cards = [];
   for (const section of sections) {
     const all = checks.filter((c) => c.section === section);
@@ -3498,6 +3505,8 @@ $("route-filter").addEventListener("input", paintRoutes);
 $("route-local").addEventListener("change", paintRoutes);
 $("route-refresh").addEventListener("click", loadRoutes);
 $("events-start").addEventListener("click", openEventsUp);
+$("events-off-start").addEventListener("click", openEventsUp);
+$("events-off-browse").addEventListener("click", () => { eventsView.browse = true; paintEvents(); showEventsTab(eventsView.tab); });
 $("events-stop").addEventListener("click", stopEvents);
 $("events-send").addEventListener("click", () => openSend());
 $("events-broker").addEventListener("click", () => openConsumerStart(brokerQueue().consumer, "broker"));
