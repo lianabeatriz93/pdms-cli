@@ -63,7 +63,7 @@ def test_build_env_keeps_the_users_pythonpath(monkeypatch):
     ("auto", False, "aws"), ("auto", True, "local"), ("aws", True, "aws"), ("local", True, "local"),
 ])
 def test_events_mode_decision(tmp_path, monkeypatch, mode, running, expected):
-    from pdms_cli import cli
+    from pdms_cli import actions
     from pdms_cli.config import Config
 
     monkeypatch.setattr(events, "running", lambda port: running)
@@ -71,9 +71,9 @@ def test_events_mode_decision(tmp_path, monkeypatch, mode, running, expected):
     (tmp_path / "backend" / "snakesdk").mkdir(parents=True)  # make it look like a PDMS checkout
     cfg = Config()
     cfg.defaults.events = mode
-    env, _label, kind = cli.events_for(cfg, tmp_path, None)
-    assert kind == expected
-    assert ("SQS_EVENT_BROKER_URL" in env) == (expected == "local")
+    setup = actions.events_setup(cfg, tmp_path, None)
+    assert setup.kind == expected
+    assert ("SQS_EVENT_BROKER_URL" in setup.env) == (expected == "local")
 
 
 # --------------------------------------------------------------------------- SNS

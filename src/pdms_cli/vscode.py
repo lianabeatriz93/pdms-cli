@@ -10,9 +10,12 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
-from .instances import state_dir
+from .i18n import _
+from .instances import detach_options, state_dir
 
 NAME_PREFIX = "pdms: "
 
@@ -122,3 +125,34 @@ def upsert_configuration(
     launch.parent.mkdir(parents=True, exist_ok=True)
     launch.write_text(json.dumps(data, indent=4, ensure_ascii=False) + "\n", encoding="utf-8")
     return launch, name, backup
+
+
+# --------------------------------------------------------------------------- opening VS Code
+
+# Where the installers put the ``code`` command when "Shell Command: Install 'code' command in PATH" was never run.
+CODE_FALLBACKS = {
+    "darwin": ["/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"],
+    "win32": [os.path.expandvars(r"%LOCALAPPDATA%\Programs\Microsoft VS Code\bin\code.cmd"),
+              os.path.expandvars(r"%ProgramFiles%\Microsoft VS Code\bin\code.cmd")],
+}
+
+
+def code_command() -> str | None:
+    """VS Code's ``code`` command, or None when it is not installed."""
+    found = shutil.which("code")
+    if found:
+        return found
+    return next((path for path in CODE_FALLBACKS.get(sys.platform, []) if Path(path).is_file()), None)
+
+
+def open_in_code(folder: Path, file: Path | None = None, line: int = 0) -> None:
+    """Open ``folder`` in VS Code (its window if already open) and, if given, ``file`` at ``line``."""
+    code = code_command()
+    if not code:
+        raise RuntimeError(_("VS Code's code command was not found. In VS Code: Ctrl+Shift+P → "
+                             "Shell Command: Install 'code' command in PATH."))
+    cmd = [code, str(folder)]
+    if file:
+        cmd += ["-g", f"{file}:{line}" if line else str(file)]
+    subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     **detach_options())

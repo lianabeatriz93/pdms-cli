@@ -1005,3 +1005,17 @@ def test_the_state_carries_the_language_and_the_server_follows_it(machine, monke
     assert hub.build()["language"] == "es" and languages == ["es"]  # a change made in the CLI reaches the server
     monkeypatch.setenv("PDMS_LANG", "en")
     assert hub.build()["language"] == "en"
+
+
+def test_debug_and_open_code_go_through_the_actions(ui, machine, monkeypatch) -> None:
+    port, _hub, _states, _jobs = ui
+    calls = []
+    setup = actions.DebugSetup(Path("/r/.vscode/launch.json"), "pdms: svc · agent @ local :8081", None, Path("/e"), Path("/r"))
+    monkeypatch.setattr(ui_jobs.actions, "debug_instance", lambda cfg, inst: calls.append(inst.key) or setup)
+    monkeypatch.setattr(ui_server.actions, "open_code", lambda cfg, path, line: calls.append((path, line)))
+    assert post(port, "/api/instances/svc@8081/debug") == (
+        200, {"name": "pdms: svc · agent @ local :8081", "launch": str(Path("/r/.vscode/launch.json")), "backup": ""})
+    assert post(port, "/api/code/open", {"path": "/r/main.py", "line": 9}) == (200, {})
+    assert post(port, "/api/code/open", {"path": "/r/main.py", "line": "9"})[0] == 400
+    assert post(port, "/api/instances/nope@1/debug")[0] == 400
+    assert calls == ["svc@8081", ("/r/main.py", 9)]

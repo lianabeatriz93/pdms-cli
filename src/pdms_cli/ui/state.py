@@ -13,12 +13,25 @@ from ..config import Config
 from . import updates
 
 
+def traceback_state(cfg: Config, log: str) -> list[dict]:
+    """The lines of the latest traceback; a line naming a file inside a registered repo carries its path and line,
+    for the page to open it in VS Code (files elsewhere, like the virtualenv's, stay plain text)."""
+    lines = []
+    for text in instances.last_traceback(log):
+        line: dict = {"text": text}
+        if (frame := instances.FRAME_LINE.match(text)) and repos.repo_of(cfg, frame["path"]):
+            line.update(path=frame["path"], line=int(frame["line"]))
+        lines.append(line)
+    return lines
+
+
 def instance_state(cfg: Config, inst: instances.Instance, health: instances.Health) -> dict:
     return {
         "key": inst.key, "name": inst.name, "service": inst.service, "repo": repos.repo_of(cfg, inst.service) or "",
         "host": inst.host, "port": inst.port, "queue": inst.queue, "user": inst.user, "db": inst.db,
         "events": inst.events, "reload": inst.reload, "started_at": inst.started_at,
         "status": health.state, "detail": health.detail,
+        "traceback": traceback_state(cfg, inst.log) if health.state == "error" else [],
     }
 
 

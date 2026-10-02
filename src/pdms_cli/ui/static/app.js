@@ -177,6 +177,7 @@ function rowActions(item, job) {
   if (busy || item.isSns) return cell;
   const alive = item.status !== "stopped";
   if (alive && !item.queue && !item.isProxy) cell.append(iconLink("open", t("Swagger (/docs)"), `http://localhost:${item.port}/docs`));
+  if (alive && !item.isProxy) cell.append(iconButton("debug", t("Debug in VS Code"), () => debugInstance(item)));
   if (!item.isProxy && !item.placeholder) cell.append(iconButton("restart", t("Restart"), () => openRestart(item)));
   if (alive) {
     cell.append(iconButton("stop", t("Stop"), () => act(`/api/instances/${encodeURIComponent(item.key)}/stop`), { class: "ibtn bad" }));
@@ -194,13 +195,49 @@ function statusCell(item, job) {
   }
   cell.append(el("span", item.isStray ? { class: "st outside", title: t("pdms lost track of it: it keeps its port, but pdms ps, logs and Stop do not see it.") }
     : { class: `st ${item.status}` }, statusLabel(item.status)));
-  if (item.detail) cell.append(el("span", { class: "detail" }, item.detail));
+  if (item.detail) cell.append(el("span", { class: item.status === "busy" ? "detail quiet" : "detail" }, item.detail));
   if (item.note) cell.append(el("span", { class: "detail quiet" }, item.note));
+  if (item.traceback && item.traceback.length) {
+    const open = servicesView.traces.has(item.key);
+    cell.append(el("button", {
+      class: "link-btn", type: "button", "aria-expanded": String(open),
+      onclick: () => { if (open) servicesView.traces.delete(item.key); else servicesView.traces.add(item.key); paintServices(); },
+    }, open ? t("hide traceback") : t("show traceback")));
+  }
   if (job && job.error) {
     cell.append(el("span", { class: "detail" }, failedText(job)));
     cell.append(button(t("Dismiss"), () => act(`/api/instances/${encodeURIComponent(item.key)}/dismiss`), { class: "btn tiny" }));
   }
   return cell;
+}
+
+// Hand a running instance over to VS Code: pdms stops it and writes its launch.json entry; F5 there starts it.
+async function debugInstance(item) {
+  const yes = await confirmDialog(t("Debug {key} in VS Code?", { key: item.key }),
+    t("pdms stops it and opens VS Code with a configuration for the same user, database and port, without --reload. In VS Code, press F5 to start it with breakpoints."),
+    t("Stop and open VS Code"));
+  if (!yes) return;
+  act(`/api/instances/${encodeURIComponent(item.key)}/debug`, {}, (data) => {
+    toast(t("In VS Code: Run and Debug → {name} → F5.", { name: data.name }), "info");
+    if (data.backup) toast(t("launch.json had comments and they were lost; original copy at {backup}", { backup: data.backup }));
+  });
+}
+
+// The latest traceback of an instance that failed to load: lines of files in a registered repo open VS Code there.
+function tracebackRow(item) {
+  const pre = el("pre", { class: "trace" });
+  for (const line of item.traceback) {
+    if (line.path) {
+      const at = line.text.indexOf(line.path);
+      pre.append(line.text.slice(0, at), el("a", {
+        href: "#", title: t("Open in VS Code"),
+        onclick: (event) => { event.preventDefault(); act("/api/code/open", { path: line.path, line: line.line }); },
+      }, `${repoPath(line.path)}:${line.line}`), line.text.slice(at + line.path.length).replace(/^", line \d+/, '"'), "\n");
+    } else {
+      pre.append(el("span", EXCEPTION.test(line.text) ? { class: "exc" } : {}, line.text), "\n");
+    }
+  }
+  return el("tr", { class: "trace-row error-row" }, el("td", { colspan: "8" }, pre));
 }
 
 function lastPublish(item) {
@@ -276,7 +313,8 @@ function serviceShown(item) {
     .join(" ").toLowerCase().includes(text);
 }
 
-const servicesView = { show: "all" };
+const servicesView = { show: "all", traces: new Set() }; // traces: keys whose traceback is open
+const EXCEPTION = /^[\w.]*(Error|Exception|Exit)\b/;
 
 // The stack each instance belongs to (its first one), for the group rows of Services.
 function stackOf(key) {
@@ -299,7 +337,11 @@ function groupedRows(items) {
     const head = el("td", { colspan: "7" }, label, el("span", { class: "muted" }, ` · ${groups.get(name).length}`));
     const extra = el("td", { class: "row-actions" });
     if (name === "\u0002outside" && groups.get(name).length > 1) extra.append(button(t("Adopt all"), () => adoptStrays(null)));
-    rows.push(el("tr", { class: "group" }, head, extra), ...groups.get(name).map(row));
+    rows.push(el("tr", { class: "group" }, head, extra));
+    for (const item of groups.get(name)) {
+      rows.push(row(item));
+      if (item.traceback && item.traceback.length && servicesView.traces.has(item.key)) rows.push(tracebackRow(item));
+    }
   }
   return rows;
 }
@@ -353,6 +395,13 @@ function shortPath(path, max = 44) {
 }
 
 // Every path inside a text (a check's detail, a hint) shortened the same way.
+// A path inside the current repo from its root (backend/lead/x/main.py); others shortened.
+function repoPath(path) {
+  const root = state.repo && state.repo.root;
+  for (const sep of ["/", "\\"]) if (root && path.startsWith(root + sep)) return path.slice(root.length + 1);
+  return shortPath(path, 80);
+}
+
 function shortPaths(text) {
   return String(text || "").replace(/(?:[A-Za-z]:\\|\/)[^\s·,()]+/g, (path) => shortPath(path));
 }
@@ -2780,7 +2829,11 @@ function attention() {
   }
   for (const inst of state.instances) {
     if (state.jobs[inst.key]) continue;
-    if (inst.status === "error") items.push(["bad", inst.key, inst.detail || t("error"), [button(t("Logs"), () => showLogs(inst.key))]]);
+    if (inst.status === "error") {
+      const seeIt = inst.traceback && inst.traceback.length
+        ? [button(t("See the error"), () => { servicesView.traces.add(inst.key); location.hash = "#services"; })] : [];
+      items.push(["bad", inst.key, inst.detail || t("error"), [...seeIt, button(t("Logs"), () => showLogs(inst.key))]]);
+    }
     else if (inst.status === "stopped") {
       items.push(["warn", inst.key, t("stopped"), [button(t("Logs"), () => showLogs(inst.key)),
         button(t("Forget"), () => act(`/api/instances/${encodeURIComponent(inst.key)}/forget`), { class: "btn small ghost" })]]);
