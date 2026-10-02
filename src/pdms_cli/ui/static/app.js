@@ -219,7 +219,7 @@ function serviceItems() {
   if (state.sns) {
     items.push({
       ...state.sns, isSns: true, url: `sns → ${state.sns.queue}`, repo: "", user: "", db: "", detail: "",
-      note: state.sns.status === "off" ? t("Local events are off: services publish to AWS.") : "",
+      note: state.sns.status === "off" ? t("Local events are off") : "",
     });
   }
   for (const stray of state.strays || []) {
