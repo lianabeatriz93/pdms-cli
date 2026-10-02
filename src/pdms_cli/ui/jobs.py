@@ -14,12 +14,13 @@ from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from pathlib import Path
 
-from .. import actions, events, i18n, instances, proxy, repos, routes, runner, transfer, userimport
-from ..config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack, config_path
+from .. import actions, events, frontend, i18n, instances, proxy, repos, routes, runner, transfer, userimport
+from ..config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from ..i18n import _
 
 PROXY_PORT = 8000  # pdms proxy's --port default
 EVENTS_KEY = "events:elasticmq"  # the job of pdms events up/down (not an instance: no row of its own in Services)
+HOME_KEY = "home"  # the job of Home's Start everything / Stop everything
 
 
 def install_log(key: str) -> Path:
@@ -101,6 +102,11 @@ class Jobs:
     # ------------------------------------------------------------------ services
 
     def stop(self, key: str) -> Job:
+        if frontend.is_key(key):
+            current = frontend.running()
+            if not current:
+                raise actions.ActionError(_("The frontend is not running."))
+            return self.run(frontend.KEY, "stop", "stopping", lambda _job: actions.stop_frontend(current))
         if proxy.is_key(key):
             running = proxy.running_proxy()
             if not running:
@@ -246,6 +252,149 @@ class Jobs:
                 raise actions.ActionError(_("The proxy exited while starting: {line}", line=last or "?"))
 
         return self.run(proxy.KEY, "start", "starting", work)
+
+    # ------------------------------------------------------------------ frontend
+
+    def start_frontend(
+        self, *, mode: str = "dev", port: int | None = None, install: bool | None = None, rebuild: bool = False,
+        restart: bool = False,
+    ) -> Job:
+        """Start the web app like ``pdms front -b``: yarn install when needed, the build in build mode, then the
+        server; a busy port is raised before anything starts. The job ends once it answers. With ``restart`` the
+        running one stops first, on the same port (Rebuild)."""
+        if self.busy(frontend.KEY):
+            raise actions.ActionError(_("{key} is busy.", key=frontend.KEY))
+        if restart and (current := frontend.running()):
+            port = port or int(current["port"])
+            actions.stop_frontend(current)
+        plan = actions.plan_frontend(Config.load(), mode=mode, port=port, install=install, rebuild=rebuild)
+        return self.run(frontend.KEY, "start", "starting", lambda job: self.frontend_steps(job, plan))
+
+    def frontend_steps(self, job: Job, plan: actions.FrontendLaunch) -> None:
+        """Install, build and start the frontend, writing the install and build output to their own logs."""
+        if plan.install:
+            self.phase(job, "installing frontend", installed=True, log_key=frontend.KEY)
+            log = frontend.install_log_path()
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with open(log, "w", encoding="utf-8", errors="replace") as output:
+                actions.install_frontend(plan.root, output, log)
+        if plan.mode == "build" and (plan.build or frontend.build_needed(plan.root)):
+            self.phase(job, "building frontend", log_key=frontend.KEY)
+            log = frontend.build_log_path()
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with open(log, "w", encoding="utf-8", errors="replace") as output:
+                actions.build_frontend(plan.root, output)
+        self.phase(job, "starting frontend")
+        started = actions.start_frontend(plan)
+        if actions.wait_for_frontend(started) == "stopped":
+            raise actions.ActionError(_("The frontend exited while starting: {line}",
+                                        line=frontend.last_line(frontend.log_path()) or "?"))
+
+    # ------------------------------------------------------------------ Home
+
+    def start_all(self, *, install: bool | None = None, confirmed: bool = False) -> Job | None:
+        """Start what is not running of the saved setup, in order: the local events, the stack, the proxy (pointing
+        the frontend to it) and the frontend. A protected database or a busy frontend port are raised first; the
+        proxy takes the next free port by itself. None when everything already runs."""
+        if self.busy(HOME_KEY):
+            raise actions.ActionError(_("{key} is busy.", key=HOME_KEY))
+        cfg = Config.load()
+        setup = cfg.setup
+        want_events = setup.events and not events.is_up(cfg.defaults.events_port)
+        event_map = actions.load_events(cfg)[1] if want_events else None
+
+        stack_name = ""
+        user, db = cfg.last_user, cfg.last_db
+        if setup.stack:
+            stack = cfg.stacks[actions.require(cfg.stacks, _("stack"), setup.stack)]
+            root = backend(cfg)
+            live = actions.running_by_service()
+            if [path for path in actions.stack_paths(stack, root) if str(path) not in live]:
+                stack_name = setup.stack
+                user, db = stack.user or cfg.last_user, stack.db or cfg.last_db
+                actions.require(cfg.users, _("user"), user)
+                actions.require(cfg.dbs, _("database"), db)
+                actions.check_database(cfg, db, confirmed)
+
+        repo = repo_root(cfg)
+        broker = None
+        if event_map is not None and (service := actions.broker_service(repo, event_map)) and user and db \
+                and not actions.event_consumers(event_map.broker_queue):
+            actions.require(cfg.users, _("user"), user)
+            actions.require(cfg.dbs, _("database"), db)
+            actions.check_database(cfg, db, confirmed)
+            broker = service
+        want_frontend = setup.frontend and frontend.exists(repo) and not frontend.running()
+        proxy_plan = None
+        if setup.proxy and not proxy.running_proxy() and not self.busy(proxy.KEY):
+            actions.clear_proxy_leftovers()
+            env = "dev"
+            target, _detected = actions.proxy_remote(cfg, repo, None, False)
+            plan_args = dict(env=env, remote=target, frontend=frontend.exists(repo) or None)
+            try:
+                proxy_plan = actions.plan_proxy(cfg, repo, actions.proxy_routes(repo, env), port=PROXY_PORT, **plan_args)
+            except actions.PortBusy as busy:
+                proxy_plan = actions.plan_proxy(cfg, repo, actions.proxy_routes(repo, env), port=busy.free, **plan_args)
+        frontend_plan = None
+        if want_frontend and not self.busy(frontend.KEY):
+            frontend_plan = actions.plan_frontend(cfg, mode=setup.frontend_mode, install=install)
+        if event_map is None and not stack_name and proxy_plan is None and frontend_plan is None:
+            return None
+        if stack_name or broker:
+            actions.remember_profile(cfg, user, db)
+
+        def work(job: Job) -> None:
+            if event_map is not None:
+                self.phase(job, "starting ElasticMQ")
+                actions.start_events(cfg, event_map.queues)
+            if broker is not None:
+                launch = actions.plan_service(cfg, broker, user_name=user, db_name=db, events_mode="local")
+                self.install(cfg, job, broker, instances.make_key(launch.service, launch.port), install, broker.name)
+                self.phase(job, f"starting {broker.name}")
+                actions.start_service(cfg, launch)
+            if stack_name:
+                plan = actions.plan_stack(cfg, stack_name, backend(cfg), user_name=user, db_name=db)
+                for launch in plan.services:
+                    key = instances.make_key(launch.service, launch.port)
+                    self.install(cfg, job, launch.service, key, install, launch.service.name)
+                    self.phase(job, f"starting {launch.service.name}")
+                    actions.start_service(cfg, launch)
+            if proxy_plan is not None:
+                self.phase(job, "starting proxy")
+                actions.point_frontend(proxy_plan)
+                started = actions.start_proxy(proxy_plan)
+                if actions.wait_for_proxy(started) == "stopped":
+                    actions.stop_proxy()
+                    raise actions.ActionError(_("The proxy exited while starting: {line}",
+                                                line=instances.tail(str(started.log), 1).strip() or "?"))
+            if frontend_plan is not None:
+                self.frontend_steps(job, frontend_plan)
+
+        return self.run(HOME_KEY, "up", "starting", work)
+
+    def stop_all(self) -> Job | None:
+        """Stop the frontend, the proxy, every background service and the local ElasticMQ; None when nothing runs."""
+        current_frontend, running_proxy = frontend.running(), proxy.running_proxy()
+        live = [inst for inst in instances.load().values() if inst.alive()]
+        container = events.container_state()
+        if not (current_frontend or running_proxy or live or (container and container["running"])):
+            return None
+
+        def work(job: Job) -> None:
+            if current_frontend:
+                self.phase(job, "stopping frontend")
+                actions.stop_frontend(current_frontend)
+            if running_proxy:
+                self.phase(job, "stopping proxy")
+                actions.stop_proxy(running_proxy)
+            for inst in live:
+                self.phase(job, f"stopping {inst.name}")
+                actions.stop_service(inst)
+            if container and container["running"]:
+                self.phase(job, "stopping ElasticMQ")
+                events.stop()
+
+        return self.run(HOME_KEY, "down", "stopping", work)
 
     # ------------------------------------------------------------------ local events
 
@@ -589,6 +738,40 @@ def save_user(name: str, body: dict, new: bool) -> str:
 
 def remove_user(name: str) -> list[str]:
     return actions.remove_user(Config.load(), name)
+
+
+def rename_user(name: str, body: dict) -> str:
+    return actions.rename_user(Config.load(), name, _text(body, "new_name"))
+
+
+def frontend_options(cfg: Config) -> dict:
+    """What the frontend's start form shows: node and yarn, whether node_modules is up to date, where the API goes
+    in each mode and whether a build would be made (and why)."""
+    root = repo_root(cfg)
+    if not frontend.exists(root):
+        return {"available": False}
+    tool = frontend.yarn()
+    return {
+        "available": True, "node": frontend.node_version() or "", "yarn": bool(tool), "port": frontend.PORT,
+        "dependencies_ok": frontend.dependencies_ok(root) if tool else False,
+        "api": {mode: frontend.api_url(root, mode) for mode in frontend.MODES},
+        "build_needed": frontend.build_needed(root), "last_build": frontend.last_build(),
+    }
+
+
+def save_setup(body: dict) -> dict:
+    """Save what Start everything starts; the stack must exist (empty for none)."""
+    cfg = Config.load()
+    stack = _text(body, "stack")
+    if stack:
+        actions.require(cfg.stacks, _("stack"), stack)
+    mode = _text(body, "frontend_mode", "dev")
+    if mode not in frontend.MODES:
+        raise actions.InvalidValue("frontend_mode", _("Must be one of: {choices}", choices=", ".join(frontend.MODES)))
+    cfg.setup = Setup(stack=stack, proxy=_bool(body, "proxy"), frontend=_bool(body, "frontend"), frontend_mode=mode,
+                      events=_bool(body, "events"))
+    cfg.save()
+    return asdict(cfg.setup)
 
 
 def defaults_from(body: dict, current: Defaults) -> Defaults:

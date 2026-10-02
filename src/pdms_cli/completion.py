@@ -5,7 +5,7 @@ They run on every Tab press, so they must be quiet (no prompts or prints) and ne
 
 from __future__ import annotations
 
-from . import i18n, instances, proxy, runner, userimport
+from . import frontend, i18n, instances, proxy, runner, userimport
 from .config import Config
 
 
@@ -45,11 +45,13 @@ def log_keys(incomplete: str) -> list[str]:
 
 
 def instance_or_proxy_keys(incomplete: str) -> list[str]:
-    """Instances plus the running proxy (``pdms stop`` and ``pdms logs`` also take it)."""
+    """Instances plus the running proxy and frontend (``pdms stop`` and ``pdms logs`` also take them)."""
     try:
         keys = sorted(instances.load())
         if running := proxy.running_proxy():
             keys.append(proxy.display_key(running))
+        if frontend.running():
+            keys.append(frontend.KEY)
         return _matching(keys, incomplete)
     except Exception:  # noqa: BLE001
         return []

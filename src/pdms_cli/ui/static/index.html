@@ -16,6 +16,7 @@
   <div class="ctx" id="ctx"></div>
 </header>
 <nav class="side">
+  <a href="#home" data-view="home">Home</a>
   <a href="#services" data-view="services">Services <span id="count"></span></a>
   <a href="#stacks" data-view="stacks">Stacks <span id="stack-count"></span></a>
   <a href="#proxy" data-view="proxy">Proxy <span id="proxy-on"></span></a>
@@ -23,11 +24,56 @@
   <a href="#settings" data-view="settings" class="side-end">Settings</a>
 </nav>
 <main class="main">
+<section class="view" id="view-home" hidden>
+  <div class="bar">
+    <h1>Home</h1><span class="muted" id="home-summary"></span>
+    <button class="btn bad push" id="home-stop" type="button" hidden>Stop everything</button>
+  </div>
+
+  <section class="card launch" aria-labelledby="launch-title">
+    <div class="launch-head">
+      <h2 id="launch-title">Start my setup</h2>
+      <span class="muted">Saved as you change it, so next time it is one click.</span>
+      <button class="btn primary push" id="home-start" type="button">Start everything</button>
+    </div>
+    <div class="launch-row">
+      <label class="inline">Stack <select id="setup-stack"></select></label>
+      <label class="inline"><input type="checkbox" id="setup-events"> Local events (ElasticMQ and the broker)</label>
+      <label class="inline"><input type="checkbox" id="setup-proxy"> Proxy</label>
+      <span class="inline-group" id="setup-frontend-group">
+        <label class="inline"><input type="checkbox" id="setup-frontend"> Frontend</label>
+        <select id="setup-mode" aria-label="Frontend mode">
+          <option value="dev">dev (yarn dev)</option>
+          <option value="build">build (like production)</option>
+        </select>
+      </span>
+    </div>
+    <ol class="steps" id="home-steps" aria-label="What Start everything does, in order"></ol>
+    <p class="error" id="home-error" hidden></p>
+  </section>
+
+  <div class="tiles" id="home-tiles"></div>
+
+  <div class="home-lower">
+    <section class="card home-panel" aria-labelledby="home-stacks-title">
+      <div class="panel-head"><h2 id="home-stacks-title">Stacks</h2><a class="push" href="#stacks">All stacks</a></div>
+      <div class="tbl"><table><tbody id="home-stacks"></tbody></table></div>
+      <p class="empty" id="home-stacks-empty" hidden>No stacks yet.</p>
+    </section>
+    <section class="card home-panel" aria-labelledby="home-attn-title">
+      <div class="panel-head"><h2 id="home-attn-title">Needs attention</h2></div>
+      <ul class="attn" id="home-attn"></ul>
+      <p class="all-good" id="home-ok" hidden>✓ Nothing needs attention.</p>
+    </section>
+  </div>
+</section>
+
 <section class="view" id="view-services">
   <div class="bar">
     <h1>Services</h1><span class="muted" id="summary"></span>
     <div class="bar-actions push">
       <button class="btn ghost" id="clean" type="button" hidden>Forget stopped</button>
+      <button class="btn" id="front-new" type="button" hidden>Start frontend</button>
       <button class="btn primary" id="run-new" type="button">Start service</button>
     </div>
   </div>
@@ -52,6 +98,7 @@
         <button type="button" role="tab" data-which="current">Current</button>
         <button type="button" role="tab" data-which="previous">Previous run</button>
         <button type="button" role="tab" data-which="install">Install</button>
+        <button type="button" role="tab" data-which="build">Build</button>
       </div>
       <span class="muted" id="logs-note"></span>
       <button class="btn ghost push" id="logs-clear" type="button">Clear</button>
@@ -318,6 +365,32 @@
   </form>
 </dialog>
 
+<dialog id="front-dialog">
+  <form method="dialog" id="front-form">
+    <h2>Start the frontend</h2>
+    <p class="muted">The PDMS web app of the current repo, in the background like <code>pdms front -b</code>. It keeps running when pdms ui stops.</p>
+    <fieldset>
+      <legend>Mode</legend>
+      <label class="inline"><input type="radio" name="mode" value="dev" checked> dev: yarn dev, with hot reload</label>
+      <label class="inline"><input type="radio" name="mode" value="build"> build: built as in production, served by vite preview</label>
+    </fieldset>
+    <label class="inline" id="front-rebuild-label"><input type="checkbox" id="front-rebuild"> Build again even if nothing changed</label>
+    <fieldset>
+      <legend>yarn install</legend>
+      <label class="inline"><input type="radio" name="install" value="auto" checked> Only if node_modules is out of date</label>
+      <label class="inline"><input type="radio" name="install" value="force"> Always</label>
+      <label class="inline"><input type="radio" name="install" value="skip"> Never</label>
+    </fieldset>
+    <dl class="facts" id="front-facts"></dl>
+    <p class="warn" id="front-warn" hidden></p>
+    <p class="error" id="front-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="front-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="front-go">Start</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="send">
   <form method="dialog" id="send-form">
     <h2>Send an event</h2>
@@ -389,6 +462,7 @@
   <form method="dialog" id="user-form" autocomplete="off">
     <h2 id="user-title">New user</h2>
     <label id="user-name-label">Name <input id="user-name" pattern="[A-Za-z0-9_\-]+" required></label>
+    <p class="muted" id="user-rename-note" hidden>A new name also changes it in the stacks that use it.</p>
     <label>DEV_USERNAME (email) <input id="user-username" required></label>
     <div class="row2">
       <label>DEV_FIRST_NAME <input id="user-first_name"></label>

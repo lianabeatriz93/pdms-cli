@@ -26,7 +26,7 @@ from rich.table import Table
 from rich.text import Text
 
 from . import (
-    __version__, actions, banner, completion, events, i18n, installer, instances, logview, migrations, prompts, proxy, repos, routes,
+    __version__, actions, banner, completion, events, frontend, i18n, installer, instances, logview, migrations, prompts, proxy, repos, routes,
     onboarding, runner, transfer,
     update, userimport, vscode,
 )
@@ -816,7 +816,8 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
             instances.forget(inst.key)
             items.pop(inst.key)
     running_proxy = proxy.running_proxy()
-    if not items and not running_proxy:
+    running_frontend = frontend.running()
+    if not items and not running_proxy and not running_frontend:
         console.print(_("No background services."))
         return
     healths = instances.health_all(list(items.values()))
@@ -841,6 +842,14 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
             f"[bold]{repo}[/]" if repo == cfg.current_repo else repo, running_proxy.get("as") or "-", "-",
             uptime(running_proxy["started_at"]) if running_proxy.get("started_at") else "",
         )
+    if running_frontend:
+        repo = repos.repo_of(cfg, running_frontend.get("root", "")) or "-"
+        health = frontend.health(running_frontend)
+        table.add_row(
+            f"{frontend.KEY} ({running_frontend.get('mode', 'dev')})", status_text(health.state),
+            frontend.url(running_frontend["port"], health.detail if health.state == "ok" else "https"), f"[bold]{repo}[/]" if repo == cfg.current_repo else repo, "-", "-",
+            uptime(running_frontend["started_at"]) if running_frontend.get("started_at") else "",
+        )
     console.print(table)
     for key, health in healths.items():
         if health.state == "error":
@@ -859,7 +868,7 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
 @app.command(help=_("Show the console of background services (Ctrl+C to exit)."))
 def logs(
     keys: Optional[list[str]] = typer.Argument(
-        None, help=_("Instances (or parts of the service name), proxy, or sns (what was published to SNS locally)."),
+        None, help=_("Instances (or parts of the service name), proxy, frontend, or sns (what was published to SNS locally)."),
         autocompletion=completion.log_keys,
     ),
     all_: bool = typer.Option(False, "--all", "-a", help=_("All running instances, including ones started later.")),
@@ -876,6 +885,8 @@ def logs(
         return proxy_logs(follow, lines, previous)
     if keys and keys[0] == events.SNS_KEY:
         return sns_logs(follow, lines, previous)
+    if keys and frontend.is_key(keys[0]):
+        return frontend_logs(follow, lines, previous)
     if previous:
         inst = pick_instance(keys[0] if keys else None, message=_("Which instance do you want to see the logs of?"))
         old = instances.previous_log_path(inst.log)
@@ -987,25 +998,31 @@ def open_cmd(
 @app.command(help=_("Stop background services."))
 def stop(
     key: Optional[str] = typer.Argument(
-        None, help=_("Instance (or part of the service name), or proxy."), autocompletion=completion.instance_or_proxy_keys
+        None, help=_("Instance (or part of the service name), proxy or frontend."),
+        autocompletion=completion.instance_or_proxy_keys
     ),
-    all_: bool = typer.Option(False, "--all", "-a", help=_("Stop all, the proxy included.")),
+    all_: bool = typer.Option(False, "--all", "-a", help=_("Stop all, the proxy and the frontend included.")),
 ) -> None:
     running = [i for i in instances.load().values() if i.alive()]
     running_proxy = proxy.running_proxy()
-    stop_proxy = False
+    running_frontend = frontend.running()
+    stop_proxy = stop_frontend = False
     if all_:
-        targets, stop_proxy = running, bool(running_proxy)
+        targets, stop_proxy, stop_frontend = running, bool(running_proxy), bool(running_frontend)
+    elif key and frontend.is_key(key):
+        if not running_frontend:
+            fail(_("The frontend is not running."))
+        targets, stop_frontend = [], True
     elif key and proxy.is_key(key):
         if not running_proxy:
             fail(_("The proxy is not running."))
         targets, stop_proxy = [], True
     elif key:
         targets = [pick_instance(key)]
-    elif not running_proxy and len(running) <= 1:
+    elif not running_proxy and not running_frontend and len(running) <= 1:
         targets = [pick_instance(None, only_alive=True)]
-    elif not running:
-        targets, stop_proxy = [], True
+    elif not running and not (running_proxy and running_frontend):
+        targets, stop_proxy, stop_frontend = [], bool(running_proxy), bool(running_frontend)
     else:
         prompts.require_tty()
         chosen = questionary.checkbox(
@@ -1013,11 +1030,12 @@ def stop(
             choices=[
                 *[questionary.Choice(i.key, i) for i in running],
                 *([questionary.Choice(proxy.display_key(running_proxy), proxy.KEY)] if running_proxy else []),
+                *([questionary.Choice(frontend.KEY, frontend.KEY)] if running_frontend else []),
             ],
         ).unsafe_ask()
-        targets = [c for c in chosen if c != proxy.KEY]
-        stop_proxy = proxy.KEY in chosen
-    if not targets and not stop_proxy:
+        targets = [c for c in chosen if c not in (proxy.KEY, frontend.KEY)]
+        stop_proxy, stop_frontend = proxy.KEY in chosen, frontend.KEY in chosen
+    if not targets and not stop_proxy and not stop_frontend:
         console.print(_("Nothing to stop."))
     for inst in targets:
         with console.status(_("Stopping {key}...", key=inst.key)):
@@ -1029,6 +1047,10 @@ def stop(
             restored = actions.stop_proxy(running_proxy)
         console.print("[green]✓[/] " + _("{key} stopped.", key=key))
         print_restored(restored)
+    if stop_frontend:
+        with console.status(_("Stopping {key}...", key=frontend.KEY)):
+            actions.stop_frontend(running_frontend)
+        console.print("[green]✓[/] " + _("{key} stopped.", key=frontend.KEY))
 
 
 @app.command(help=_("Restart a background service (same port; same user and DB by default)."))
@@ -1319,6 +1341,20 @@ def user_edit(name: Optional[str] = typer.Argument(None, autocompletion=completi
     user = prompts.ask_user(cfg.users[name], roles)
     settle(lambda: actions.save_user(cfg, name, user, roles=roles))
     console.print("[green]✓[/] " + _("User '{name}' updated.", name=name))
+
+
+@user_app.command("rename", help=_("Give a user another name (also in the stacks that use it)."))
+def user_rename(
+    name: Optional[str] = typer.Argument(None, autocompletion=completion.users),
+    new_name: Optional[str] = typer.Argument(None, help=_("The new name.")),
+) -> None:
+    cfg = Config.load()
+    name = pick(cfg.users, _("user"), name)
+    if not new_name:
+        prompts.require_tty()
+        new_name = questionary.text(_("New name for '{name}':", name=name), default=name).unsafe_ask()
+    renamed = settle(lambda: actions.rename_user(cfg, name, new_name or name))
+    console.print("[green]✓[/] " + _("User '{name}' is now '{new}'.", name=name, new=renamed))
 
 
 @user_app.command("remove", help=_("Delete a user."))
@@ -1762,6 +1798,93 @@ def proxy_routes(
         shown += 1
     console.print(table)
     console.print(_("{shown} of {total} routes.", shown=shown, total=len(repo_routes)))
+
+
+# --------------------------------------------------------------------------- frontend
+
+
+@app.command("front", help=_("Run the PDMS web app (frontend/): the yarn dev server, or a production build with --build."))
+def front_cmd(
+    build: bool = typer.Option(
+        False, "--build/--dev", help=_("Build it as in production and serve the build (yarn build + vite preview)."),
+    ),
+    rebuild: bool = typer.Option(False, "--rebuild", help=_("Build again even if nothing changed since the last build.")),
+    port: int = typer.Option(frontend.PORT, "--port", "-p", help=_("Port to listen on.")),
+    install: Optional[bool] = typer.Option(
+        None, "--install/--no-install", help=_("Run yarn install first (by default only when node_modules is out of date)."),
+    ),
+    background: Optional[bool] = typer.Option(
+        None, "--background/--foreground", "-b/-f",
+        help=_("Background (pdms ps, logs frontend, stop frontend) or foreground (asked if omitted)."),
+    ),
+) -> None:
+    cfg = Config.load()
+    mode = "build" if build or rebuild else "dev"
+    while True:
+        try:
+            with console.status(_("Checking node, yarn and node_modules...")):
+                plan = settle(lambda: actions.plan_frontend(cfg, mode=mode, port=port, install=install, rebuild=rebuild))
+            break
+        except actions.PortBusy as busy:
+            prompts.require_tty()
+            if not questionary.confirm(
+                _("Port {port} is in use. Use {free}? (logging in may only work on {port})", port=busy.port,
+                  free=busy.free), default=False,
+            ).unsafe_ask():
+                raise typer.Exit(1)
+            port = busy.free
+    if background is None:
+        background = interactive_terminal() and questionary.confirm(
+            _("Run it in the background? (pdms logs frontend, pdms stop frontend)"), default=True,
+        ).unsafe_ask()
+    if plan.install:
+        console.rule("yarn install")
+        settle(lambda: actions.install_frontend(plan.root))
+    if plan.build:
+        reasons = {"no build yet": _("no build yet"), "the API URL changed": _("the API URL changed"),
+                   "the dependencies changed": _("the dependencies changed"), "the code changed": _("the code changed"),
+                   "rebuild asked": "--rebuild"}
+        console.rule(_("yarn build ({reason})", reason=reasons.get(plan.build, plan.build)))
+        settle(lambda: actions.build_frontend(plan.root))
+    elif plan.mode == "build":
+        console.print("[green]✓[/] " + _("The last build is up to date; serving it (--rebuild to build again)."))
+    api = frontend.api_url(plan.root, plan.mode)
+    console.print(_("API: {url}", url=api or "-") + (f" [dim]({_('the proxy')})[/]" if frontend.is_local(api) else ""),
+                  highlight=False)
+    if not background:
+        runner.exec_server(frontend.folder(plan.root), frontend.serve_command(plan.mode, plan.port), frontend.environment())
+        return
+    started = actions.start_frontend(plan)
+    with console.status(_("Starting the frontend...")):
+        state = actions.wait_for_frontend(started)
+    if state == "stopped":
+        console.print(instances.tail(str(frontend.log_path()), 30), markup=False, highlight=False)
+        fail(_("The frontend exited while starting. Full log: {log}", log=frontend.log_path()))
+    if state == "ok":
+        url = frontend.url(plan.port, frontend.scheme(plan.port) or "https")
+        console.print("[green]✓[/] " + _("The frontend is responding at {url}", url=url), highlight=False)
+    else:
+        console.print(f"[yellow]{_('⚠ The frontend is not responding yet; check its log.')}[/]")
+    console.print(_("  Log: [bold]pdms logs frontend[/]   Stop: [bold]pdms stop frontend[/]"))
+
+
+def frontend_logs(follow: bool, lines: Optional[int], previous: bool) -> None:
+    log = frontend.log_path()
+    if previous:
+        log = instances.previous_log_path(log)
+    if not log.exists():
+        fail(_("The frontend has no log. Start it in the background with [bold]pdms front -b[/]."))
+    current = frontend.running()
+    if previous or not follow or not current:
+        console.print(instances.tail(str(log), lines or 100), markup=False, highlight=False, end="")
+        return
+    console.rule(_("{names} · Ctrl+C to exit", names=frontend.KEY))
+    inst = instances.Instance(
+        key=frontend.KEY, pid=int(current["pid"]), service=current.get("root", ""), host="127.0.0.1",
+        port=current["port"], user="", db="", reload=False, log=str(log), started_at=current.get("started_at", ""),
+        created=float(current.get("created", 0)),
+    )
+    logview.follow(console, [inst], lines or 100, None)
 
 
 # --------------------------------------------------------------------------- ui

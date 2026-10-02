@@ -239,6 +239,30 @@ pdms proxy routes -f tp    # which service handles each route and where it would
   It shows up in `pdms ps` as `proxy@<port>`, its requests go to a log file (`pdms logs proxy`) and
   `pdms stop proxy` (or `pdms stop --all`) stops it and puts `frontend/.env.local` back.
 
+## Frontend: `pdms front`
+
+```bash
+pdms front -b              # yarn dev in <repo>/frontend, in the background: https://localhost:3000
+pdms front -b --build      # build it as in production (yarn build) and serve the build (vite preview)
+pdms front --rebuild       # build again even if nothing changed
+pdms logs frontend         # its output; pdms stop frontend stops it
+```
+
+It runs the PDMS web app of the current repo. It checks Node (22 to 24, as the frontend's `package.json` asks) and
+yarn, and runs `yarn install` first when `node_modules` does not match `package.json` and `yarn.lock`
+(`--install`/`--no-install` to force or skip it). The `@alivi` packages come from AWS CodeArtifact: if the install
+cannot download them, log in with `./codeartifact-login.sh` (in `frontend/`).
+
+- **dev** (`yarn dev`) reloads as you change the code. Vite also restarts by itself when `.env.local` changes, so
+  starting or stopping the proxy (which points `.env.local` to it) is picked up without restarting it.
+- **build** (`--build`) builds into `frontend/dist` (tsc + vite build, minified as in production) and serves it on the
+  same port. The API URL is fixed when it is built, so pdms remembers what each build was made from (the API URL,
+  `yarn.lock`, the code) and builds again only when one of them changed. `pdms ui` warns when a running build points
+  to an API that is no longer the current one (for example after starting the proxy) and offers **Rebuild**.
+- It listens on 3000, where logging in to the app works; if that port is in use it asks before taking another one.
+- It shows up in `pdms ps` as `frontend (dev)` or `frontend (build)`; `pdms stop --all` stops it too. `pdms doctor`
+  checks Node, yarn, `node_modules` and the port.
+
 ## Web interface: `pdms ui` (preview)
 
 ```bash
@@ -247,13 +271,25 @@ pdms ui --no-browser -p 9000
 pdms ui --window           # the same page in a window of its own; closing it stops pdms ui
 ```
 
-A page with the background services, the stacks, the proxy, the local events and the settings, updated live from the same files the CLI
-uses, so both can be used at the same time. From the services screen (which also has a row for the local SNS, see
+A page with the background services, the stacks, the proxy, the frontend, the local events and the settings, updated
+live from the same files the CLI uses, so both can be used at the same time.
+
+It opens on **Home**: a card for each piece (services, proxy, frontend, events) with its own buttons, the stacks with
+how many of their services run, and what needs attention (failed services and jobs, a build that points to an old
+API, local events that are off). **Start my setup** keeps the stack, the proxy, the frontend (dev or build) and the
+local events you want, saved in the configuration as you change it; **Start everything** starts what is not running
+yet, in this order: the local events, the stack, the proxy (pointing the frontend to it) and the frontend. It asks
+before a protected database, like the other screens. **Stop everything** stops the frontend, the proxy, every
+background service and the local ElasticMQ, after listing them. The title bar shows the current user with its name
+and roles.
+
+From the services screen (which also has a row for the local SNS, see
 [SNS](#sns-one-local-topic-for-everything)) you can follow a service's logs live (also the
 previous run's and the install's), open its Swagger docs, stop it, forget the stopped ones, and restart it with the
 same or another user and database: it asks before a protected database and installs only if something changed, like
 `pdms restart`. **Start service** starts any service of the current repo (like `pdms run -b`), on the port you choose
-or the next free one. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
+or the next free one, and **Start frontend** the web app in dev or build mode (like `pdms front -b`), with its own row,
+its install and build logs, and **Rebuild**. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
 services run, and creates, edits and deletes stacks with a searchable list of the repo's services. The proxy screen
 starts the proxy in the background (like `pdms proxy -b`: it asks for another port when the one you chose is in use)
 and stops it, follows its requests live with where each one went, and opens the log of the local service that served
@@ -264,7 +300,7 @@ consumer, shows a queue's messages without consuming them, purges them, and send
 event class filled in, through the broker or straight to the queue) or messages to a queue. It also lists the event
 types with their queues and consumers, and every SNS publish, filtered by topic or text, with its attributes and
 message. The settings screen adds, edits, deletes and filters the databases (with a connection test, also for a
-database not saved yet) and the users, like `pdms db` and `pdms user`, and edits the defaults of `pdms config defaults`.
+database not saved yet) and the users, like `pdms db` and `pdms user` (a user can be renamed: its stacks follow), and edits the defaults of `pdms config defaults`.
 A user's `DEV_ROLES` are ticked from the roles of the current repo (also in `pdms user add/edit`), and users can be
 imported from the `pdms_user` table of a database, like `pdms user import`. **Export…** and **Import…** do what
 `pdms config export` and `pdms config import` do: choose the sections, the passwords only if asked, and on import see
@@ -472,11 +508,12 @@ do it later).
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |
+| `pdms front` | The PDMS web app: `yarn dev`, or a production build with `--build` |
 | `pdms ui` | Web interface with the services, the proxy and the events, live (preview); `--window` in a window of its own |
 | `pdms events` | Local SQS: map, ElasticMQ and broker (`map`, `up`, `status`, `send`, `peek`, `purge`, `down`) |
 | `pdms stack` | Stacks menu (`list`, `add`, `edit`, `remove`) |
 | `pdms db` | Databases menu (`list`, `add`, `edit`, `remove`, `test`) |
-| `pdms user` | Users menu (`list`, `add`, `edit`, `remove`, `import`) |
+| `pdms user` | Users menu (`list`, `add`, `edit`, `rename`, `remove`, `import`) |
 | `pdms config` | Settings (`defaults`, `language`, `export`, `import`, `path`, `edit`) |
 | `pdms doctor` | Check the environment and the configuration |
 
@@ -526,6 +563,13 @@ protected = false                         # true = ask for confirmation before u
 services = ["lead/lead-tp-list", "lead/lead-tp-details"]
 user = ""                                 # empty = ask when starting
 db = ""
+
+[setup]                                   # what Start everything starts (pdms ui, Home)
+stack = "tp"
+events = false
+proxy = true
+frontend = true
+frontend_mode = "dev"                     # dev | build
 ```
 
 ### Export and import

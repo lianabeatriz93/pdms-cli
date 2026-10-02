@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO
 
-from . import events, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
+from . import events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
 from .config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -490,6 +490,8 @@ def save_stack(cfg: Config, name: str, stack: Stack) -> None:
 
 def remove_stack(cfg: Config, name: str) -> None:
     del cfg.stacks[require(cfg.stacks, _("stack"), name)]
+    if cfg.setup.stack == name:
+        cfg.setup.stack = ""
     cfg.save()
 
 
@@ -646,6 +648,120 @@ def stop_proxy(running: dict | None = None) -> str | None:
     if running:
         proxy.stop(running)
     return proxy.restore_frontend_change()
+
+
+# --------------------------------------------------------------------------- frontend
+
+
+@dataclass
+class FrontendLaunch:
+    """Everything decided to start the web app; :func:`prepare_frontend` and :func:`start_frontend` carry it out."""
+
+    root: Path
+    mode: str  # dev | build
+    port: int
+    install: bool  # run yarn install first
+    build: str  # why it is built first ("" to serve the last build)
+
+    @property
+    def url(self) -> str:
+        return frontend.url(self.port)
+
+
+def frontend_root(cfg: Config) -> Path:
+    root = repos.active_root(cfg)
+    if root is None or not root.is_dir():
+        raise ActionError(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
+    if not frontend.exists(root):
+        raise ActionError(_("{path} has no frontend (frontend/package.json).", path=root))
+    return root
+
+
+def check_frontend_tools() -> None:
+    """Node 22–24 and yarn, as the frontend's package.json asks."""
+    version = frontend.node_version()
+    if version is None:
+        raise ActionError(_("Node.js was not found. Install Node 22 or 24 (for example with nvm install 22)."))
+    if not frontend.node_supported(version):
+        raise ActionError(_("The frontend needs Node 22 to 24 and this is Node {version} (nvm use 22).",
+                            version=version))
+    if frontend.yarn() is None:
+        raise ActionError(_("yarn was not found. Install it with: npm install -g yarn"))
+
+
+def plan_frontend(
+    cfg: Config, *, mode: str = "dev", port: int | None = None, install: bool | None = None, rebuild: bool = False,
+) -> FrontendLaunch:
+    """Decide how the web app runs. Raises :class:`PortBusy` for the user to answer.
+
+    ``install``: True forces ``yarn install``, False skips it, None runs it when node_modules does not match the
+    lockfile. A build is made again only when something changed since the last one, or with ``rebuild``."""
+    mode = _one_of("mode", mode, frontend.MODES)
+    root = frontend_root(cfg)
+    if current := frontend.running():
+        raise ActionError(_("The frontend is already running ({mode}) at {url}. Stop it first: pdms stop frontend",
+                            mode=current.get("mode", "dev"), url=frontend.url(current["port"])))
+    check_frontend_tools()
+    port = free_port("127.0.0.1", port or frontend.PORT)
+    wanted = install is True or (install is None and not frontend.dependencies_ok(root))
+    build = ""
+    if mode == "build":
+        build = "rebuild asked" if rebuild else frontend.build_needed(root)
+    return FrontendLaunch(root, mode, port, wanted, build)
+
+
+def _yarn(cmd: list[str], cwd: Path, output: IO[str] | None) -> None:
+    redirect = {"stdout": output, "stderr": subprocess.STDOUT, "stdin": subprocess.DEVNULL} if output else {}
+    if output:
+        output.write(f"$ {' '.join(cmd)}\n")
+        output.flush()
+    subprocess.run(cmd, cwd=cwd, env=frontend.environment(), check=True, **redirect)
+
+
+def install_frontend(root: Path, output: IO[str] | None = None, log: Path | None = None) -> None:
+    """``yarn install`` in ``frontend/``; a failure that looks like CodeArtifact says how to log in."""
+    try:
+        _yarn(frontend.install_command(), frontend.folder(root), output)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        if log and frontend.needs_codeartifact(log):
+            raise ActionError(_("yarn install could not download the @alivi packages from AWS CodeArtifact. Log in "
+                                "with ./codeartifact-login.sh (in frontend/) and try again.")) from exc
+        raise ActionError(_("yarn install failed: {error}", error=exc)) from exc
+
+
+def build_frontend(root: Path, output: IO[str] | None = None) -> dict:
+    """``yarn build`` (tsc + vite build into frontend/dist) and remember what it was built from."""
+    try:
+        _yarn(frontend.build_command(), frontend.folder(root), output)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ActionError(_("yarn build failed: {error}", error=exc)) from exc
+    return frontend.remember_build(root)
+
+
+def start_frontend(plan: FrontendLaunch) -> dict:
+    """Start the dev server or the preview of the build in the background; waiting is :func:`wait_for_frontend`."""
+    return frontend.start(plan.root, plan.mode, plan.port)
+
+
+def wait_for_frontend(started: dict, timeout: float = 90) -> str:
+    """``ok`` once it answers, ``stopped`` if it exited, ``starting`` when ``timeout`` runs out."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not frontend.running():
+            return "stopped"
+        if frontend.responds(int(started["port"])):
+            return "ok"
+        time.sleep(0.5)
+    return "starting"
+
+
+def stop_frontend(current: dict | None = None) -> bool:
+    """Stop the frontend pdms started; False when it was not running."""
+    current = current or frontend.running()
+    if not current:
+        return False
+    frontend.stop(current)
+    return True
 
 
 # --------------------------------------------------------------------------- repos
@@ -862,6 +978,22 @@ def save_user(cfg: Config, name: str, user: DevUser, new: bool = False, roles: I
     )
     cfg.save()
     return name
+
+
+def rename_user(cfg: Config, name: str, new_name: str) -> str:
+    """Give a user another alias, also in the stacks that use it and as the last one used; returns the new alias."""
+    name = require(cfg.users, _("user"), name)
+    if new_name.strip() == name:
+        return name
+    renamed = check_alias(new_name, cfg.users)
+    cfg.users = {renamed if alias == name else alias: user for alias, user in cfg.users.items()}
+    for stack in cfg.stacks.values():
+        if stack.user == name:
+            stack.user = renamed
+    if cfg.last_user == name:
+        cfg.last_user = renamed
+    cfg.save()
+    return renamed
 
 
 def remove_user(cfg: Config, name: str) -> list[str]:
