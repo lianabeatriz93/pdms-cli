@@ -1939,6 +1939,11 @@ def ui_cmd(
 
     if detached:
         ui_instance.redirect_output()
+        # Opened from the menu or at login: the tools of the user's shell (pyenv, nvm, Poetry...) are not on PATH yet.
+        from . import shellenv
+
+        if changed := shellenv.adopt_in_background():
+            console.print(f"[dim]From the shell's environment: {', '.join(sorted(changed))}[/]", highlight=False)
 
     def stop_with(message: str) -> None:
         if detached:
