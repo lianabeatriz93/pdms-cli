@@ -6,6 +6,7 @@
 #   $env:PDMS_VERSION = "0.2.0"     install that version instead of the latest release
 #   $env:PDMS_PRERELEASE = "1"      install the latest release including alpha/beta pre-releases
 #   $env:PDMS_WHEEL = "<path|url>"  install that package file instead of downloading a release (used by CI)
+#   $env:PDMS_MENU = "1" | "0"      add pdms to the Start menu (pdms ui --install) without asking, or do not
 
 $ErrorActionPreference = "Stop"
 $Repo = "lianabeatriz93/pdms-cli"
@@ -60,6 +61,17 @@ Invoke-Native { & $uv tool update-shell | Out-Null }
 $binDir = (Invoke-Native { & $uv tool dir --bin } | Select-Object -Last 1).ToString().Trim()
 Invoke-Native { & (Join-Path $binDir "pdms.exe") --version }
 if ($LASTEXITCODE -ne 0) { throw "pdms was installed but does not start" }
+
+# The Start menu shortcut (pdms ui --install), asked only when someone can answer.
+$menu = $env:PDMS_MENU
+if (-not $menu -and [Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+    $answer = Read-Host "Add pdms to the Start menu (pdms ui in a window of its own)? [Y/n]"
+    $menu = if ($answer -match "^[nN]") { "0" } else { "1" }
+}
+if ($menu -eq "1") {
+    Invoke-Native { & (Join-Path $binDir "pdms.exe") ui --install }
+    if ($LASTEXITCODE -ne 0) { Write-Host "Could not add pdms to the Start menu; try later with: pdms ui --install" }
+}
 
 if (-not (Get-Command pdms -ErrorAction SilentlyContinue)) {
     Write-Host "Open a new terminal to use pdms (it is installed in $binDir)."

@@ -33,6 +33,7 @@ function phaseLabel(phase) {
   if (verb === "installing") return what ? t("installing {what}…", { what }) : t("installing…");
   if (verb === "starting") return what ? t("starting {what}…", { what }) : t("starting…");
   if (verb === "building") return what ? t("building {what}…", { what }) : t("building…");
+  if (verb === "restarting") return t("restarting…");
   return text;
 }
 
@@ -51,6 +52,7 @@ function failedText(job) {
   if (job.action === "start" || job.action === "up") return t("Start failed: {error}", { error });
   if (job.action === "stop" || job.action === "down") return t("Stop failed: {error}", { error });
   if (job.action === "restart") return t("Restart failed: {error}", { error });
+  if (job.action === "update") return t("Update failed: {error}", { error });
   return t("{action} failed: {error}", { action: job.action, error });
 }
 
@@ -236,9 +238,13 @@ function tickUptimes() {
 }
 
 function paint(next) {
+  // pdms ui restarted with a new version (an update): load its page, which may have changed too.
+  if (updateView.loaded === null) updateView.loaded = next.version;
+  else if (next.version !== updateView.loaded) { location.reload(); return; }
   state = { jobs: {}, users: [], dbs: [], stacks: [], ...next };
   const relabel = useLanguage(state.language);
   paintContext();
+  paintUpdate();
   paintHome();
   paintServices();
   paintStacks();
@@ -326,7 +332,7 @@ function clearLog() {
 }
 
 function paintLogTabs() {
-  const noInstall = logs.key.startsWith("proxy") || logs.key === "sns";
+  const noInstall = logs.key.startsWith("proxy") || ["sns", "ui", "update"].includes(logs.key);
   for (const tab of $("logs-tabs").children) {
     tab.setAttribute("aria-selected", String(tab.dataset.which === logs.which));
     tab.hidden = (tab.dataset.which === "install" && noInstall) || (tab.dataset.which === "build" && logs.key !== "frontend");
@@ -1615,6 +1621,7 @@ const DEFAULTS = [
   ["proxy_timeout", N_("Proxy timeout"), "number", N_("Seconds the proxy waits for a service or the remote API before answering 502. Slow databases need more; applies when the proxy starts.")],
   ["banner", N_("Show the PDMS banner"), "check", N_("When the interactive menu opens.")],
   ["update_check", N_("Tell me about new pdms versions"), "check", N_("Checked at most once a day.")],
+  ["ui_at_login", N_("Open pdms ui when I log in"), "check", N_("In the tray, without its window. To have it in the app menu too: pdms ui --install.")],
   ["env", N_("Extra environment variables"), "env", N_("Injected on every run, after the profile's own.")],
 ];
 
@@ -2621,7 +2628,12 @@ function attention() {
   if ((state.setup || {}).events && !state.events.up && !state.jobs[EVENTS_JOB]) {
     items.push(["warn", t("The local events are off"), t("The services publish to AWS until they are on."), [button(t("Start"), openEventsUp)]]);
   }
-  return items.sort((a, b) => (a[0] === b[0] ? 0 : a[0] === "bad" ? -1 : 1));
+  const offer = updateOffer();
+  if (offer && !state.jobs[UPDATE_JOB]) {
+    items.push(["info", offerTitle(offer), offerText(offer), [button(offer.kind === "restart" ? t("Restart pdms ui") : t("See what is new"), openUpdate)]]);
+  }
+  const rank = { bad: 0, warn: 1, info: 2 };
+  return items.sort((a, b) => rank[a[0]] - rank[b[0]]);
 }
 
 function paintHome() {
@@ -2687,6 +2699,199 @@ async function stopAll() {
   if (state.events.up) what.push(t("the local ElasticMQ (its messages are lost)"));
   if (await confirmDialog(t("Stop everything?"), t("It stops {what}.", { what: what.join(", ") }), t("Stop everything"))) {
     act("/api/home/stop", {});
+  }
+}
+
+// ---------------------------------------------------------------------------- updates
+
+const UPDATE_JOB = "update";
+// loaded: the version this page came with; notes: the release notes fetched for notesFor.
+const updateView = { loaded: null, notesFor: "", notes: null };
+
+// What there is to offer: a newer release, or a version that pdms self-update installed and this pdms ui does not run.
+function updateOffer() {
+  const info = state.update;
+  if (!info) return null;
+  if (info.installed && info.installed !== info.current) return { kind: "restart", version: info.installed };
+  if (info.latest) return { kind: "update", version: info.latest };
+  return null;
+}
+
+function offerTitle(offer) {
+  return offer.kind === "restart" ? t("pdms {version} is installed", { version: offer.version })
+    : t("pdms {version} is available", { version: offer.version });
+}
+
+function offerText(offer) {
+  return offer.kind === "restart" ? t("This pdms ui still runs {current}.", { current: state.update.current })
+    : t("You have {current}.", { current: state.update.current });
+}
+
+function paintUpdate() {
+  const offer = updateOffer();
+  const job = state.jobs[UPDATE_JOB];
+  const busy = job && !job.error;
+  const chip = $("update-chip");
+  chip.hidden = !offer && !busy;
+  chip.textContent = busy ? `⬆ ${phaseLabel(job.phase)}` : offer ? `⬆ ${offer.version}` : "";
+  chip.title = offer ? offerTitle(offer) : "";
+  paintVersion();
+  if ($("update-dialog").open) paintUpdateDialog();
+}
+
+function paintVersion() {
+  const info = state.update;
+  if (!info) return;
+  const offer = updateOffer();
+  $("version-current").textContent = info.current;
+  let note;
+  if (info.kind === "editable") note = t("runs from a local checkout: update it with git pull.");
+  else if (offer) note = offerTitle(offer);
+  else if (info.checked_at) note = t("the latest version (checked {when}).", { when: new Date(info.checked_at).toLocaleString() });
+  else note = t("not checked yet.");
+  if (info.kind !== "editable" && !info.checks) note += " " + t("Automatic checks are off.");
+  $("version-note").textContent = note;
+  $("version-check").disabled = info.kind === "editable";
+  $("version-open").hidden = !offer;
+}
+
+async function checkNow() {
+  $("version-check").disabled = true;
+  try {
+    const { status, data } = await post("/api/update/check");
+    if (status >= 400) toast(data.error || t("pdms ui answered {status}", { status }));
+    else if (data.latest) toast(t("pdms {version} is available", { version: data.latest }), "info");
+    else toast(t("pdms {version} is the latest version.", { version: data.current }), "info");
+  } catch {
+    toast(t("pdms ui is not reachable: is it still running?"));
+  } finally {
+    $("version-check").disabled = false;
+  }
+}
+
+// **bold** and `code` of a line of the release notes, as nodes (never as HTML).
+function inlineNodes(text) {
+  const parts = [];
+  const pattern = /\*\*(.+?)\*\*|`([^`]+)`/g;
+  let last = 0;
+  let match;
+  while ((match = pattern.exec(text))) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push(match[1] !== undefined ? el("b", {}, match[1]) : el("code", {}, match[2]));
+    last = pattern.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+// The Markdown of a release (headings, lists, paragraphs), as nodes.
+function notesNodes(text) {
+  const nodes = [];
+  let list = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    const item = line.match(/^[-*]\s+(.*)$/);
+    if (!line) list = null;
+    else if (heading) { nodes.push(el("h4", {}, ...inlineNodes(heading[1]))); list = null; }
+    else if (item) {
+      if (!list) { list = el("ul"); nodes.push(list); }
+      list.append(el("li", {}, ...inlineNodes(item[1])));
+    } else { nodes.push(el("p", {}, ...inlineNodes(line))); list = null; }
+  }
+  return nodes;
+}
+
+function paintNotes() {
+  const box = $("update-notes");
+  if (updateView.notes === null) { box.replaceChildren(el("p", { class: "muted" }, t("Loading the release notes…"))); return; }
+  if (typeof updateView.notes === "string") { box.replaceChildren(el("p", { class: "muted" }, updateView.notes)); return; }
+  box.replaceChildren(...updateView.notes.flatMap((note) => [
+    el("h3", {}, `pdms ${note.version} `, ...(note.url ? [el("a", { href: note.url, target: "_blank", rel: "noreferrer" }, t("on GitHub"))] : [])),
+    ...notesNodes(note.body),
+  ]));
+}
+
+async function loadNotes(version) {
+  updateView.notesFor = version;
+  updateView.notes = null;
+  paintNotes();
+  const { data, error } = await getJson(`/api/update/notes?version=${encodeURIComponent(version)}`);
+  if (updateView.notesFor !== version) return;
+  updateView.notes = error ? t("Could not load the release notes: {error}", { error }) : data.notes.length ? data.notes : t("This release has no notes.");
+  paintNotes();
+}
+
+function paintUpdateDialog() {
+  const info = state.update;
+  const offer = updateOffer();
+  const job = state.jobs[UPDATE_JOB];
+  const busy = Boolean(job && !job.error);
+  const updating = offer && offer.kind === "update";
+  $("update-title").textContent = offer ? offerTitle(offer) : busy ? t("Updating pdms") : t("pdms {version} is the latest version.", { version: info.current });
+  let hint = "";
+  if (offer && offer.kind === "restart") hint = t("This pdms ui still runs {current}. Restarting it takes a moment; the services, the proxy and the frontend keep running.", { current: info.current });
+  else if (updating && info.updates_itself) hint = t("You have {current}. pdms ui installs it, as pdms self-update does, and restarts with it: this page comes back by itself.", { current: info.current });
+  else if (updating) hint = t("You have {current}. This pdms was not installed with uv tool, so it cannot update itself; run:", { current: info.current });
+  $("update-hint").textContent = hint;
+  $("update-notes").hidden = !updating;
+  const proxy = info.proxy;
+  $("update-proxy-label").hidden = !(updating && info.updates_itself && proxy);
+  if (proxy) {
+    $("update-proxy").hidden = !proxy.background;
+    $("update-proxy-text").textContent = proxy.background
+      ? t("Restart the proxy (:{port}) with the new version; otherwise it keeps running the old one.", { port: proxy.port })
+      : t("The proxy on :{port} runs in a terminal: restart it there afterwards.", { port: proxy.port });
+  }
+  $("update-command-row").hidden = !(updating && !info.updates_itself);
+  $("update-command").textContent = info.command;
+  $("update-phase").hidden = !busy;
+  $("update-phase").textContent = busy ? phaseLabel(job.phase) : "";
+  $("update-error").hidden = !(job && job.error);
+  $("update-error").textContent = job && job.error ? failedText(job) : "";
+  $("update-log").hidden = !job;
+  $("update-go").hidden = !offer || (updating && !info.updates_itself);
+  $("update-go").disabled = busy;
+  $("update-go").textContent = offer && offer.kind === "restart" ? t("Restart pdms ui") : t("Update and restart");
+}
+
+function openUpdate() {
+  const offer = updateOffer();
+  if (offer && offer.kind === "update" && updateView.notesFor !== offer.version) loadNotes(offer.version);
+  paintUpdateDialog();
+  if (!$("update-dialog").open) $("update-dialog").showModal();
+}
+
+async function submitUpdate(event) {
+  event.preventDefault();
+  const offer = updateOffer();
+  if (!offer) return;
+  $("update-error").hidden = true;
+  $("update-go").disabled = true;
+  const path = offer.kind === "restart" ? "/api/update/restart" : "/api/update/install";
+  const body = offer.kind === "restart" ? {} : { restart_proxy: $("update-proxy").checked };
+  try {
+    const { status, data } = await post(path, body);
+    if (status >= 400) {
+      $("update-error").textContent = data.error || t("pdms ui answered {status}", { status });
+      $("update-error").hidden = false;
+      $("update-go").disabled = false;
+    } else if (offer.kind === "restart") {
+      $("update-phase").textContent = t("restarting…");
+      $("update-phase").hidden = false;
+    }
+  } catch {
+    toast(t("pdms ui is not reachable: is it still running?"));
+    $("update-go").disabled = false;
+  }
+}
+
+async function copyCommand() {
+  try {
+    await navigator.clipboard.writeText(state.update.command);
+    toast(t("Copied."), "info");
+  } catch {
+    toast(t("The browser did not allow copying."));
   }
 }
 
@@ -2822,6 +3027,13 @@ $("front-form").addEventListener("change", (event) => {
   if (event.target.name === "mode" || event.target.id === "front-rebuild") resetFrontendPort();
 });
 $("home-start").addEventListener("click", () => startAll());
+$("update-chip").addEventListener("click", openUpdate);
+$("version-open").addEventListener("click", openUpdate);
+$("version-check").addEventListener("click", checkNow);
+$("update-form").addEventListener("submit", submitUpdate);
+$("update-cancel").addEventListener("click", () => $("update-dialog").close());
+$("update-copy").addEventListener("click", copyCommand);
+$("update-log").addEventListener("click", () => { $("update-dialog").close(); showLogs(UPDATE_JOB); });
 $("home-stop").addEventListener("click", stopAll);
 for (const id of ["setup-stack", "setup-events", "setup-proxy", "setup-frontend", "setup-mode"]) $(id).addEventListener("change", saveSetup);
 

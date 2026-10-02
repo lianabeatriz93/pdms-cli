@@ -87,6 +87,8 @@ class Defaults:
     banner: bool = True
     # Tell when a new pdms version is published (checked at most once a day).
     update_check: bool = True
+    # Open pdms ui (in the tray, without its window) when the user logs in to the computer.
+    ui_at_login: bool = False
     # Seconds to wait when testing a database connection.
     db_timeout: int = 15
     # Seconds the proxy waits for a service (or the remote API) to answer before replying 502.

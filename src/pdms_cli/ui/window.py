@@ -3,8 +3,10 @@
 pywebview comes with the optional ``desktop`` extra: on Windows it uses Edge WebView2 and on macOS WebKit, both part of
 the system; on Linux it uses Qt (PyQt6 and its WebEngine, installed with the extra), since the GTK backend needs
 system packages to build. On Windows and macOS pywebview is small, so ``pdms ui --window`` installs it by itself
-when it is missing; on Linux the user decides (Qt is a large download). The UI server keeps running in a thread and
-stops when the window closes.
+when it is missing; on Linux the user decides (Qt is a large download). The UI server keeps running in a thread.
+
+With a tray icon (:mod:`.tray`) closing the window hides it and pdms ui stops from the tray's Quit; without one,
+closing the window stops pdms ui.
 """
 
 from __future__ import annotations
@@ -20,9 +22,11 @@ from importlib import resources
 
 from .. import __version__, update
 from ..i18n import _
+from . import tray as ui_tray
+from .control import Control
 
 # The desktop extra (pyproject.toml) on Windows and macOS, installed into pdms's own environment.
-DESKTOP_REQUIREMENTS = ["pywebview>=5"]
+DESKTOP_REQUIREMENTS = ["pywebview>=5", "pystray>=0.19"]
 TITLE = "pdms"
 SIZE = (1400, 900)
 MIN_SIZE = (800, 560)
@@ -87,14 +91,45 @@ def missing_system_library() -> str | None:
     return None
 
 
-def open_window(url: str) -> None:
-    """Show ``url`` in a native window until it is closed (blocks; pywebview needs the main thread)."""
+def open_window(url: str, control: Control, hidden: bool = False) -> None:
+    """Show ``url`` in a native window until pdms ui quits (blocks; pywebview needs the main thread).
+
+    ``hidden`` starts with only the tray icon (when there is one)."""
     if missing := missing_system_library():
         raise RuntimeError(missing)
+    tray = ui_tray.Tray(on_open=control.show, on_browser=control.open_browser, on_quit=control.quit)
+    has_tray = ui_tray.start(tray)  # before pywebview: on Linux it creates the Qt application pywebview reuses
     import webview
 
     webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True  # Docs and /docs open in the browser, not here
     webview.settings["ALLOW_DOWNLOADS"] = True  # Settings → Export… downloads a file
-    webview.create_window(TITLE, url, width=SIZE[0], height=SIZE[1], min_size=MIN_SIZE, text_select=True)
-    with resources.as_file(resources.files("pdms_cli.ui") / "static" / icon_name()) as icon:
-        webview.start(gui="qt" if sys.platform.startswith("linux") else None, icon=str(icon))
+    window = webview.create_window(TITLE, url, width=SIZE[0], height=SIZE[1], min_size=MIN_SIZE, text_select=True,
+                                   hidden=hidden and has_tray)
+    minimized = []
+
+    def closing() -> bool | None:
+        if has_tray and not control.quitting.is_set():
+            window.hide()  # pdms ui stays in the tray
+            return False
+        return None
+
+    def show() -> None:
+        if minimized:
+            window.restore()
+        window.show()
+        window.on_top = True  # brings it in front of the other windows...
+        window.on_top = False  # ...without keeping it there
+
+    def close() -> None:
+        tray.stop()
+        window.destroy()
+
+    window.events.closing += closing
+    window.events.minimized += lambda: minimized.append(True)
+    window.events.restored += lambda: minimized.clear()
+    control.attach(show, close)
+    try:
+        with resources.as_file(resources.files("pdms_cli.ui") / "static" / icon_name()) as icon:
+            webview.start(gui="qt" if sys.platform.startswith("linux") else None, icon=str(icon))
+    finally:
+        tray.stop()

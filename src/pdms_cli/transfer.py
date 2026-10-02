@@ -14,7 +14,7 @@ from typing import Any
 import tomlkit
 
 from . import __version__
-from .config import Config
+from .config import Config, Defaults
 from .i18n import _
 
 FORMAT_VERSION = 1
@@ -88,11 +88,18 @@ def _comparable(section: str, item: Any, current: Any = None) -> dict[str, Any]:
     return data
 
 
+def _local(defaults: Defaults, current: Config) -> Defaults:
+    """Imported defaults, keeping what only concerns this computer (opening pdms ui at login)."""
+    result = copy.deepcopy(defaults)
+    result.ui_at_login = current.defaults.ui_at_login
+    return result
+
+
 def plan_import(current: Config, incoming: Config, sections: list[str]) -> list[SectionPlan]:
     plans = []
     if "defaults" in sections:
         plan = SectionPlan("defaults")
-        (plan.same if current.defaults == incoming.defaults else plan.changed).append("defaults")
+        (plan.same if current.defaults == _local(incoming.defaults, current) else plan.changed).append("defaults")
         plans.append(plan)
     for section in ITEM_SECTIONS:
         if section not in sections:
@@ -126,7 +133,7 @@ def apply_import(
     """
     result = copy.deepcopy(current)
     if "defaults" in sections and (replace or ("defaults", "defaults") in overwrite):
-        result.defaults = copy.deepcopy(incoming.defaults)
+        result.defaults = _local(incoming.defaults, current)
     for section in ITEM_SECTIONS:
         if section not in sections:
             continue

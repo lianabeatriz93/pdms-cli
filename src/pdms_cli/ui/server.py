@@ -33,7 +33,10 @@ from rich.text import Text
 from .. import actions, events, frontend, i18n, instances, proxy
 from ..config import Config
 from ..logview import LogFollower
+from . import instance as ui_instance
 from . import jobs as ui_jobs
+from . import updates as ui_updates
+from .control import Control
 from .state import build_state
 
 STATIC = resources.files("pdms_cli.ui") / "static"
@@ -200,9 +203,10 @@ def proxy_options(body: dict) -> dict:
 
 
 def make_handler(
-    token: str, hub: Hub, jobs: ui_jobs.Jobs | None = None, ping: float = 15.0
+    token: str, hub: Hub, jobs: ui_jobs.Jobs | None = None, ping: float = 15.0, control: Control | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     jobs = jobs or ui_jobs.Jobs(hub.poke)
+    control = control or Control("")
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -324,12 +328,35 @@ def make_handler(
                 self.proxy_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
             elif url.path in ("/api/events/queues", "/api/events/map", "/api/events/peek", "/api/events/template"):
                 self.events_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
+            elif url.path == "/api/update/notes":
+                try:
+                    self.reply_json(200, {"notes": ui_updates.notes(parse_qs(url.query).get("version", [""])[0])})
+                except actions.ActionError as exc:
+                    self.reply_json(502, {"error": plain(exc.message)})
             elif url.path in ("/api/logs", "/api/logs/stream"):
                 self.logs(parse_qs(url.query), live=url.path.endswith("/stream"))
             else:
                 self.reply_json(404, {"detail": "not found"})
 
+        def show_request(self) -> bool:
+            """A second ``pdms ui`` asking this one to show itself, with the token it read from ui.json. It sends a
+            header that no other page can send without a preflight (never answered), so it needs no cookie."""
+            given = self.headers.get(ui_instance.TOKEN_HEADER)
+            if given is None or urlsplit(self.path).path != ui_instance.SHOW_PATH:
+                return False
+            if not self.allowed():
+                return True
+            self.rfile.read(min(int(self.headers.get("Content-Length") or 0), MAX_BODY))
+            if not secrets.compare_digest(given, token):
+                self.reply_json(403, {"error": "wrong token"})
+                return True
+            control.show()
+            self.reply_json(200, {})
+            return True
+
         def do_POST(self) -> None:  # noqa: N802
+            if self.show_request():
+                return
             if not self.allowed(origin_required=True):
                 return
             if not self.authorized():
@@ -440,6 +467,8 @@ def make_handler(
                     return 502, {"error": f"ElasticMQ: {exc}"}
             if path == "/api/clean":
                 return 200, {"forgotten": ui_jobs.forget_stopped()}
+            if path.startswith("/api/update/"):
+                return self.act_on_update(path.rsplit("/", 1)[-1], body)
             if path == "/api/proxy/start":
                 return 202, {"job": jobs.start_proxy(**proxy_options(body)).key}
             if path == "/api/run":
@@ -489,6 +518,22 @@ def make_handler(
                 return 200, {}
             return 404, {"error": "not found"}
 
+        def act_on_update(self, verb: str, body: dict) -> tuple[int, dict]:
+            if verb == "check":
+                return 200, ui_updates.check_now()
+            if verb == "install":
+                restart_proxy = body.get("restart_proxy", True)
+                if not isinstance(restart_proxy, bool):
+                    raise actions.ActionError("restart_proxy must be true or false")
+                return 202, {"job": jobs.update(control, restart_proxy=restart_proxy).key}
+            if verb == "restart":  # updated from the CLI: start again with the version on disk
+                control.quit(restart=True)
+                return 202, {}
+            if verb == "dismiss":
+                jobs.dismiss(ui_updates.KEY)
+                return 200, {}
+            return 404, {"error": "not found"}
+
         def act_on_stack(self, name: str, verb: str, body: dict) -> tuple[int, dict]:
             if verb in ("up", "down"):
                 job = jobs.up(name, **launch_options(body)) if verb == "up" else jobs.down(name)
@@ -525,6 +570,9 @@ def make_handler(
 
         def log_file(self, key: str, which: str) -> Path | None:
             """The log ``which`` (current, previous or install) of an instance, the proxy or a job's instance."""
+            if key in (ui_updates.KEY, ui_instance.KEY):
+                path = ui_updates.log_path() if key == ui_updates.KEY else ui_instance.log_path()
+                return {"current": path, "previous": instances.previous_log_path(path)}.get(which)
             if frontend.is_key(key):
                 return {"current": frontend.log_path(), "previous": instances.previous_log_path(frontend.log_path()),
                         "install": frontend.install_log_path(), "build": frontend.build_log_path()}.get(which)
@@ -621,9 +669,11 @@ def make_app() -> tuple[Hub, ui_jobs.Jobs]:
     return hub, jobs
 
 
-def make_server(host: str, port: int, token: str, hub: Hub, jobs: ui_jobs.Jobs | None = None) -> proxy.Server:
+def make_server(
+    host: str, port: int, token: str, hub: Hub, jobs: ui_jobs.Jobs | None = None, control: Control | None = None,
+) -> proxy.Server:
     """The UI server, bound (``port`` 0 picks a free one); :func:`serve` runs it."""
-    return proxy.Server((host, port), make_handler(token, hub, jobs))
+    return proxy.Server((host, port), make_handler(token, hub, jobs, control=control))
 
 
 def new_token() -> str:

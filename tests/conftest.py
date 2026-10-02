@@ -13,3 +13,9 @@ def english():
     i18n.set_language("en")
     yield
     i18n.set_language("en")
+
+
+@pytest.fixture(autouse=True)
+def own_state(tmp_path_factory, monkeypatch):
+    """Never touch the developer's own pdms state (a running pdms ui, its proxy...)."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path_factory.mktemp("state")))

@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO
 
-from . import events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
+from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
 from .config import EVENTS_MODES, LOG_LEVELS, Config, Database, Defaults, DevUser, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -1066,10 +1066,13 @@ def import_config(result: Config) -> Path | None:
 
 
 def save_defaults(cfg: Config, defaults: Defaults) -> None:
-    """Replace the defaults, after checking every value. Applying the language is up to the front end."""
+    """Replace the defaults, after checking every value. Applying the language is up to the front end; opening
+    pdms ui at login is set up (or removed) here."""
     for key in defaults.env:
         if not ENV_NAME.fullmatch(key):
             raise InvalidValue("env", _("'{name}' is not a valid variable name", name=key))
+    if defaults.ui_at_login != cfg.defaults.ui_at_login:
+        set_ui_at_login(defaults.ui_at_login)
     cfg.defaults = replace(
         defaults,
         language=_one_of("language", defaults.language, LANGUAGES),
@@ -1083,6 +1086,14 @@ def save_defaults(cfg: Config, defaults: Defaults) -> None:
         env=dict(defaults.env),
     )
     cfg.save()
+
+
+def set_ui_at_login(enabled: bool) -> None:
+    """Add or remove the system's entry that opens pdms ui at login; :class:`InvalidValue` if the system refuses."""
+    try:
+        desktop.set_autostart(enabled)
+    except OSError as exc:
+        raise InvalidValue("ui_at_login", _("Could not change the login items: {error}", error=exc)) from exc
 
 
 def set_language(cfg: Config, lang: str) -> None:

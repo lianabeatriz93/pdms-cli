@@ -13,6 +13,7 @@
 <header class="titlebar">
   <span class="brand" translate="no"><img src="/static/icon.svg" alt="" width="20" height="20"> pdms</span>
   <span class="live" id="live" title="Connecting…"></span>
+  <button class="chip update-chip" id="update-chip" type="button" hidden></button>
   <div class="ctx" id="ctx"></div>
 </header>
 <nav class="side">
@@ -299,6 +300,13 @@
   </div>
 
   <div class="panel" id="settings-defaults" hidden>
+    <div class="card version-row">
+      <span><b>pdms <span class="mono" id="version-current"></span></b> <span class="muted" id="version-note"></span></span>
+      <div class="bar-actions push">
+        <button class="btn" id="version-check" type="button">Check now</button>
+        <button class="btn primary" id="version-open" type="button" hidden>See what is new</button>
+      </div>
+    </div>
     <div class="bar">
       <input type="search" id="defaults-filter" placeholder="Filter settings" aria-label="Filter settings" autocomplete="off">
       <span class="muted" id="defaults-count"></span>
@@ -557,6 +565,26 @@
     <div class="actions">
       <button class="btn ghost" type="button" id="users-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="users-go" disabled>Import</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="update-dialog">
+  <form method="dialog" id="update-form">
+    <h2 id="update-title"></h2>
+    <p class="muted" id="update-hint"></p>
+    <div class="release-notes" id="update-notes"></div>
+    <label class="inline" id="update-proxy-label" hidden><input type="checkbox" id="update-proxy" checked> <span id="update-proxy-text"></span></label>
+    <div class="command-row" id="update-command-row" hidden>
+      <code id="update-command"></code>
+      <button class="btn small" type="button" id="update-copy">Copy</button>
+    </div>
+    <p class="muted" id="update-phase" hidden></p>
+    <p class="error" id="update-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="update-log" hidden>Log</button>
+      <button class="btn ghost" type="button" id="update-cancel">Close</button>
+      <button class="btn primary" type="submit" id="update-go">Update and restart</button>
     </div>
   </form>
 </dialog>
