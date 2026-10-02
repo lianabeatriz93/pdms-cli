@@ -398,7 +398,12 @@ def adopt(stray: Stray, *, user: str, db: str) -> Instance:
     if not log:
         path = log_path(stray.key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        rotate_log(path)
+        try:
+            rotate_log(path)
+        except PermissionError:
+            # Windows, where psutil may not tell which files a process holds: in use means it still writes there.
+            log = str(path)
+    if not log:
         path.write_text(_("# pdms {when} · adopted {key} (pid {pid}): its output does not come to this file. "
                           "pdms restart {key} to have its log here.\n", when=f"{datetime.now():%Y-%m-%d %H:%M:%S}",
                           key=stray.key, pid=stray.pid), encoding="utf-8")
