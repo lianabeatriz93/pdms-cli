@@ -81,3 +81,18 @@ def test_translate_finds_the_same_service_in_another_checkout(tmp_path):
 def test_stack_paths_written_on_windows_are_normalized():
     cfg = Config.from_dict({"stacks": {"tp": {"services": ["lead\\lead-tp-list", "lead/lead-tp-create"]}}})
     assert cfg.stacks["tp"].services == ["lead/lead-tp-list", "lead/lead-tp-create"]
+
+
+def test_an_old_config_moves_off_the_old_service_port_once(tmp_path, monkeypatch) -> None:
+    from pdms_cli.config import Config, Defaults
+
+    monkeypatch.setenv("PDMS_CONFIG", str(tmp_path / "config.toml"))
+    (tmp_path / "config.toml").write_text("[defaults]\nport = 8080\n", encoding="utf-8")
+    cfg = Config.load()
+    assert cfg.defaults.port == Defaults.port == 28100 and cfg.defaults.proxy_port == 28800
+    cfg.save()
+    (tmp_path / "config.toml").write_text(
+        (tmp_path / "config.toml").read_text(encoding="utf-8").replace("port = 28100", "port = 8080"), encoding="utf-8")
+    assert Config.load().defaults.port == 8080  # saved after the change (it has proxy_port): the user's choice
+    (tmp_path / "config.toml").write_text("[defaults]\nport = 9000\n", encoding="utf-8")
+    assert Config.load().defaults.port == 9000  # an old config with its own port keeps it

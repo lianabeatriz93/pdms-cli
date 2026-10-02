@@ -67,12 +67,17 @@ class Database:
         return f"{self.driver}://{auth}@{self.host}:{self.port}/{self.database}"
 
 
+OLD_SERVICE_PORT = 8080  # the default up to 0.2.5
+
+
 @dataclass
 class Defaults:
     # CLI language: "en" (default) or "es".
     language: str = "en"
     host: str = "0.0.0.0"
-    port: int = 8080
+    # The first port tried for a service (the next free one when it is busy). Far from 8080 and the like, which many
+    # programs use, and below the ports the system hands out to outgoing connections (32768 and up).
+    port: int = 28100
     logging_level: str = "DEBUG"
     reload: bool = True
     install: bool = True
@@ -93,6 +98,8 @@ class Defaults:
     db_timeout: int = 15
     # Seconds the proxy waits for a service (or the remote API) to answer before replying 502.
     proxy_timeout: int = 300
+    # Port of pdms proxy (pdms proxy -p, pdms ui). Far from 8000, for the same reason.
+    proxy_port: int = 28800
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 
@@ -178,6 +185,10 @@ class Config:
             last_db=state.get("last_db", ""),
             setup=_from_dict(Setup, data.get("setup", {})),
         )
+        # Before proxy_port existed the defaults were 8080 (services) and 8000 (proxy), ports many other programs use:
+        # a config still on the old service default moves to the new one, once (saving it adds proxy_port).
+        if "proxy_port" not in data.get("defaults", {}) and cfg.defaults.port == OLD_SERVICE_PORT:
+            cfg.defaults.port = Defaults.port
         # Before repos existed, the services folder was configured as defaults.backend_path.
         legacy = data.get("defaults", {}).get("backend_path")
         if legacy and not cfg.repos:

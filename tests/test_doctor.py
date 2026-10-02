@@ -64,3 +64,19 @@ def test_run_all_without_repo_or_config_does_not_crash(home):
     checks = doctor.run_all(Config(), databases=False)
     assert {c.section for c in checks} >= {"pdms", "Repo"}
     assert all(c.status in (doctor.OK, doctor.WARN, doctor.FAIL) for c in checks)
+
+
+def test_ports_used_by_pdms_itself_are_fine(monkeypatch) -> None:
+    from pdms_cli.config import Config, Defaults
+    from pdms_cli.instances import Instance
+
+    cfg = Config(defaults=Defaults(port=28100, proxy_port=28800))
+    inst = Instance(key="lead-tp-list@28100", pid=1, service="/x", host="0.0.0.0", port=28100, user="", db="",
+                    reload=False, log="x.log", started_at="")
+    monkeypatch.setattr(doctor.instances, "load", lambda: {inst.key: inst})
+    monkeypatch.setattr(Instance, "alive", lambda self: True)
+    monkeypatch.setattr(doctor.proxy, "running_proxy", lambda: None)
+    monkeypatch.setattr(doctor.runner, "port_is_free", lambda host, port: False)
+    service, proxy_port = doctor.check_ports(cfg)
+    assert (service.status, service.detail) == (doctor.OK, "28100 · used by lead-tp-list@28100")
+    assert proxy_port.status == doctor.WARN and "another program" in proxy_port.detail

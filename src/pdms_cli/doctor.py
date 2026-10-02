@@ -222,17 +222,21 @@ def check_repo(cfg: Config) -> list[Check]:
 
 
 def check_ports(cfg: Config) -> list[Check]:
+    """The default service and proxy ports: free, or in use by pdms itself (fine), or by another program."""
     section = _("Ports")
     running = proxy.running_proxy()
+    owners = {inst.port: inst.key for inst in instances.load().values() if inst.port and inst.alive()}
     checks = []
-    for label, port in ((_("Default service port"), cfg.defaults.port), (_("Proxy port"), 8000)):
-        if label == _("Proxy port") and running and running.get("port") == port:
+    for label, port in ((_("Default service port"), cfg.defaults.port), (_("Proxy port"), cfg.defaults.proxy_port)):
+        if running and running.get("port") == port:
             checks.append(Check(section, label, OK, _("{port} · used by the pdms proxy", port=port)))
-        elif runner.port_is_free(cfg.defaults.host, port) and port not in instances.running_ports():
+        elif port in owners:
+            checks.append(Check(section, label, OK, _("{port} · used by {key}", port=port, key=owners[port])))
+        elif runner.port_is_free(cfg.defaults.host, port):
             checks.append(Check(section, label, OK, _("{port} · free", port=port)))
         else:
-            checks.append(Check(section, label, WARN, _("{port} · in use", port=port),
-                                _("pdms will offer the next free port.")))
+            checks.append(Check(section, label, WARN, _("{port} · in use by another program", port=port),
+                                _("pdms takes the next free port; to start somewhere else, change it in the defaults.")))
     return checks
 
 

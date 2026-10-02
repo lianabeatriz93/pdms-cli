@@ -1104,6 +1104,7 @@ def save_defaults(cfg: Config, defaults: Defaults) -> None:
         events_port=_number("events_port", defaults.events_port, 1, 65535),
         db_timeout=_number("db_timeout", defaults.db_timeout, 1, 600),
         proxy_timeout=_number("proxy_timeout", defaults.proxy_timeout, 1, MAX_PROXY_TIMEOUT),
+        proxy_port=_number("proxy_port", defaults.proxy_port, 1, 65535),
         env=dict(defaults.env),
     )
     cfg.save()

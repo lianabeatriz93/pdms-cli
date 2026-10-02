@@ -1722,7 +1722,9 @@ def print_restored(restored: Optional[str]) -> None:
 @proxy_app.callback()
 def proxy_main(
     ctx: typer.Context,
-    port: int = typer.Option(8000, "--port", "-p", help=_("Port to listen on.")),
+    port: Optional[int] = typer.Option(
+        None, "--port", "-p", help=_("Port to listen on (default: the proxy_port setting, 28800)."),
+    ),
     as_user: Optional[str] = typer.Option(
         None, "--as", help=_("Act as this user on local services (X-Dev-* headers)."), autocompletion=completion.users
     ),
@@ -1748,6 +1750,7 @@ def proxy_main(
     if restored := settle(actions.clear_proxy_leftovers):  # the previous proxy did not stop cleanly
         console.print("[green]✓[/] " + _("{path} restored (left over by the previous proxy).", path=restored))
     cfg = Config.load()
+    port = port or cfg.defaults.proxy_port
     root = current_repo_root(cfg)
     repo_routes = load_repo_routes(root, env)
     target_remote = resolve_remote(cfg, root, remote, no_remote)
@@ -2887,7 +2890,7 @@ def main_menu(first_run: bool = False) -> None:
             return
         actions = {
             "run": do_run, "ps": instances_menu, "stack": stack_menu,
-            "proxy": lambda: proxy_main(None, 8000, None, None, False, "dev", None, None, None),
+            "proxy": lambda: proxy_main(None, None, None, None, False, "dev", None, None, None),
             "events": events_menu, "db": db_menu, "user": user_menu,
             "defaults": settings_menu,
         }

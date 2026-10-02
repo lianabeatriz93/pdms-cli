@@ -551,7 +551,7 @@ def proxy_repo(repo, machine, monkeypatch):
 def test_proxy_options_and_routes(ui, proxy_repo) -> None:
     port, _hub, _states, _jobs = ui
     _response, raw, _conn = request(port, "/api/proxy/options", cookie(port))
-    assert json.loads(raw) == {"port": 8000, "env": "dev", "envs": ["dev", "qa"],
+    assert json.loads(raw) == {"port": 28800, "env": "dev", "envs": ["dev", "qa"],
                                "remote": "https://api.example.com/dev", "frontend": True}
     _response, raw, _conn = request(port, "/api/proxy/routes", cookie(port))
     assert json.loads(raw) == {"env": "dev", "remote": "https://api.example.com/dev", "routes": [
@@ -817,7 +817,7 @@ def test_settings_carry_no_password_until_asked_for_one(ui, machine) -> None:
         "name": "agent", "user_id": "u1", "username": "a@x.com", "first_name": "", "last_name": "", "roles": "",
         "stacks": ["leads"],
     }
-    assert data["defaults"]["port"] == 8080 and data["choices"]["events"] == ["auto", "local", "aws"]
+    assert data["defaults"]["port"] == 28100 and data["choices"]["events"] == ["auto", "local", "aws"]
 
     assert post(port, "/api/dbs/shared/password") == (200, {"password": "hunter2"})
     assert post(port, "/api/dbs/nope/password")[0] == 400
