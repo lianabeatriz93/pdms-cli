@@ -1,3 +1,16 @@
+## v0.3.1 (2026-10-02)
+
+### Feat
+
+- find the services that run outside pdms, and adopt or stop them
+
+### Fix
+
+- **instances**: adopting on Windows keeps the log the service still writes
+- **ui**: readable filled buttons in dark mode, and the local SNS off in grey
+- **frontend**: warn when the frontend calls a local API nobody answers on
+- **instances**: a clock adjustment no longer makes running services look stopped
+
 ## v0.3.0 (2026-10-02)
 
 ### Feat
