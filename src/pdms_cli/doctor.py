@@ -262,6 +262,18 @@ def check_frontend(cfg: Config) -> list[Check]:
         checks.append(Check(section, "node_modules", OK if fine else WARN,
                             _("up to date") if fine else _("missing or out of date"),
                             "" if fine else _("pdms front installs them (yarn install) before starting.")))
+    if problem := actions.frontend_api(cfg):
+        if problem.proxy_port:
+            detail = _("{url} · the proxy runs on :{port}", url=problem.url, port=problem.proxy_port)
+            hint = _("Point it to the proxy (frontend/.env.local; yarn dev restarts by itself).")
+        elif problem.leftover:
+            detail = _("{url} · the proxy that wrote it is not running", url=problem.url)
+            hint = _("Put frontend/.env.local back as it was, or start the proxy: pdms proxy -b")
+        else:
+            detail = _("{url} · nothing answers there", url=problem.url)
+            hint = _("Start the proxy (pdms proxy -b), or change VITE_APP_API_URL in frontend/.env.local.")
+        checks.append(Check(section, _("API URL"), WARN, detail, hint,
+                            fix="frontend_api" if problem.proxy_port or problem.leftover else ""))
     current = frontend.running()
     if current:
         checks.append(Check(section, _("Port"), OK, _("{port} · used by the pdms frontend", port=current["port"])))

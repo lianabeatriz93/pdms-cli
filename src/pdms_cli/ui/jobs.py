@@ -751,6 +751,10 @@ def stop_strays(body: dict) -> dict:
     return {"stopped": stopped}
 
 
+def fix_frontend_api() -> dict:
+    return {"done": actions.fix_frontend_api(Config.load())}
+
+
 def forget_stopped() -> list[str]:
     stopped = [i.key for i in instances.load().values() if not i.alive()]
     for key in stopped:

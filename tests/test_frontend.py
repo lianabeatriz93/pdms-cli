@@ -253,3 +253,64 @@ def test_the_frontend_logs_and_start_through_the_ui(ui, repo, machine, monkeypat
     assert post(port, "/api/frontend/start", {"mode": "build"}) == (202, {"job": "frontend"})
     wait_until(lambda: not jobs.snapshot())
     assert calls == ["build", "build"]
+
+
+# --------------------------------------------------------------------------- where the frontend calls
+
+
+@pytest.fixture
+def proxied(web, monkeypatch):
+    """Whether a proxy runs (``port``) and which local ports answer, for :func:`actions.frontend_api`."""
+    machine = {"port": None, "answer": set()}
+    monkeypatch.setattr(actions.proxy, "running_proxy",
+                        lambda: {"pid": 1, "port": machine["port"]} if machine["port"] else None)
+    monkeypatch.setattr(actions.instances, "responds", lambda host, port, timeout=1.5: port in machine["answer"])
+    return machine
+
+
+def env_local(web: Path) -> str:
+    return (web / "frontend" / ".env.local").read_text(encoding="utf-8")
+
+
+def test_a_remote_api_or_the_running_proxy_is_fine(cfg, web, proxied) -> None:
+    assert actions.frontend_api(cfg) is None  # .env: the remote API
+    proxied["port"] = 28800
+    actions.repos.point_frontend_to(web, "http://localhost:28800")
+    assert actions.frontend_api(cfg) is None
+
+
+def test_a_service_called_directly_is_fine(cfg, web, proxied) -> None:
+    (web / "frontend" / ".env.local").write_text("VITE_APP_API_URL=http://localhost:28101\n", encoding="utf-8")
+    proxied["answer"].add(28101)
+    assert actions.frontend_api(cfg) is None
+
+
+def test_the_frontend_is_pointed_to_the_proxy_running_on_another_port(cfg, web, proxied) -> None:
+    """The user's case: an old proxy on :8001 wrote .env.local; the proxy now runs on :28800."""
+    change = actions.repos.point_frontend_to(web, "http://localhost:8001")
+    actions.proxy.remember_frontend_change(change)
+    proxied["port"] = 28800
+    problem = actions.frontend_api(cfg)
+    assert (problem.url, problem.port, problem.proxy_port, problem.leftover) == (
+        "http://localhost:8001/api/v1", 8001, 28800, True)
+    assert actions.fix_frontend_api(cfg) == "pointed"
+    assert "VITE_APP_API_URL=http://localhost:28800" in env_local(web) and actions.frontend_api(cfg) is None
+    # Stopping the new proxy puts the file back as it was before any proxy, not the old proxy's URL.
+    actions.proxy.restore_frontend_change()
+    assert not (web / "frontend" / ".env.local").exists()  # there was none before the first proxy
+
+
+def test_a_change_left_by_a_proxy_that_is_gone_is_restored(cfg, web, proxied) -> None:
+    (web / "frontend" / ".env.local").write_text("OTHER=1\n", encoding="utf-8")
+    actions.proxy.remember_frontend_change(actions.repos.point_frontend_to(web, "http://localhost:8001"))
+    problem = actions.frontend_api(cfg)
+    assert (problem.proxy_port, problem.leftover) == (None, True)
+    assert actions.fix_frontend_api(cfg) == "restored"
+    assert env_local(web) == "OTHER=1\n" and actions.frontend_api(cfg) is None
+
+
+def test_nothing_to_restore_and_no_proxy_says_what_to_do(cfg, web, proxied) -> None:
+    (web / "frontend" / ".env.local").write_text("VITE_APP_API_URL=http://localhost:8001\n", encoding="utf-8")
+    assert actions.frontend_api(cfg).leftover is False
+    with pytest.raises(actions.ActionError, match="pdms proxy -b"):
+        actions.fix_frontend_api(cfg)
