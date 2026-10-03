@@ -72,6 +72,11 @@ def stacks(incomplete: str) -> list[str]:
     return _matching(list(cfg.stacks), incomplete) if cfg else []
 
 
+def setups(incomplete: str) -> list[str]:
+    cfg = _config()
+    return _matching(list(cfg.setups), incomplete) if cfg else []
+
+
 def repos(incomplete: str) -> list[str]:
     cfg = _config()
     return _matching(list(cfg.repos), incomplete) if cfg else []

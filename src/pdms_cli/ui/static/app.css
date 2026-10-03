@@ -448,6 +448,17 @@ td.wrap-detail .st { white-space: nowrap; }
 @media (max-width: 900px) {
   .home-lower { grid-template-columns: 1fr; }
 }
+.setups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: .5rem; margin: .2rem 0 .6rem; }
+.setup-card { position: relative; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 0; }
+.setup-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.setup-pick { display: grid; gap: .2rem; justify-items: start; width: 100%; padding: .55rem .7rem; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; border-radius: 8px; }
+.setup-card.on .setup-pick { cursor: default; }
+.setup-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.setup-pick small { color: var(--muted); font-size: .74rem; overflow-wrap: anywhere; }
+.setup-remove { position: absolute; top: .3rem; right: .3rem; opacity: .5; }
+.setup-card:hover .setup-remove, .setup-remove:focus-visible { opacity: 1; }
+.setup-card.add { border-style: dashed; color: var(--muted); cursor: pointer; font: inherit; font-size: .84rem; padding: .55rem .7rem; }
+.setup-card.add:hover { border-color: var(--accent); color: var(--accent); }
 .changed, .commits { list-style: none; margin: 0; padding: .3rem 0; font-size: .82rem; }
 .changed li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .1rem .8rem; padding: .4rem .85rem; border-bottom: 1px solid var(--line); align-items: center; }
 .changed li:last-child { border-bottom: 0; }

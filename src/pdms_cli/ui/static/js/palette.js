@@ -8,7 +8,7 @@ import { openRestart, openRun, openUp } from "./launch.js";
 import { stackPath } from "./stacks.js";
 import { openProxyStart, showProxyTab } from "./proxy.js";
 import { openEventsUp, stopEvents } from "./events.js";
-import { stackUp, startAll, stopAll } from "./home.js";
+import { stackUp, startAll, stopAll, switchSetup } from "./home.js";
 import { useRepo } from "./repos.js";
 import { runDoctor } from "./doctor.js";
 import { currentView } from "./router.js";
@@ -32,8 +32,8 @@ function paletteCommands() {
     ["home", t("Go to Home"), t("Go to"), go("home")],
     ["services", t("Go to Services"), t("Go to"), go("services")],
     ["stacks", t("Go to Stacks"), t("Go to"), go("stacks")],
-    ["proxy", t("Go to Proxy requests"), t("Go to"), () => { location.hash = "#proxy"; showProxyTab("requests"); }],
-    ["proxy", t("Go to Proxy routes"), t("Go to"), () => { location.hash = "#proxy"; showProxyTab("routes"); }],
+    ["proxy", t("Go to Requests"), t("Go to"), () => { location.hash = "#proxy"; showProxyTab("requests"); }],
+    ["proxy", t("Go to Requests → Routes"), t("Go to"), () => { location.hash = "#proxy"; showProxyTab("routes"); }],
     ["events", t("Go to Events"), t("Go to"), go("events")],
     ["doctor", t("Go to Doctor"), t("Go to"), go("doctor")],
     ["settings", t("Go to Settings"), t("Go to"), go("settings")],
@@ -53,6 +53,9 @@ function paletteCommands() {
     const up = stackUp(stack);
     if (up < stack.services.length) commands.push(["play", t("Start stack {name}", { name: stack.name }), t("Stack"), () => openUp(stack)]);
     if (up) commands.push(["stop", t("Stop stack {name}", { name: stack.name }), t("Stack"), () => act(`${stackPath(stack.name)}/down`)]);
+  }
+  for (const name of Object.keys(state.setups || {})) {
+    if (name !== state.setup_name) commands.push(["play", t("Switch to setup {name}", { name }), t("Home"), () => switchSetup(name)]);
   }
   if (state.proxy) commands.push(["stop", t("Stop the proxy"), t("Proxy"), () => act(`/api/instances/${encodeURIComponent(state.proxy.key)}/stop`)]);
   else commands.push(["play", t("Start the proxy"), t("Proxy"), () => openProxyStart()]);

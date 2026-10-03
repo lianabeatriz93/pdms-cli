@@ -528,6 +528,15 @@ def make_handler(
                 return 202, {"job": jobs.start_frontend(**frontend_options(body)).key}
             if path == "/api/setup/save":
                 return 200, {"setup": ui_jobs.save_setup(body)}
+            if path == "/api/setups/save":
+                return 200, ui_jobs.save_setup_as(body)
+            if path == "/api/setups/remove":
+                return 200, ui_jobs.remove_setup(body)
+            if path == "/api/setups/switch":
+                name = body.get("name")
+                if not isinstance(name, str):
+                    raise actions.ActionError("name must be the name of a saved setup")
+                return 200, {"stopping": jobs.switch_setup(name)}
             if path in ("/api/home/start", "/api/home/stop"):
                 if path.endswith("start"):
                     options = launch_options(body)

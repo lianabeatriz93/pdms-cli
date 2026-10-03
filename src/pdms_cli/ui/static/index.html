@@ -68,6 +68,7 @@
       <span class="muted">Saved as you change it, so next time it is one click.</span>
       <button class="btn primary push" id="home-start" type="button">Start everything</button>
     </div>
+    <div class="setups" id="setups" aria-label="Saved setups"></div>
     <div class="launch-row">
       <label class="inline">Stack <select id="setup-stack"></select></label>
       <label class="inline"><input type="checkbox" id="setup-events"> Local events (ElasticMQ and the broker)</label>
@@ -562,6 +563,19 @@
       <span class="push"></span>
       <button class="btn ghost" type="button" id="send-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="send-go">Send</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="setup-dialog">
+  <form method="dialog" id="setup-form">
+    <h2>Save the setup</h2>
+    <p class="muted">The stack, the proxy, the frontend and the local events chosen now, under a name to start them again with one click.</p>
+    <label>Name <input id="setup-name" autocomplete="off" pattern="[A-Za-z0-9_\-]+" required></label>
+    <p class="error" id="setup-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="setup-cancel">Cancel</button>
+      <button class="btn primary" type="submit">Save</button>
     </div>
   </form>
 </dialog>

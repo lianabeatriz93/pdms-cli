@@ -190,7 +190,10 @@ class Config:
     ignored_repos: list[str] = field(default_factory=list)
     last_user: str = ""
     last_db: str = ""
+    # The current setup (what Start everything starts); setup_name is the saved one it comes from ("" when none).
     setup: Setup = field(default_factory=Setup)
+    setups: dict[str, Setup] = field(default_factory=dict)
+    setup_name: str = ""
 
     @property
     def repo(self) -> Repo | None:
@@ -210,6 +213,8 @@ class Config:
             last_user=state.get("last_user", ""),
             last_db=state.get("last_db", ""),
             setup=_from_dict(Setup, data.get("setup", {})),
+            setups={k: _from_dict(Setup, v) for k, v in data.get("setups", {}).items()},
+            setup_name=state.get("setup_name", ""),
         )
         # Before proxy_port existed the defaults were 8080 (services) and 8000 (proxy), ports many other programs use:
         # a config still on the old service default moves to the new one, once (saving it adds proxy_port).
@@ -229,13 +234,14 @@ class Config:
             "defaults": asdict(self.defaults),
             "state": {
                 "last_user": self.last_user, "last_db": self.last_db, "current_repo": self.current_repo,
-                "ignored_repos": list(self.ignored_repos),
+                "ignored_repos": list(self.ignored_repos), "setup_name": self.setup_name,
             },
             "users": {k: asdict(v) for k, v in self.users.items()},
             "dbs": {k: asdict(v) for k, v in self.dbs.items()},
             "stacks": {k: asdict(v) for k, v in self.stacks.items()},
             "repos": {k: asdict(v) for k, v in self.repos.items()},
             "setup": asdict(self.setup),
+            "setups": {k: asdict(v) for k, v in self.setups.items()},
         }
 
     @classmethod
