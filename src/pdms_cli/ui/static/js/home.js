@@ -259,6 +259,17 @@ function attention() {
   if ((state.setup || {}).events && !state.events.up && !state.jobs[EVENTS_JOB]) {
     items.push(["warn", t("The local events are off"), t("The services publish to AWS until they are on."), [button(t("Start"), openEventsUp)]]);
   }
+  const stale = state.changes.stale || [];
+  if (stale.length) {
+    const parts = [...new Set(stale.flatMap((item) => item.parts))];
+    items.push(["warn", stale.length === 1 ? t("1 running service runs old code") : t("{n} running services run old code", { n: stale.length }),
+      t("{parts} changed since they started: {names}.", { parts: parts.join(", "), names: stale.map((item) => item.key).join(", ") }),
+      [button(t("See what changed"), () => $("home-changes").scrollIntoView({ behavior: "smooth", block: "start" })),
+        button(stale.length === 1 ? t("Reinstall and restart 1") : t("Reinstall and restart {n}", { n: stale.length }),
+          () => act("/api/instances/restart", { keys: stale.map((item) => item.key) },
+            (data) => toast(t("Restarting {n}: each row shows its progress.", { n: data.jobs.length }), "info")),
+          { class: "btn small primary" })]]);
+  }
   // The databases in use, measured each minute: fresher than Doctor, whose tunnel check is then left out here.
   const tunnelsDown = [];
   for (const db of state.health.dbs || []) {
@@ -336,6 +347,7 @@ export function paintHome() {
     el("span", {}, el("b", {}, recentText(entry)), entry.detail ? el("small", {}, entry.detail) : ""),
   )));
   $("home-recent-empty").hidden = recent.length > 0;
+  paintChanges();
   const items = attention();
   $("home-attn").replaceChildren(...items.map(([kind, title, detail, actions]) => el("li", {},
     el("span", { class: `sev ${kind}` }),
@@ -379,4 +391,22 @@ export async function stopAll() {
   if (await confirmDialog(t("Stop everything?"), t("It stops {what}.", { what: what.join(", ") }), t("Stop everything"))) {
     act("/api/home/stop", {});
   }
+}
+
+// What changed in the code since the running services started (ui/changes.py): which run old code, which install on
+// their next start, and the commits.
+function paintChanges() {
+  const changes = state.changes || {};
+  const stale = changes.stale || [], pending = changes.pending || [], commits = changes.commits || [];
+  $("home-changes").hidden = !stale.length && !pending.length && !commits.length;
+  $("home-changed-note").textContent = changes.head ? t("now at {commit}", { commit: changes.head.slice(0, 9) }) : "";
+  const rows = [
+    ...stale.map((item) => el("li", {}, el("span", { class: "mono" }, item.service.split("/").pop()),
+      el("span", { class: "st warn" }, t("old code")), el("small", {}, t("{parts} changed", { parts: item.parts.join(", ") })))),
+    ...pending.map((item) => el("li", {}, el("span", { class: "mono" }, item.service.split("/").pop()),
+      el("span", { class: "st off" }, t("not running")), el("small", {}, t("installs on its next start")))),
+  ];
+  $("home-changed").replaceChildren(...(rows.length ? rows : [el("li", { class: "muted" }, t("Every running service runs the current code."))]));
+  $("home-commits").replaceChildren(...(commits.length ? commits.map((item) => el("li", {},
+    el("code", {}, item.commit), el("span", {}, item.subject))) : [el("li", { class: "muted" }, t("No new commits."))]));
 }

@@ -74,13 +74,40 @@ def use_for_this_command(root: Path | None) -> None:
     _session_root = root.resolve() if root else None
 
 
+def _git_dir(root: Path) -> Path:
+    git = root / ".git"
+    if git.is_file():  # a worktree: "gitdir: <path>"
+        git = root / git.read_text(encoding="utf-8").split(":", 1)[1].strip()  # absolute stays absolute
+    return git
+
+
+def git_commit(root: Path) -> str:
+    """The commit checked out in ``root``, read from .git without running git; "" when unknown."""
+    try:
+        git = _git_dir(root)
+        head = (git / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref: "):
+            return head
+        ref = head[5:]
+        common = git
+        if (git / "commondir").is_file():  # a worktree keeps its branches in the main .git
+            common = (git / (git / "commondir").read_text(encoding="utf-8").strip()).resolve()
+        for base in (git, common):
+            if (base / ref).is_file():
+                return (base / ref).read_text(encoding="utf-8").strip()
+        for line in (common / "packed-refs").read_text(encoding="utf-8").splitlines():
+            if line.endswith(" " + ref):
+                return line.split(" ", 1)[0]
+    except (OSError, IndexError):
+        pass
+    return ""
+
+
 def git_branch(root: Path) -> str:
     """The branch checked out in ``root`` (the short commit when detached), read from .git without running git;
     "" when it is not a git checkout."""
-    git = root / ".git"
     try:
-        if git.is_file():  # a worktree: "gitdir: <path>"
-            git = root / git.read_text(encoding="utf-8").split(":", 1)[1].strip()  # absolute stays absolute
+        git = _git_dir(root)
         head = (git / "HEAD").read_text(encoding="utf-8").strip()
     except (OSError, IndexError):
         return ""
