@@ -70,6 +70,11 @@ def test_the_service_gets_the_patch_folder_and_its_variables(cfg, monkeypatch, t
 
     env = actions.service_env(cfg, plan(cfg, tmp_path, parallel=False))
     assert not {"PDMS_PARALLEL_REQUESTS", "PDMS_WARM_CONNECTIONS"} & set(env)
+    assert env["PDMS_QUERY_STATS"] == "1"  # still measured: the patch folder stays
+
+    cfg.defaults = replace(cfg.defaults, query_stats=False)
+    env = actions.service_env(cfg, plan(cfg, tmp_path, parallel=False))
+    assert not {"PDMS_PARALLEL_REQUESTS", "PDMS_WARM_CONNECTIONS", "PDMS_QUERY_STATS"} & set(env)
     assert str(events.PATCH_DIR) not in env.get("PYTHONPATH", "")  # nothing to load: no patch folder
 
 

@@ -736,6 +736,8 @@ const CATALOG = {
     "{what}: done": "{what}: hecho",
     "Desktop notifications": "Notificaciones de escritorio",
     "Requests in parallel": "Peticiones en paralelo",
+    "Database time per request": "Tiempo de base de datos por petición",
+    "Each request of a service says how long it spent in the database and which queries it ran; Proxy shows them with the request. Applies when a service starts.": "Cada petición de un servicio dice cuánto tiempo pasó en la base de datos y qué consultas hizo; Proxy las muestra con la petición. Se aplica al arrancar un servicio.",
     "Each request of a service runs in its own thread, so a slow database query only holds up its own request. Applies when a service starts.": "Cada petición de un servicio se atiende en su propio hilo, así que una consulta lenta a la base de datos solo frena su propia petición. Se aplica al arrancar un servicio.",
     "Connections opened at start": "Conexiones abiertas al arrancar",
     "Database connections each service opens as soon as it starts, so its first requests don't wait for them (0: when needed). Applies when a service starts.": "Conexiones a la base de datos que cada servicio abre nada más arrancar, para que sus primeras peticiones no tengan que esperarlas (0: cuando hagan falta). Se aplica al arrancar un servicio.",

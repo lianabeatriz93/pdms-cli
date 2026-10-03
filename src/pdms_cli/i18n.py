@@ -1091,6 +1091,8 @@ ES: dict[str, str] = {
         "Puerto de pdms proxy:",
     "Run each request of a service in its own thread (a slow query only holds up its own request)?":
         "¿Atender cada petición de un servicio en su propio hilo (una consulta lenta solo frena su propia petición)?",
+    "Measure the database time and the queries of each request (pdms ui shows them with the request)?":
+        "¿Medir el tiempo en la base de datos y las consultas de cada petición (pdms ui las muestra con la petición)?",
     "Database connections each service opens when it starts (0 = when needed):":
         "Conexiones a la base de datos que abre cada servicio al arrancar (0 = cuando hagan falta):",
     "Port to listen on (default: the proxy_port setting, 28800).":

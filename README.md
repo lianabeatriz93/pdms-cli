@@ -164,9 +164,22 @@ events; see `src/pdms_cli/sqs_patch/pdms_parallel.py`):
 - **Connections opened at start** (`warm_connections = 2`, 0 to turn it off): each service opens that many database
   connections as soon as it starts, so its first requests don't wait for them (the log says how long they took).
 
-Neither makes a query faster: each one still costs what the line takes to go there and back. Both apply when a
-service starts (restart it after changing them), and only to services started by `pdms` (CLI, `pdms ui` or its
-Debug in VS Code), never in AWS.
+Neither makes a query faster: each one still costs what the line takes to go there and back.
+
+To see where the time goes, **database time per request** (`query_stats = true`) measures what each request asked
+the database (see `src/pdms_cli/sqs_patch/pdms_queries.py`): every answer carries an `x-pdms-db` header (`queries=14;
+time=5.231; connect=0.000; transactions=2`, visible in the browser's developer tools), pdms proxy keeps the queries
+with the request for `pdms ui`, and the service's log gets a line when a request spent a second or more in the
+database or ran the same query five times or more, usually once per row of a list:
+
+```
+[pdms] GET /lead/tp/details/8812: 14 queries in 5.23 s · the same query 9 times, 3.31 s (lead_common/repository.py:212)
+```
+
+Only the SQL text is kept, never the values sent with it.
+
+The three apply when a service starts (restart it after changing them), and only to services started by `pdms` (CLI,
+`pdms ui` or its Debug in VS Code), never in AWS.
 
 ### Smart install
 
