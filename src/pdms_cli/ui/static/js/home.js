@@ -348,6 +348,7 @@ export function paintHome() {
   )));
   $("home-recent-empty").hidden = recent.length > 0;
   paintChanges();
+  paintSetups();
   const items = attention();
   $("home-attn").replaceChildren(...items.map(([kind, title, detail, actions]) => el("li", {},
     el("span", { class: `sev ${kind}` }),
@@ -409,4 +410,93 @@ function paintChanges() {
   $("home-changed").replaceChildren(...(rows.length ? rows : [el("li", { class: "muted" }, t("Every running service runs the current code."))]));
   $("home-commits").replaceChildren(...(commits.length ? commits.map((item) => el("li", {},
     el("code", {}, item.commit), el("span", {}, item.subject))) : [el("li", { class: "muted" }, t("No new commits."))]));
+}
+
+// ---- saved setups: one click starts another set of stack, proxy, frontend and events
+
+function setupSummary(setup) {
+  const parts = [setup.stack || t("no stack")];
+  if (setup.proxy) parts.push(t("proxy"));
+  if (setup.frontend) parts.push(setup.frontend_mode === "build" ? t("front build") : t("front dev"));
+  if (setup.events) parts.push(t("events"));
+  return parts.join(" · ");
+}
+
+export function paintSetups() {
+  const names = Object.keys(state.setups || {});
+  const current = state.setup_name;
+  $("home-start").textContent = current ? t("Start {name}", { name: current }) : t("Start everything");
+  const cards = names.map((name) => {
+    const on = name === current;
+    const card = el("div", { class: `setup-card${on ? " on" : ""}` },
+      el("button", { class: "setup-pick", type: "button", title: on ? t("The current setup") : t("Switch to {name}", { name }),
+        onclick: () => { if (!on) switchSetup(name); } },
+      el("b", {}, name), el("small", { class: "mono" }, setupSummary(state.setups[name])),
+      el("span", { class: `st ${on ? "ok" : "off"}` }, on ? t("current") : t("switch"))),
+      button("✕", () => removeSetup(name), { class: "btn tiny ghost setup-remove", title: t("Delete {name}", { name }), "aria-label": t("Delete {name}", { name }) }),
+    );
+    return card;
+  });
+  cards.push(el("button", { class: "setup-card add", type: "button", onclick: openSaveSetup },
+    current ? t("+ Save as a new setup") : t("+ Save as a setup")));
+  $("setups").replaceChildren(...cards);
+}
+
+export function openSaveSetup() {
+  $("setup-name").value = "";
+  $("setup-error").hidden = true;
+  $("setup-dialog").showModal();
+  $("setup-name").focus();
+}
+
+export async function submitSaveSetup(event) {
+  event.preventDefault();
+  const { status, data } = await post("/api/setups/save", { name: $("setup-name").value });
+  if (status === 200) {
+    $("setup-dialog").close();
+    toast(t("Setup '{name}' saved.", { name: data.name }), "info");
+    return;
+  }
+  $("setup-error").textContent = data.error || t("pdms ui answered {status}", { status });
+  $("setup-error").hidden = false;
+}
+
+async function removeSetup(name) {
+  if (await confirmDialog(t("Delete the setup {name}?", { name }), t("Nothing stops; only its name and choices are forgotten."), t("Delete"))) {
+    act("/api/setups/remove", { name });
+  }
+}
+
+// What switching stops: the current stack when the new setup has another, the proxy and the frontend when it goes
+// without them (as ui/jobs.py switch_setup); the local events stay.
+function switchStops(next) {
+  const now = state.setup || {};
+  const what = [];
+  const stack = state.stacks.find((item) => item.name === now.stack);
+  const up = stack ? stack.services.filter((svc) => svc.running.length).length : 0;
+  if (stack && up && now.stack !== next.stack) what.push(t("the stack {name} ({n} running)", { name: now.stack, n: up }));
+  if (now.proxy && !next.proxy && state.proxy) what.push(t("the proxy"));
+  if (now.frontend && !next.frontend && state.frontend && state.frontend.running) what.push(t("the frontend"));
+  return what;
+}
+
+export async function switchSetup(name) {
+  const next = state.setups[name];
+  const stops = switchStops(next);
+  if (stops.length && !(await confirmDialog(t("Switch to {name}?", { name }),
+    t("It stops {what}, then starts {summary}.", { what: stops.join(", "), summary: setupSummary(next) }), t("Switch")))) return;
+  const { status, data } = await post("/api/setups/switch", { name });
+  if (status !== 200) {
+    toast(data.error || t("pdms ui answered {status}", { status }));
+    return;
+  }
+  // Start the new setup once what it does not use has stopped.
+  const started = Date.now();
+  const wait = setInterval(() => {
+    const busy = data.stopping.some((key) => state.jobs[key] && !state.jobs[key].error);
+    if (!busy || Date.now() - started > 120000) {
+      clearInterval(wait);
+      startAll();
+    }
+  }, 500);
 }

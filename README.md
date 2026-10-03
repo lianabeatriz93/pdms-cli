@@ -210,6 +210,7 @@ pdms urls lead-tp-list -f health   # one instance, only paths containing 'health
 pdms open lead-tp-create           # Swagger (/docs) in the browser; --path /redoc for another page
 pdms restart lead-tp-create        # same user, DB and port
 pdms restart lead-tp-create -u agent   # switch user (-d for DB, -c to pick interactively)
+pdms restart lead-tp-create lead-place-get util-state   # several, one after the other
 pdms stop                          # pick which ones to stop; pdms stop --all (the proxy included)
 ```
 
@@ -323,6 +324,17 @@ before a protected database, like the other screens. **Stop everything** stops t
 background service and the local ElasticMQ, after listing them. The title bar shows the current user with its name
 and roles.
 
+**Setups** with a name: **Save as a setup** keeps the current choices under a name, and a click on another saved
+setup switches to it: it stops what the current one runs and the new one does not use (its stack when it is another
+one, the proxy and the frontend when the new one goes without them; the local events stay), after listing it, and
+then starts the new one. The start button carries the setup's name, Ctrl K can switch too, and `pdms up --setup NAME`
+starts a setup's stack from the terminal.
+
+**What changed**: pdms ui checks every 30 seconds which running services run old code (a library of `common/` or
+their own dependencies changed since they started, after a pull or a branch switch). Home says so with **Reinstall
+and restart N**, and lists them with the services of the setup that will install on their next start and the
+commits since the services started.
+
 From the services screen (which also has a row for the local SNS, see
 [SNS](#sns-one-local-topic-for-everything)) you can follow a service's logs live (also the
 previous run's and the install's), open its Swagger docs, stop it, forget the stopped ones, and restart it with the
@@ -330,7 +342,11 @@ same or another user and database: it asks before a protected database and insta
 `pdms restart`. **Start service** starts any service of the current repo (like `pdms run -b`), on the port you choose
 or the next free one, and **Start frontend** the web app in dev or build mode (like `pdms front -b`), with its own row,
 its install and build logs, and **Rebuild**. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
-services run, and creates, edits and deletes stacks with a searchable list of the repo's services. The proxy screen
+services run, and creates, edits and deletes stacks with a searchable list of the repo's services. **Restart…** on a
+stack restarts all its running services or the ones you pick, with their own users and databases or another one for
+all of them; "Remember in the stack" keeps it for those services, their chips say so, and the stack editor lists these
+exceptions to remove them. In the services screen a checkbox on each row (and "Select all" per stack) picks several
+to restart or stop together; they restart one after the other, each row showing its progress. The proxy screen
 starts the proxy in the background (like `pdms proxy -b`: it asks for another port when the one you chose is in use)
 and stops it, and follows its requests live (the sidebar calls it **Requests**) with where each one went, how long
 it took and, for local services, how much of it was database and how many queries it ran ([database time per
@@ -531,8 +547,27 @@ pdms stack add          # wizard: name, services, fixed user/DB or "ask when sta
 pdms stack list
 pdms up tp              # starts the services that are not running, each on a free port
 pdms up tp -u agent -d web
+pdms up --setup Prospecting             # the stack of a setup saved in pdms ui's Home (it becomes the current one)
+pdms restart --stack tp                 # its running services, one after the other
+pdms restart --stack tp lead-place-get lead-tp-update -u tp-provider --remember
 pdms down tp
 ```
+
+A stack can start some of its services with another user or database than the rest: `pdms restart --stack` with
+`-u`/`-d` and `--remember` (or "Remember in the stack" in pdms ui) keeps that exception for those services, and
+`pdms up` respects it. In the configuration it is the stack's `overrides`:
+
+```toml
+[stacks.tp]
+services = ["lead/lead-place-get", "lead/lead-tp-update", "util/util-state-list"]
+user = "supervisor"
+db = "web-dev"
+
+[stacks.tp.overrides."lead/lead-place-get"]
+user = "tp-provider"
+```
+
+Renaming or deleting a user or a database updates the exceptions; a service removed from the stack loses its own.
 
 ## Debugging in VS Code
 

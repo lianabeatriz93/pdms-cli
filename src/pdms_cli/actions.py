@@ -25,7 +25,7 @@ from urllib.parse import unquote, urlsplit
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
 from . import captures, health, vscode
-from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Stack, config_path
+from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from .i18n import LANGUAGES, _
 
 
@@ -670,6 +670,33 @@ def remember_in_stack(cfg: Config, name: str, root: Path, services: Iterable[Pat
     cfg.save()
 
 
+# --------------------------------------------------------------------------- setups (Home)
+
+
+def save_setup_as(cfg: Config, name: str) -> str:
+    """Keep the current setup under ``name`` (a new one, or replacing it); it becomes the current one's name."""
+    name = check_alias(name, cfg.setups) if name.strip() not in cfg.setups else name.strip()
+    cfg.setups[name] = replace(cfg.setup)
+    cfg.setup_name = name
+    cfg.save()
+    return name
+
+
+def use_setup(cfg: Config, name: str) -> Setup:
+    """Make the saved setup ``name`` the current one (what Start everything starts)."""
+    cfg.setup = replace(cfg.setups[require(cfg.setups, _("setup"), name)])
+    cfg.setup_name = name
+    cfg.save()
+    return cfg.setup
+
+
+def remove_setup(cfg: Config, name: str) -> None:
+    del cfg.setups[require(cfg.setups, _("setup"), name)]
+    if cfg.setup_name == name:
+        cfg.setup_name = ""  # the current setup stays as it is, without a name
+    cfg.save()
+
+
 def stack_instances(cfg: Config, name: str, root: Path) -> list[instances.Instance]:
     """Live instances of the stack's services."""
     paths = {str(p) for p in stack_paths(cfg.stacks[require(cfg.stacks, _("stack"), name)], root)}
@@ -697,6 +724,9 @@ def remove_stack(cfg: Config, name: str) -> None:
     del cfg.stacks[require(cfg.stacks, _("stack"), name)]
     if cfg.setup.stack == name:
         cfg.setup.stack = ""
+    for saved in cfg.setups.values():
+        if saved.stack == name:
+            saved.stack = ""
     cfg.save()
 
 

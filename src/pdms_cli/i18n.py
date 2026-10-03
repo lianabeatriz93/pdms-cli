@@ -1135,6 +1135,14 @@ ES: dict[str, str] = {
         "{path} no es un servicio del repo actual.",
     "{service} is not in the stack {name}.":
         "{service} no está en el stack {name}.",
+    "A saved setup of pdms ui's Home: start its stack and make it the current setup.":
+        "Un setup guardado del Home de pdms ui: arranca su stack y lo deja como setup actual.",
+    "Give a stack or --setup, not both.":
+        "Indica un stack o --setup, no los dos.",
+    "The setup {name} has no stack.":
+        "El setup {name} no tiene stack.",
+    "setup":
+        "setup",
     "Measure the database time and the queries of each request (pdms ui shows them with the request)?":
         "¿Medir el tiempo en la base de datos y las consultas de cada petición (pdms ui las muestra con la petición)?",
     "Database connections each service opens when it starts (0 = when needed):":

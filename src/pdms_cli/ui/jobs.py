@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -512,6 +512,28 @@ class Jobs:
                 self.frontend_steps(job, frontend_plan)
 
         return self.run(HOME_KEY, "up", "starting", work)
+
+    def switch_setup(self, name: str) -> list[str]:
+        """Make the saved setup ``name`` the current one, stopping what the current one runs and the new one does
+        not use: its stack (when another), the proxy and the frontend (when the new one goes without them). The local
+        events stay: other services may publish there. Returns the keys of the stop jobs; the page starts the new
+        setup (Start everything) once they are done."""
+        cfg = Config.load()
+        actions.require(cfg.setups, _("setup"), name)
+        old, new = cfg.setup, cfg.setups[name]
+        stops = []
+        if old.stack and old.stack != new.stack and old.stack in cfg.stacks:
+            job = self.down(old.stack)
+            if job:
+                stops.append(job.key)
+        running_proxy = proxy.running_proxy()
+        if old.proxy and not new.proxy and running_proxy and not self.busy(proxy.display_key(running_proxy)):
+            stops.append(self.stop(proxy.display_key(running_proxy)).key)
+        if old.frontend and not new.frontend and frontend.running() and not self.busy(frontend.KEY):
+            stops.append(self.stop(frontend.KEY).key)
+        actions.use_setup(cfg, name)
+        self.on_change()
+        return stops
 
     def stop_all(self) -> Job | None:
         """Stop the frontend, the proxy, every background service and the local ElasticMQ; None when nothing runs."""
@@ -1029,8 +1051,19 @@ def save_setup(body: dict) -> dict:
         raise actions.InvalidValue("frontend_mode", _("Must be one of: {choices}", choices=", ".join(frontend.MODES)))
     cfg.setup = Setup(stack=stack, proxy=_bool(body, "proxy"), frontend=_bool(body, "frontend"), frontend_mode=mode,
                       events=_bool(body, "events"))
+    if cfg.setup_name in cfg.setups:
+        cfg.setups[cfg.setup_name] = replace(cfg.setup)  # a saved setup follows its edits, like the form says
     cfg.save()
     return asdict(cfg.setup)
+
+
+def save_setup_as(body: dict) -> dict:
+    return {"name": actions.save_setup_as(Config.load(), _text(body, "name"))}
+
+
+def remove_setup(body: dict) -> dict:
+    actions.remove_setup(Config.load(), _text(body, "name"))
+    return {}
 
 
 def defaults_from(body: dict, current: Defaults) -> Defaults:

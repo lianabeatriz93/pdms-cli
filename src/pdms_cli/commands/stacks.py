@@ -135,8 +135,20 @@ def up(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
     events_mode: Optional[str] = typer.Option(None, "--events", help=EVENTS_HELP, autocompletion=completion.event_modes),
+    setup: Optional[str] = typer.Option(
+        None, "--setup", help=_("A saved setup of pdms ui's Home: start its stack and make it the current setup."),
+        autocompletion=completion.setups,
+    ),
 ) -> None:
     cfg = Config.load()
+    if setup:
+        if name:
+            fail(_("Give a stack or --setup, not both."))
+        saved = cfg.setups[pick(cfg.setups, _("setup"), setup)]
+        if not saved.stack:
+            fail(_("The setup {name} has no stack.", name=setup))
+        actions.use_setup(cfg, setup)
+        name = saved.stack
     name = pick(cfg.stacks, _("stack"), name)
     stack = cfg.stacks[name]
     root = backend_root(cfg)
@@ -193,7 +205,7 @@ def down(name: Optional[str] = typer.Argument(None, help=_("Stack to stop."), au
 def stack_menu() -> None:
     prompts.require_tty()
     show_menu(_("Stacks:"), {
-        _("Start stack"): lambda: up(None, None, None, None, False, None),
+        _("Start stack"): lambda: up(None, None, None, None, False, None, None),
         _("Stop stack"): lambda: down(None),
         _("List"): stack_list,
         _("Create"): stack_add,
