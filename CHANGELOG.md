@@ -1,3 +1,13 @@
+## v0.3.3 (2026-10-03)
+
+### Feat
+
+- **ui**: Events says if Docker and its port are ready, and Look is picked from cards
+- **ui**: Ctrl K to search or run any action, and / to filter the current view
+- **ui**: desktop notifications and a Recent panel on Home
+- **proxy**: each request kept with its detail, Copy as curl and Replay
+- **ui**: tracebacks open the code in VS Code, and Debug in VS Code from a service row
+
 ## v0.3.2 (2026-10-02)
 
 ### Feat
