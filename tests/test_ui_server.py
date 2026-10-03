@@ -90,7 +90,7 @@ def test_the_token_is_swapped_for_a_strict_cookie(ui) -> None:
 @pytest.mark.parametrize("headers", [{}, {"Cookie": "pdms_ui_1=other"}, {"Cookie": "garbage;;=="}])
 def test_without_the_token_nothing_is_served(ui, headers) -> None:
     port, _hub, _states, _jobs = ui
-    for path in ("/", "/api/state", "/api/stream", "/static/app.js"):
+    for path in ("/", "/api/state", "/api/stream", "/static/js/main.js"):
         response, _body, _conn = request(port, path, headers)
         assert response.status == 401, path
     assert request(port, "/?token=wrong")[0].status == 403
@@ -107,9 +107,12 @@ def test_other_hosts_and_other_pages_are_rejected(ui) -> None:
 
 def test_static_files_stay_inside_the_static_folder(ui) -> None:
     port, _hub, _states, _jobs = ui
-    response, _body, _conn = request(port, "/static/app.js", cookie(port))
-    assert response.status == 200 and response.getheader("Content-Type") == "text/javascript; charset=utf-8"
-    for path in ("/static/../server.py", "/static/..%2Fserver.py", "/static/.hidden", "/static/missing.js"):
+    for path in ("/static/js/main.js", "/static/i18n.js"):
+        response, _body, _conn = request(port, path, cookie(port))
+        assert response.status == 200 and response.getheader("Content-Type") == "text/javascript; charset=utf-8"
+    for path in ("/static/../server.py", "/static/..%2Fserver.py", "/static/.hidden", "/static/missing.js",
+                 "/static/js/../../server.py", "/static/js/.hidden", "/static/../ui/server.py", "/static/js/x/y.js",
+                 "/static/.js/main.js"):
         assert request(port, path, cookie(port))[0].status == 404, path
 
 

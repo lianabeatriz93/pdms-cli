@@ -1,7 +1,7 @@
 // pdms ui texts in the language of pdms (defaults.language, or PDMS_LANG), which comes in the state.
 //
-// app.js writes its texts in English through t("…", { vars }), like _() in the Python code; N_("…") only marks a
-// text kept in a table and translated where it shows. The static texts of index.html are translated here: each text
+// The page's scripts (js/) write their texts in English through t("…", { vars }), like _() in the Python code;
+// N_("…") only marks a text kept in a table and translated where it shows. The static texts of index.html are translated here: each text
 // node, and as a whole each phrase with inline markup (<code>, <b>), whose translation is markup from this catalog
 // (never from the server or the user). tests/test_ui_i18n.py checks that every text has its translation.
 "use strict";
@@ -775,7 +775,7 @@ function phrase(node) {
     && [...node.childNodes].some((child) => child.nodeType === Node.TEXT_NODE && child.textContent.trim());
 }
 
-// Remember the English of every static text once, before app.js changes any of them.
+// Remember the English of every static text once, before the scripts change any of them.
 function collectStatics(node) {
   if (["SCRIPT", "STYLE", "TEXTAREA"].includes(node.tagName) || node.getAttribute("translate") === "no") return;
   for (const attr of TRANSLATED_ATTRS) {
@@ -801,7 +801,7 @@ function translateStatics() {
   }
 }
 
-// True when the language changed (the caller repaints what app.js wrote).
+// True when the language changed (the caller repaints what the scripts wrote).
 function useLanguage(lang) {
   const next = LANGUAGES.includes(lang) ? lang : "en";
   if (next === language) return false;

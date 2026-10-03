@@ -691,6 +691,20 @@ uv tool install -e . --force     # use your checkout as the `pdms` command (re-r
 With the editable install, code changes apply immediately and `pdms self-update` tells you to use `git pull`.
 If an update adds a dependency and the command fails, it says which one is missing and how to reinstall.
 
+### Code layout
+
+- `src/pdms_cli/actions.py`: what pdms does (start a service, a stack, the proxy...), without asking anything. The
+  terminal and `pdms ui` both call it; a decision it cannot take is raised as an exception the caller answers.
+- `src/pdms_cli/commands/`: the terminal commands, one module per group (`run.py`, `instances.py`, `proxy.py`...),
+  with the shared helpers in `common.py`. `cli.py` is only the entrypoint: a new command also goes in its
+  `COMMAND_ORDER`, the order `pdms --help` lists them in.
+- `src/pdms_cli/ui/`: the `pdms ui` server (`server.py`, `jobs.py`, `state.py`) and its page in `static/`:
+  `index.html`, `app.css`, `i18n.js` (the Spanish catalog) and `js/`, one ES module per screen (`home.js`,
+  `services.js`, `proxy.js`...) plus `core.js` (shared helpers), `state.js` (the live state), `router.js` and
+  `main.js` (wiring). No build step: the browser loads the modules as they are.
+- Every text has its Spanish translation: `i18n.py` for the terminal and `static/i18n.js` for the page; the tests
+  fail when one is missing.
+
 CI (`.github/workflows/ci.yml`) runs once per commit of a pull request and on every push to `main`; a new commit to
 a pull request cancels the run of the previous one, and changes to Markdown files alone run nothing. On `main` it runs
 the tests on Linux, macOS and Windows with Python 3.10 and 3.12; pull requests run both Pythons on Linux and 3.12 on

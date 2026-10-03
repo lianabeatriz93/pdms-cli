@@ -41,7 +41,8 @@ from .control import Control
 from .state import build_state
 
 STATIC = resources.files("pdms_cli.ui") / "static"
-STATIC_NAME = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
+# A file of the static folder or of one folder in it (js/main.js): no "..", no hidden files.
+STATIC_NAME = re.compile(r"^(?:[a-z0-9][a-z0-9_-]*/)?[a-z0-9][a-z0-9_.-]*$")
 ENV_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")  # a Terraform environment folder, never a path
 # Fixed, not from mimetypes: on Windows that reads the registry, which may call .js text/plain (blocked by nosniff).
 CONTENT_TYPES = {
@@ -285,7 +286,7 @@ def make_handler(
             self.wfile.flush()
 
         def static(self, name: str) -> None:
-            file = STATIC / name
+            file = STATIC.joinpath(*name.split("/"))
             content_type = CONTENT_TYPES.get("." + name.rsplit(".", 1)[-1])
             if not STATIC_NAME.match(name) or not content_type or not file.is_file():
                 self.reply_json(404, {"detail": "not found"})
