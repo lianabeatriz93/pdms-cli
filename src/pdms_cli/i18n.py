@@ -1091,6 +1091,30 @@ ES: dict[str, str] = {
         "Puerto de pdms proxy:",
     "Run each request of a service in its own thread (a slow query only holds up its own request)?":
         "¿Atender cada petición de un servicio en su propio hilo (una consulta lenta solo frena su propia petición)?",
+    "A slow line: every round trip to a remote database costs at least this.":
+        "Una línea lenta: cada ida y vuelta a una base de datos remota cuesta al menos esto.",
+    "Every query pays at least this; a list request makes about six. A local copy of the database answers in a few ms.":
+        "Cada consulta paga al menos esto; una petición de una lista hace unas seis. Una copia local de la base de datos responde en pocos ms.",
+    "Internet":
+        "Internet",
+    "Network":
+        "Red",
+    "Tunnel to {name}":
+        "Túnel a {name}",
+    "Without internet the remote API and the databases through tunnels do not answer.":
+        "Sin internet no responden la API remota ni las bases de datos a través de túneles.",
+    "no answer from {host} in 3 s":
+        "{host} no respondió en 3 s",
+    "nothing listens on {address}":
+        "nada escucha en {address}",
+    "{host} goes to this machine: start the tunnel to it again (the command your team uses, e.g. devo ssm connect).":
+        "{host} apunta a esta máquina: vuelve a abrir el túnel (el comando que use tu equipo, p. ej. devo ssm connect).",
+    "{host}:{port} · {version} · {time} per round trip":
+        "{host}:{port} · {version} · {time} por ida y vuelta",
+    "{time} to {host}":
+        "{time} hasta {host}",
+    "{version} · {time} per round trip":
+        "{version} · {time} por ida y vuelta",
     "Measure the database time and the queries of each request (pdms ui shows them with the request)?":
         "¿Medir el tiempo en la base de datos y las consultas de cada petición (pdms ui las muestra con la petición)?",
     "Database connections each service opens when it starts (0 = when needed):":

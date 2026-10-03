@@ -24,7 +24,7 @@ from typing import IO
 from urllib.parse import unquote, urlsplit
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
-from . import captures, vscode
+from . import captures, health, vscode
 from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -1201,11 +1201,13 @@ def remove_db(cfg: Config, name: str) -> list[str]:
 
 
 def check_connection(db: Database, timeout: int) -> str:
-    """The server version, e.g. ``PostgreSQL 16.4``; :class:`ActionError` with the driver's message otherwise."""
+    """The server version and what a round trip costs, e.g. ``PostgreSQL 16.4 · 370 ms per round trip``;
+    :class:`ActionError` with the driver's message otherwise."""
     try:
-        return runner.test_connection(db, timeout).split(",")[0]
+        version, ms = health.probe(db, timeout)
     except Exception as exc:  # noqa: BLE001 - any driver error is the answer
         raise ActionError(str(exc).strip() or type(exc).__name__) from exc
+    return _("{version} · {time} per round trip", version=version, time=health.describe_ms(ms))
 
 
 def known_roles(cfg: Config) -> list[str]:

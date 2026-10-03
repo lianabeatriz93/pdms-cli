@@ -873,10 +873,10 @@ def test_test_a_saved_database_or_the_form(ui, machine, monkeypatch) -> None:
         tried.append((db.host, db.password, timeout))
         if db.host == "down.example.com":
             raise OSError("connection refused")
-        return "PostgreSQL 16.4, compiled by gcc"
+        return "PostgreSQL 16.4", 4.2
 
-    monkeypatch.setattr(actions.runner, "test_connection", connect)
-    assert post(port, "/api/dbs/test", {"name": "shared"}) == (200, {"version": "PostgreSQL 16.4"})
+    monkeypatch.setattr(actions.health, "probe", connect)
+    assert post(port, "/api/dbs/test", {"name": "shared"}) == (200, {"version": "PostgreSQL 16.4 · 4 ms per round trip"})
     form = {"host": "other.example.com", "port": 5432, "database": "pdm", "user": "app", "password": None}
     assert post(port, "/api/dbs/test", {**form, "name": "shared"})[0] == 200  # the saved password, not saved again
     assert post(port, "/api/dbs/test", {**form, "host": "down.example.com", "name": ""}) == (
@@ -1072,3 +1072,29 @@ def test_events_ready_says_what_starting_them_needs_and_shows_a_real_route(ui, m
                     "broker": "broker.fifo"},
         "queues": 2,
     }
+
+
+def test_the_databases_are_measured_on_demand_and_the_line_checked(ui, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    measured = []
+    monkeypatch.setattr(jobs.health, "measure", lambda: measured.append(1))
+    assert post(port, "/api/health/run")[0] == 202
+    wait_until(lambda: measured)
+    from pdms_cli import health
+
+    monkeypatch.setattr(health, "line", lambda timeout=3: 1412.6)
+    assert post(port, "/api/health/line") == (200, {"ms": 1413, "host": "1.1.1.1"})
+    monkeypatch.setattr(health, "line", lambda timeout=3: None)
+    assert post(port, "/api/health/line") == (200, {"ms": None, "host": "1.1.1.1"})
+
+
+def test_the_state_carries_the_health_and_the_branch(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "pdms"
+    (root / "backend").mkdir(parents=True)
+    (root / ".git").mkdir()
+    (root / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    cfg = Config(repos={"pdms": Repo(path=str(root))}, current_repo="pdms")
+    summary = {"dbs": [{"name": "web-dev", "ms": 372}], "running": False, "slow_ms": 300}
+    state = ui_state.build_state(cfg, health=summary)
+    assert state["health"] == summary and state["repo"]["branch"] == "main"
+    assert ui_state.build_state(cfg)["health"] == {"dbs": [], "running": False, "slow_ms": 0}

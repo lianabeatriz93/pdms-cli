@@ -13,6 +13,9 @@ import {
 } from "./frontend.js";
 import { UPDATE_JOB, offerText, offerTitle, openUpdate, updateOffer } from "./updates.js";
 import { HOME_COVERS, fixButton } from "./doctor.js";
+import { openSetting } from "./repos.js";
+import { openDb } from "./settings.js";
+import { lineCheck, measureNow, roundTrip } from "./status.js";
 
 export const HOME_JOB = "home";
 
@@ -256,7 +259,25 @@ function attention() {
   if ((state.setup || {}).events && !state.events.up && !state.jobs[EVENTS_JOB]) {
     items.push(["warn", t("The local events are off"), t("The services publish to AWS until they are on."), [button(t("Start"), openEventsUp)]]);
   }
-  const fromDoctor = (state.doctor.problems || []).filter((check) => !HOME_COVERS.has(check.fix));
+  // The databases in use, measured each minute: fresher than Doctor, whose tunnel check is then left out here.
+  const tunnelsDown = [];
+  for (const db of state.health.dbs || []) {
+    if (db.route.kind === "tunnel" && db.route.up === false) {
+      tunnelsDown.push(db.route.address);
+      items.push(["bad", t("The tunnel to {name} is down", { name: db.name }),
+        t("Nothing listens on {address}: start the tunnel again (the command your team uses, e.g. devo ssm connect).", { address: db.route.address }),
+        [button(t("Measure now"), measureNow)]]);
+    } else if (db.error) {
+      items.push(["bad", t("{name} does not answer", { name: db.name }), db.error,
+        [button(t("Line check"), lineCheck), button(t("Edit {name}", { name: db.name }), () => openSetting("dbs", (data) => { const found = data.dbs.find((d) => d.name === db.name); if (found) openDb(found); }))]]);
+    } else if (db.ms >= state.health.slow_ms) {
+      items.push(["db", t("{name} takes {time} per round trip", { name: db.name, time: roundTrip(db.ms) }),
+        t("Every query pays at least this, and a list request makes about six. Requests shows where the time goes."),
+        [button(t("Line check"), lineCheck), button(t("Requests"), () => { location.hash = "#proxy"; })]]);
+    }
+  }
+  const fromDoctor = (state.doctor.problems || []).filter((check) => !HOME_COVERS.has(check.fix)
+    && !tunnelsDown.some((address) => check.detail.includes(address)));
   for (const check of fromDoctor.filter((c) => c.status === "fail")) {
     items.push(["bad", `${check.section} · ${check.name}`, check.detail, [check.fix ? fixButton(check) : button(t("Doctor"), () => { location.hash = "#doctor"; })]]);
   }
@@ -269,7 +290,7 @@ function attention() {
   if (offer && !state.jobs[UPDATE_JOB]) {
     items.push(["info", offerTitle(offer), offerText(offer), [button(offer.kind === "restart" ? t("Restart pdms ui") : t("See what is new"), openUpdate)]]);
   }
-  const rank = { bad: 0, warn: 1, info: 2 };
+  const rank = { bad: 0, warn: 1, db: 1, info: 2 };
   return items.sort((a, b) => rank[a[0]] - rank[b[0]]);
 }
 

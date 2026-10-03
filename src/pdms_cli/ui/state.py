@@ -148,7 +148,8 @@ def profiles(cfg: Config) -> dict[str, dict]:
     }
 
 
-def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, doctor: dict | None = None) -> dict:
+def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, doctor: dict | None = None,
+                health: dict | None = None) -> dict:
     """Everything the page shows: repo, users and DBs (names only), instances, proxy, local events and jobs."""
     cfg = cfg or Config.load()
     items = list(instances.load().values())
@@ -165,7 +166,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, 
         "theme": cfg.defaults.theme,
         "notify": cfg.defaults.notify,
         "home": str(Path.home()),
-        "repo": {"alias": cfg.current_repo, "root": str(root)} if root else None,
+        "repo": {"alias": cfg.current_repo, "root": str(root), "branch": repos.git_branch(root)} if root else None,
         "repos": [{"name": name, "path": str(repo.root)} for name, repo in cfg.repos.items()],
         "user": cfg.last_user,
         "db": cfg.last_db,
@@ -182,5 +183,6 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, 
         "setup": asdict(cfg.setup),
         "update": updates.state(cfg),
         "doctor": doctor or {"running": False, "at": "", "counts": {}, "problems": []},
+        "health": health or {"dbs": [], "running": False, "slow_ms": 0},
         "jobs": jobs or {},
     }

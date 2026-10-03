@@ -22,6 +22,7 @@ from . import state as ui_state
 from . import updates as ui_updates
 from .control import Control
 from .doctor import Doctor
+from .health import Health
 
 EVENTS_KEY = "events:elasticmq"  # the job of pdms events up/down (not an instance: no row of its own in Services)
 HOME_KEY = "home"  # the job of Home's Start everything / Stop everything
@@ -63,6 +64,7 @@ class Jobs:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
         self.doctor = Doctor(on_change)
+        self.health = Health(on_change)
 
     def snapshot(self) -> dict[str, dict]:
         with self._lock:

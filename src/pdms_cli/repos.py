@@ -74,6 +74,19 @@ def use_for_this_command(root: Path | None) -> None:
     _session_root = root.resolve() if root else None
 
 
+def git_branch(root: Path) -> str:
+    """The branch checked out in ``root`` (the short commit when detached), read from .git without running git;
+    "" when it is not a git checkout."""
+    git = root / ".git"
+    try:
+        if git.is_file():  # a worktree: "gitdir: <path>"
+            git = root / git.read_text(encoding="utf-8").split(":", 1)[1].strip()  # absolute stays absolute
+        head = (git / "HEAD").read_text(encoding="utf-8").strip()
+    except (OSError, IndexError):
+        return ""
+    return head.removeprefix("ref: refs/heads/") if head.startswith("ref: ") else head[:8]
+
+
 def active_root(cfg: Config) -> Path | None:
     if _session_root is not None:
         return _session_root

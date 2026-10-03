@@ -248,13 +248,13 @@ def test_remove_db_and_user_let_the_stacks_ask_again(cfg) -> None:
 
 
 def test_check_connection_gives_the_version_or_the_driver_error(monkeypatch) -> None:
-    monkeypatch.setattr(actions.runner, "test_connection", lambda db, timeout: "PostgreSQL 16.4, compiled by gcc")
-    assert actions.check_connection(Database("h"), 5) == "PostgreSQL 16.4"
+    monkeypatch.setattr(actions.health, "probe", lambda db, timeout: ("PostgreSQL 16.4", 370.4))
+    assert actions.check_connection(Database("h"), 5) == "PostgreSQL 16.4 · 370 ms per round trip"
 
     def refuse(db, timeout):
         raise OSError("connection refused\n")
 
-    monkeypatch.setattr(actions.runner, "test_connection", refuse)
+    monkeypatch.setattr(actions.health, "probe", refuse)
     with pytest.raises(actions.ActionError, match="^connection refused$"):
         actions.check_connection(Database("h"), 5)
 
