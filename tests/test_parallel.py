@@ -144,7 +144,7 @@ def serve(app, *scopes) -> tuple[list[dict], list[float], set[str]]:
                 sent.append(message)
 
             await app(scope, receive, send)
-            finished.append(round(time.monotonic() - start, 1))
+            finished.append(time.monotonic() - start)
 
         await asyncio.gather(*(one(scope) for scope in scopes))
 
@@ -156,7 +156,7 @@ def test_without_it_a_slow_request_holds_up_the_others(parallel) -> None:
     import starlette.applications
 
     _, finished, _ = serve(starlette.applications.Starlette(), {"type": "http", "block": 0.6}, {"type": "http"})
-    assert finished == [0.6, 0.6]
+    assert min(finished) >= 0.5  # the quick one waited for the 0.6 s one (margins: Windows' clock ticks every ~16 ms)
 
 
 def test_with_it_a_slow_request_only_holds_up_itself(parallel) -> None:
@@ -166,7 +166,7 @@ def test_with_it_a_slow_request_only_holds_up_itself(parallel) -> None:
     parallel.run_requests_in_threads()  # loaded twice (uvicorn --reload): patched once
     sent, finished, loop_threads = serve(starlette.applications.Starlette(), {"type": "http", "block": 0.6},
                                          {"type": "http"}, {"type": "lifespan"})
-    assert finished[-1] == 0.6 and finished[:2] == [0.0, 0.0]
+    assert max(finished[:2]) < 0.3 and finished[-1] >= 0.5  # the quick ones did not wait for the 0.6 s one
     assert sorted(message["thread"].startswith("pdms-request") for message in sent) == [False, True, True]
     assert loop_threads == {threading.main_thread().name}  # receive and send stay on uvicorn's loop
     assert all(message["got"] == {"type": "http.request", "body": b"x"} for message in sent)
