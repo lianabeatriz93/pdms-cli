@@ -591,13 +591,22 @@ in the copy under `.venv/lib/python3.*/site-packages/...` or step in with F11 fr
 ## Tests and migrations
 
 ```bash
-pdms test lead-tp-create                 # poetry run pytest in the service (smart install first)
+pdms test lead-tp-create                 # poetry run pytest in the service (smart install first), on a local DB
 pdms test lead-tp-create -- -k create -x # extra arguments go to pytest
-pdms test -u supervisor -d local         # also inject a profile's DEV_* / DB_PG_CONNECTION_STR
+pdms test core -d tests -u supervisor    # a package too; pick the local DB, and inject a user's DEV_*
+pdms test lead-tp-create --start-db      # start backend/docker-compose_tests.yml (:5439) and use it
 pdms migrate -d web-dev                  # flyway info: applied and pending migrations (read-only)
 pdms migrate validate -d web-dev         # flyway validate, like the pipeline (pending ones are not errors)
 pdms migrate migrate -d local            # apply them — only against a local database
 ```
+
+Tests only ever run against a **local** database (localhost, not protected): pdms always sets
+`DB_PG_CONNECTION_STR`, so a service's `.env` pointing to web-dev is never used, and a shared database is refused.
+Without a local one, `pdms test` offers to start the database of `backend/docker-compose_tests.yml`. Each run keeps
+its JUnit report and result for **pdms ui → Tests**, which lists the services and packages your branch touches
+(its diff against main plus uncommitted files, including changes to local packages such as `common/core`), runs
+them with Re-run failed, and links each failure to its line in VS Code. Services share tables, so each local
+database runs one project at a time: tick more local databases to run more at once.
 
 `pdms migrate` runs [Flyway](https://flywaydb.org/) from the `pdms-db-migrations` repo (PDMP-467; the Alembic
 migrations in `backend/common/sync-database` are frozen) with the same Docker image and arguments as the
@@ -642,7 +651,7 @@ do it later).
 | `pdms run` / `pdms debug` / `pdms env` | Run a service / create a VS Code debug configuration / print a profile's variables |
 | `pdms services` | List the services of the current repo |
 | `pdms repo` | Repos menu (`list`, `add`, `use`, `edit`, `remove`) |
-| `pdms test` / `pdms migrate` | Run a service's tests / Flyway `info`, `validate` (and `migrate` locally) |
+| `pdms test` / `pdms migrate` | Run a service's tests on a local DB / Flyway `info`, `validate` (and `migrate` locally) |
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |

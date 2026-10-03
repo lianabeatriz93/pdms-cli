@@ -52,6 +52,27 @@ def _(text: str, /, **kwargs: object) -> str:
 
 
 ES: dict[str, str] = {
+    "'{name}' is not a project of {path}.": "'{name}' no es un proyecto de {path}.",
+    "Database: {db} ({url})": "Base de datos: {db} ({url})",
+    "Local database for DB_PG_CONNECTION_STR (only local ones are allowed).": "Base de datos local para DB_PG_CONNECTION_STR (solo se permiten locales).",
+    "No local database for tests. Add one with pdms db add (host localhost).": "No hay base de datos local para los tests. Agrega una con pdms db add (host localhost).",
+    "No local database for tests. Start the one of {file} with pdms test --start-db, or add one with pdms db add.": "No hay base de datos local para los tests. Arranca la de {file} con pdms test --start-db, o agrega una con pdms db add.",
+    "Run the tests of a service or package (poetry run pytest) against a local database, never a shared one. Extra arguments go to pytest, e.g. pdms test -- -k name -x. The result shows in pdms ui → Tests.": "Ejecutar los tests de un servicio o paquete (poetry run pytest) contra una base de datos local, nunca una compartida. Los argumentos extra van a pytest, p. ej. pdms test -- -k nombre -x. El resultado aparece en pdms ui → Tests.",
+    "Service or package (name or path relative to the backend folder).": "Servicio o paquete (nombre o ruta relativa a la carpeta backend).",
+    "Start the database of backend/docker-compose_tests.yml and use it.": "Arrancar la base de datos de backend/docker-compose_tests.yml y usarla.",
+    "Starting the test database ({file})...": "Arrancando la base de datos de tests ({file})...",
+    "Stopped from pdms ui.": "Detenido desde pdms ui.",
+    "Test database '{name}' ready on port {port}.": "Base de datos de tests '{name}' lista en el puerto {port}.",
+    "Tests of another repo are running; stop them first.": "Se están ejecutando tests de otro repo; detenlos primero.",
+    "Tests only run against a local database and there is none. Start the one of {file} (Docker, port {port})?": "Los tests solo se ejecutan contra una base de datos local y no hay ninguna. ¿Arrancar la de {file} (Docker, puerto {port})?",
+    "Tests only run against a local database.": "Los tests solo se ejecutan contra una base de datos local.",
+    "Tests only run against a local database; '{name}' ({host}) is shared. Use a local one: {names}.": "Los tests solo se ejecutan contra una base de datos local; '{name}' ({host}) es compartida. Usa una local: {names}.",
+    "The test database does not answer yet: {error}": "La base de datos de tests aún no responde: {error}",
+    "local database": "base de datos local",
+    "none yet": "ninguna todavía",
+    "user {user}": "usuario {user}",
+    "{cmd} failed: {error}": "{cmd} falló: {error}",
+    "{file} is not in {path}.": "{file} no está en {path}.",
     # ------------------------------------------------------------------ general
     "Run PDMS services locally. Without arguments it opens the interactive menu.":
         "Levanta servicios de PDMS en local. Sin argumentos abre el menú interactivo.",
@@ -230,11 +251,7 @@ ES: dict[str, str] = {
     "Print the variables of a profile. Usage: eval \"$(pdms env -u supervisor -d local)\".":
         "Imprime las variables de un perfil. Uso: eval \"$(pdms env -u supervisor -d local)\".",
     # ------------------------------------------------------------------ test / migrate
-    "Run the service's tests (poetry run pytest). Extra arguments go to pytest, e.g. pdms test -- -k name -x.":
-        "Ejecuta los tests del servicio (poetry run pytest). Los argumentos extra van a pytest, p. ej. pdms test -- -k nombre -x.",
     "Inject this user's DEV_* variables.": "Inyectar las variables DEV_* de este usuario.",
-    "Inject this database's DB_PG_CONNECTION_STR.": "Inyectar el DB_PG_CONNECTION_STR de esta base de datos.",
-    "Profile: {user} @ {db}": "Perfil: {user} @ {db}",
     # ------------------------------------------------------------------ instances
     "starting": "arrancando",
     "busy": "ocupado",

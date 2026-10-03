@@ -67,6 +67,14 @@ def dbs(incomplete: str) -> list[str]:
     return _matching(list(cfg.dbs), incomplete) if cfg else []
 
 
+def local_dbs(incomplete: str) -> list[str]:
+    """The databases tests may use (local ones)."""
+    from . import testruns
+
+    cfg = _config()
+    return _matching(testruns.local_dbs(cfg), incomplete) if cfg else []
+
+
 def stacks(incomplete: str) -> list[str]:
     cfg = _config()
     return _matching(list(cfg.stacks), incomplete) if cfg else []
