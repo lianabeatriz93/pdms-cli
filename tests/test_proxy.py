@@ -481,10 +481,10 @@ def test_what_a_local_service_asked_the_database_is_kept_not_passed_on(gateway_u
 
     wait_for(lambda: len(logged) == 1)
     *_, ident, db = logged[0]
-    assert db == detail
+    assert {k: v for k, v in db.items() if k != "service_at_ms"} == detail
     assert proxy.format_request(*logged[0]).endswith(f" db 3040ms 10q ×9 #{ident}")
     kept = captures.find(ident, recorder.file)
-    assert kept["db"] == detail
+    assert kept["db"] == db
     assert all(name.lower() != "x-pdms-queries" for name, _ in kept["response"]["headers"])
 
 
@@ -494,3 +494,11 @@ def test_a_broken_query_header_is_ignored() -> None:
     assert captures.query_detail([("content-type", "x")]) is None
     assert proxy.db_text(None) == ""
     assert proxy.db_text({"statements": [{"count": 2, "ms": 10}], "transaction_ms": 5}) == " db 15ms 2q"
+
+
+def test_the_service_part_is_placed_in_the_proxy_time_line() -> None:
+    detail = {"statements": [], "answered_ms": 15, "received_at": 1000.060}
+    assert captures.place_in_time(detail, 1000.000, 81)["service_at_ms"] == 60
+    assert captures.place_in_time(detail, 1000.100, 81)["service_at_ms"] == 0  # clocks never put it before the start
+    assert captures.place_in_time(detail, 999.000, 81)["service_at_ms"] == 81  # nor after the end
+    assert "service_at_ms" not in captures.place_in_time({"statements": []}, 1000.0, 81)  # older services

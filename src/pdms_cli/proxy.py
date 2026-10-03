@@ -304,7 +304,7 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
             gateway.log(self.command, path.split("?", 1)[0], status, target, seconds, ident, db)
 
         def forward(self) -> None:
-            started = time.monotonic()
+            started, started_at = time.monotonic(), time.time()  # the wall clock places the service's part in time
             path = normalize(self.path)
             bare = path.split("?", 1)[0]
             if bare in ("/", "/docs"):
@@ -360,6 +360,8 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
 
             answer_headers = [(k, v) for k, v in response.getheaders() if k.lower() != captures.QUERIES_HEADER]
             db = captures.query_detail(response.getheaders()) if target.kind == "local" else None
+            if db is not None:
+                db = captures.place_in_time(db, started_at, round((time.monotonic() - started) * 1000))
             self.send_response(response.status)
             for key, value in answer_headers:
                 if key.lower() not in HOP_BY_HOP and key.lower() not in CORS_RESPONSE_HEADERS:

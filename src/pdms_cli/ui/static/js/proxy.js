@@ -244,36 +244,46 @@ function traceRow(label, title, kind, from, to, text, scale) {
   ];
 }
 
-// The request on a time line: the proxy, the service, opening connections and each statement (when it ran first and
-// last). Times come from the service, from when it got the request.
+// The request on a time line: the whole of it through the proxy, then its parts: until the service took it (the
+// proxy's own work and the service's queue), the service until it answered, new connections and each statement
+// (when it ran first and last), and the way back. Requests kept before services said when they got them start at 0.
 function paintTrace(capture) {
   const db = capture.db;
   const nodes = [];
   if (!db) nodes.push(el("p", { class: "muted" }, t(NO_DB)));
+  const at = db && Number.isFinite(db.service_at_ms) ? db.service_at_ms : 0;
   const statements = db ? [...db.statements].sort((a, b) => a.first_ms - b.first_ms).slice(0, 12) : [];
-  const end = Math.max(capture.ms, db ? db.answered_ms : 0, ...statements.map((s) => s.last_ms), 1);
+  const end = Math.max(capture.ms, db ? at + db.answered_ms : 0, ...statements.map((s) => at + s.last_ms), 1);
   const step = tickStep(end);
   const scale = Math.ceil(end / step) * step;
   const rows = [...traceRow(`→ ${capture.target}`, t("Through the proxy, until the answer came back"), "px", 0, capture.ms, duration(capture.ms), scale)];
   if (db) {
-    rows.push(...traceRow(t("service"), t("Until the service started answering"), "srv", 0, db.answered_ms, duration(db.answered_ms), scale));
+    if (Number.isFinite(db.service_at_ms)) {
+      rows.push(...traceRow(t("waiting for the service"), t("The proxy finding the route, then the service's own queue: uvicorn and the other requests of the page"),
+        "wait", 0, at, duration(at), scale));
+    }
+    rows.push(...traceRow(t("service"), t("Until the service started answering"), "srv", at, at + db.answered_ms, duration(db.answered_ms), scale));
     if (db.connections) {
-      const first = Math.min(...db.statements.map((s) => s.first_ms), db.answered_ms);
+      const first = at + Math.min(...db.statements.map((s) => s.first_ms), db.answered_ms);
       rows.push(...traceRow(t("open {n} connection(s)", { n: db.connections }), t("New database connections (a dozen round trips each)"),
-        "conn", Math.max(0, first - db.connect_ms), first, duration(db.connect_ms), scale));
+        "conn", Math.max(at, first - db.connect_ms), first, duration(db.connect_ms), scale));
     }
     for (const statement of statements) {
       const label = statement.sql.length > 42 ? `${statement.sql.slice(0, 41)}…` : statement.sql;
       const text = statement.count > 1 ? `×${statement.count} · ${duration(statement.ms)}` : duration(statement.ms);
-      rows.push(...traceRow(label, statement.sql, statement.count >= REPEATED ? "db n1" : "db", statement.first_ms, statement.last_ms, text, scale));
+      rows.push(...traceRow(label, statement.sql, statement.count >= REPEATED ? "db n1" : "db", at + statement.first_ms, at + statement.last_ms, text, scale));
+    }
+    if (Number.isFinite(db.service_at_ms)) {
+      const back = at + db.answered_ms;
+      rows.push(...traceRow(t("back"), t("The answer on its way back through the proxy"), "wait", back, Math.max(back, capture.ms), duration(Math.max(0, capture.ms - back)), scale));
     }
   }
   const ticks = [];
-  for (let at = 0; at <= scale; at += step) ticks.push(el("span", {}, duration(at)));
+  for (let tick = 0; tick <= scale; tick += step) ticks.push(el("span", {}, duration(tick)));
   rows.push(el("div"), el("div", { class: "wf-axis" }, ...ticks));
   nodes.push(el("div", { class: "wf" }, el("div", { class: "wf-grid" }, ...rows)));
   nodes.push(el("div", { class: "wf-legend" },
-    ...[["px", t("proxy")], ["srv", t("service")], ["conn", t("connecting")], ["db", t("database")], ["db n1", t("same query again and again")]]
+    ...[["px", t("proxy")], ["wait", t("waiting")], ["srv", t("service")], ["conn", t("connecting")], ["db", t("database")], ["db n1", t("same query again and again")]]
       .map(([kind, label]) => el("span", {}, el("i", { class: `wf-bar ${kind}` }), label))));
   if (db && db.more) nodes.push(el("p", { class: "muted" }, t("{n} quicker statements are not shown.", { n: db.more })));
   $("req-d-body").replaceChildren(...nodes);

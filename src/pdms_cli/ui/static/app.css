@@ -626,6 +626,7 @@ td .found-note { color: var(--muted); }
 .wf-track em { position: absolute; top: 50%; transform: translateY(-50%); padding-left: 4px; font: .7rem var(--mono); font-style: normal; color: var(--muted); white-space: nowrap; }
 .wf-bar { position: absolute; top: 50%; height: 11px; transform: translateY(-50%); border-radius: 3px; background: var(--accent); }
 .wf-bar.px { background: var(--muted); }
+.wf-bar.wait { background: repeating-linear-gradient(90deg, var(--muted) 0 3px, transparent 3px 6px); opacity: .7; }
 .wf-bar.conn { background: var(--warn); }
 .wf-bar.db { background: var(--db); }
 .wf-bar.db.n1 { background: repeating-linear-gradient(135deg, var(--db) 0 4px, var(--db-soft) 4px 6px); }
