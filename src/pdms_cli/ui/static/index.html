@@ -39,6 +39,7 @@
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M7.5 5l11 7-11 7z"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
   <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7.5 15h9"/></symbol>
   <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></symbol>
 </svg>
 <nav class="side" aria-label="Views">
@@ -47,6 +48,7 @@
   <a href="#stacks" data-view="stacks" title="Stacks"><svg class="i" aria-hidden="true"><use href="#i-stacks"/></svg><span class="lbl">Stacks</span><span class="cnt" id="stack-count"></span></a>
   <a href="#proxy" data-view="proxy" title="Requests"><svg class="i" aria-hidden="true"><use href="#i-proxy"/></svg><span class="lbl">Requests</span><span class="sdot" id="proxy-on"></span></a>
   <a href="#events" data-view="events" title="Events"><svg class="i" aria-hidden="true"><use href="#i-events"/></svg><span class="lbl">Events</span><span class="sdot" id="events-on"></span></a>
+  <a href="#tests" data-view="tests" title="Tests"><svg class="i" aria-hidden="true"><use href="#i-flask"/></svg><span class="lbl">Tests</span><span class="badge bad" id="tests-badge" hidden></span></a>
   <a href="#doctor" data-view="doctor" class="side-end" title="Doctor"><svg class="i" aria-hidden="true"><use href="#i-doctor"/></svg><span class="lbl">Doctor</span><span class="badge" id="doctor-badge" hidden></span></a>
   <a href="#settings" data-view="settings" title="Settings"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg><span class="lbl">Settings</span></a>
 </nav>
@@ -330,6 +332,55 @@
     <p class="empty card" id="sns-empty" hidden></p>
     <p class="muted note">With local events, whatever a service publishes to SNS, to any topic, stays here (queue <code>pdms-sns</code>, <code>pdms logs sns</code>) instead of reaching AWS.</p>
   </div>
+</section>
+
+<section class="view" id="view-tests" hidden>
+  <div class="bar">
+    <h1>Tests</h1><span class="muted" id="tests-summary"></span>
+    <div class="bar-actions push">
+      <button class="btn bad" id="tests-stop" type="button" hidden>Stop</button>
+      <button class="btn" id="tests-rerun" type="button" hidden>Re-run failed</button>
+      <button class="btn primary" id="tests-run" type="button">Run</button>
+    </div>
+  </div>
+  <div class="bar filter">
+    <div class="seg" id="tests-seg" role="group" aria-label="Show">
+      <button type="button" data-show="affected" aria-pressed="true">Affected by my changes <span></span></button>
+      <button type="button" data-show="failing" aria-pressed="false">Failing <span></span></button>
+      <button type="button" data-show="all" aria-pressed="false">All <span></span></button>
+    </div>
+    <input type="search" id="tests-filter" placeholder="Filter projects" aria-label="Filter projects" autocomplete="off">
+    <span class="muted" id="tests-base"></span>
+  </div>
+  <div class="bar filter tests-dbs-bar">
+    <span class="muted">Local databases</span>
+    <span class="tests-dbs" id="tests-dbs"></span>
+    <span class="muted" id="tests-parallel"></span>
+  </div>
+  <p class="error" id="tests-error" hidden></p>
+  <p class="error" id="tests-run-error" hidden></p>
+  <section class="card tests-nodb" id="tests-nodb" aria-labelledby="tests-nodb-title" hidden>
+    <h2 id="tests-nodb-title">No local database for tests</h2>
+    <p class="muted">Tests write and delete rows, so pdms runs them only against a local database, never a shared one like web-dev.</p>
+    <div class="bar-actions">
+      <button class="btn primary" id="tests-start-db" type="button">Start the test database</button>
+      <button class="btn" id="tests-add-db" type="button">Add a local database</button>
+    </div>
+    <p class="muted" id="tests-nodb-job" hidden></p>
+    <div class="bar-actions"><button class="btn small" id="tests-nodb-log" type="button" hidden>See the output</button></div>
+  </section>
+  <div class="selbar" id="tests-selbar" hidden>
+    <b id="tests-sel-count"></b>
+    <button class="btn small ghost push" id="tests-sel-clear" type="button">Clear</button>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th class="pick"><input type="checkbox" id="tests-all" aria-label="Select every project shown"></th><th>Project</th><th>Why</th><th>Result</th><th class="num">Duration</th><th>Ran</th><th></th></tr></thead>
+      <tbody id="tests-rows"></tbody>
+    </table>
+    <p class="empty" id="tests-empty" hidden></p>
+  </div>
+  <p class="muted note">The same as <code>pdms test</code>, whose runs also show here. Services share tables, so each local database runs one project at a time; pick more databases to run more at once.</p>
 </section>
 
 <section class="view" id="view-doctor" hidden>

@@ -32,6 +32,9 @@ import { flywayView, openFlyway, paintFlyway } from "./migrations.js";
 import { doctorReport, paintDoctor, runDoctor } from "./doctor.js";
 import { openPalette, paintPalette, palette, runPalette, typing, viewFilter } from "./palette.js";
 import { route } from "./router.js";
+import {
+  addLocalDb, paintTests, startDbLog, pickAllTests, rerunFailed, runShown, showTests, startTestDb, stopTests, testsView,
+} from "./tests.js";
 import { lineCheck, measureNow } from "./status.js";
 
 $("boot-fail").remove(); // the scripts loaded: the notice for an old pdms ui is not needed
@@ -50,6 +53,16 @@ $("svc-sel-restart").addEventListener("click", () => { const items = pickedItems
 $("set-change").addEventListener("change", setChange);
 $("set-all").addEventListener("click", () => setPick(true));
 $("set-none").addEventListener("click", () => setPick(false));
+$("tests-run").addEventListener("click", runShown);
+$("tests-rerun").addEventListener("click", rerunFailed);
+$("tests-stop").addEventListener("click", stopTests);
+$("tests-all").addEventListener("change", () => pickAllTests($("tests-all").checked));
+$("tests-sel-clear").addEventListener("click", () => { testsView.selected.clear(); paintTests(); });
+$("tests-filter").addEventListener("input", paintTests);
+$("tests-start-db").addEventListener("click", startTestDb);
+$("tests-add-db").addEventListener("click", addLocalDb);
+$("tests-nodb-log").addEventListener("click", startDbLog);
+for (const node of document.querySelectorAll("#tests-seg button")) node.addEventListener("click", () => showTests(node.dataset.show));
 $("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info")));
 $("adopt-all").addEventListener("click", () => adoptStrays(null));
 $("svc-filter").addEventListener("input", () => state && paintServices());
