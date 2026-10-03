@@ -57,6 +57,7 @@ class Request:
 
     def __init__(self):
         self.started = time.monotonic()
+        self.received_at = time.time()  # wall clock: pdms proxy, on this machine, compares it with its own
         self.answered = None
         self.statements = {}  # SQL text -> [count, seconds, first start, last end, caller]
         self.connect = 0.0
@@ -107,7 +108,7 @@ class Request:
         with self.lock:
             items = sorted(self.statements.items(), key=lambda item: -item[1][1])
             data = {
-                "v": 1,
+                "v": 1, "received_at": round(self.received_at, 4),
                 "answered_ms": round(((self.answered or time.monotonic()) - self.started) * 1000),
                 "connect_ms": round(self.connect * 1000), "connections": self.connections,
                 "transactions": self.transactions, "transaction_ms": round(self.transaction_seconds * 1000),

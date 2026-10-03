@@ -99,6 +99,17 @@ def query_detail(headers: list[tuple[str, str]]) -> dict | None:
     return None
 
 
+def place_in_time(db: dict, sent_at: float, total_ms: int) -> dict:
+    """``db`` with where the service's part falls in the proxy's time line: ``service_at_ms``, from when the proxy got
+    the request until the service did (the proxy's own work, then the service's queue: uvicorn and the other
+    requests of the page). Both clocks are this machine's."""
+    received = db.get("received_at")
+    if not isinstance(received, (int, float)):
+        return db
+    at = round((received - sent_at) * 1000)
+    return {**db, "service_at_ms": max(0, min(at, total_ms))}
+
+
 def db_totals(db: dict) -> tuple[int, int, int]:
     """``(queries, milliseconds in the database, times the most repeated statement ran)``."""
     statements = [s for s in db.get("statements", []) if isinstance(s, dict)]

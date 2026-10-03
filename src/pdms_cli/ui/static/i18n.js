@@ -24,6 +24,11 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "waiting for the service": "esperando al servicio",
+    "The proxy finding the route, then the service's own queue: uvicorn and the other requests of the page": "El proxy buscando la ruta, y luego la cola del propio servicio: uvicorn y las demás peticiones de la página",
+    "back": "de vuelta",
+    "The answer on its way back through the proxy": "La respuesta de vuelta a través del proxy",
+    "waiting": "esperando",
     "Branch of {repo}": "Rama de {repo}",
     "Current user": "Usuario actual",
     "Databases in use": "Bases de datos en uso",
