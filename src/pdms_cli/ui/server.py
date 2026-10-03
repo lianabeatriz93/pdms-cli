@@ -745,7 +745,8 @@ def make_app() -> tuple[Hub, ui_jobs.Jobs]:
     notify = {"on": Config.load().defaults.notify}
 
     def build() -> dict:
-        state = build_state(jobs=jobs.snapshot(), doctor=jobs.doctor.summary(), health=jobs.health.summary())
+        state = build_state(jobs=jobs.snapshot(), doctor=jobs.doctor.summary(), health=jobs.health.summary(),
+                            changes=jobs.changes.summary())
         i18n.set_language(state["language"])  # the server's own messages follow a change made in the CLI too
         notify["on"] = state["notify"]
         recent.observe(state, notify=state["notify"])

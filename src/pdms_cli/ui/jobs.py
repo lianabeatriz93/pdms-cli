@@ -21,6 +21,7 @@ from ..i18n import _
 from . import state as ui_state
 from . import updates as ui_updates
 from .control import Control
+from .changes import Changes
 from .doctor import Doctor
 from .health import Health
 
@@ -65,6 +66,7 @@ class Jobs:
         self._lock = threading.Lock()
         self.doctor = Doctor(on_change)
         self.health = Health(on_change)
+        self.changes = Changes(on_change)
 
     def snapshot(self) -> dict[str, dict]:
         with self._lock:

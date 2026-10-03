@@ -24,6 +24,21 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "1 running service runs old code": "1 servicio corriendo usa código viejo",
+    "Commits": "Commits",
+    "Every running service runs the current code.": "Todos los servicios que corren usan el código actual.",
+    "No new commits.": "No hay commits nuevos.",
+    "Reinstall and restart 1": "Reinstalar y reiniciar 1",
+    "Reinstall and restart {n}": "Reinstalar y reiniciar {n}",
+    "See what changed": "Ver qué cambió",
+    "What changed": "Qué cambió",
+    "installs on its next start": "se instala al arrancar",
+    "now at {commit}": "ahora en {commit}",
+    "old code": "código viejo",
+    "since the services started": "desde que arrancaron los servicios",
+    "{n} running services run old code": "{n} servicios corriendo usan código viejo",
+    "{parts} changed": "cambió {parts}",
+    "{parts} changed since they started: {names}.": "Cambió {parts} desde que arrancaron: {names}.",
     "1 selected": "1 seleccionado",
     "Change the user or the database of all of them": "Cambiar el usuario o la base de datos de todos",
     "None": "Ninguno",

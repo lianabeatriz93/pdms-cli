@@ -372,8 +372,14 @@ def start_service(
     return instances.start(
         launch.service, launch.cmd, service_env(cfg, launch), host=launch.host, port=launch.port,
         user=launch.user_name, db=launch.db_name, reload=launch.reload, deps=installed_parts(launch.service),
-        events=launch.events.kind, queue=launch.queue, parallel=launch.parallel,
+        events=launch.events.kind, queue=launch.queue, parallel=launch.parallel, commit=commit_of(cfg, launch.service),
     )
+
+
+def commit_of(cfg: Config, service: Path) -> str:
+    """The commit checked out in the service's repo ("" when it is not in a registered git checkout)."""
+    alias = repos.repo_of(cfg, service)
+    return repos.git_commit(cfg.repos[alias].root) if alias else ""
 
 
 def exec_service(cfg: Config, launch: ServiceLaunch) -> None:

@@ -101,6 +101,7 @@ def ui_cmd(
                      daemon=True).start()
     threading.Thread(target=jobs.doctor.watch, args=(stopped,), name="pdms-ui-doctor-watch", daemon=True).start()
     threading.Thread(target=jobs.health.watch, args=(stopped,), name="pdms-ui-health-watch", daemon=True).start()
+    threading.Thread(target=jobs.changes.watch, args=(stopped,), name="pdms-ui-changes-watch", daemon=True).start()
     console.print("[green]✓[/] " + _("pdms ui is running at {url}", url=url), highlight=False, soft_wrap=True)
     try:
         if window:

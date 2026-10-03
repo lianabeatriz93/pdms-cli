@@ -73,6 +73,8 @@ class Instance:
     queue: str = ""
     # Each request in its own thread (defaults.parallel_requests); False also for instances from older pdms.
     parallel: bool = False
+    # Commit of its repo when it started ("" when unknown): what changed since, for pdms ui's Home.
+    commit: str = ""
 
     @property
     def is_consumer(self) -> bool:
@@ -209,7 +211,7 @@ def spawn(cmd: list[str], cwd: Path, env: dict[str, str], log: Path) -> subproce
 
 def start(
     service: Path, cmd: list[str], env: dict[str, str], *, host: str, port: int, user: str, db: str, reload: bool,
-    deps: dict[str, str] | None = None, events: str = "aws", queue: str = "", parallel: bool = False,
+    deps: dict[str, str] | None = None, events: str = "aws", queue: str = "", parallel: bool = False, commit: str = "",
 ) -> Instance:
     key = make_key(service, port)
     log = log_path(key)
@@ -218,7 +220,7 @@ def start(
         key=key, pid=proc.pid, service=str(service), host=host, port=port, user=user, db=db,
         reload=reload, log=str(log), started_at=datetime.now().isoformat(timespec="seconds"),
         created=creation_time(proc.pid), deps=deps or {}, events=events, queue=queue,
-        parallel=parallel,
+        parallel=parallel, commit=commit,
     )
     instances = load()
     instances[key] = instance

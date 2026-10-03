@@ -448,6 +448,12 @@ td.wrap-detail .st { white-space: nowrap; }
 @media (max-width: 900px) {
   .home-lower { grid-template-columns: 1fr; }
 }
+.changed, .commits { list-style: none; margin: 0; padding: .3rem 0; font-size: .82rem; }
+.changed li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .1rem .8rem; padding: .4rem .85rem; border-bottom: 1px solid var(--line); align-items: center; }
+.changed li:last-child { border-bottom: 0; }
+.changed small { grid-column: 1; color: var(--muted); font-size: .76rem; }
+.commits li { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: .6rem; padding: .25rem .85rem; }
+.commits code { background: none; padding: 0; color: var(--muted); }
 
 /* Status bar: branch, user, the current database and its round trip, proxy, events, version. */
 .statusbar {
@@ -578,7 +584,7 @@ td .found-note { color: var(--muted); }
 .side .badge { color: var(--warn); background: var(--warn-soft); padding: 0 .4rem; border-radius: 999px; font: 600 .7rem/1.5 system-ui, sans-serif; }
 .side .badge.bad { color: var(--bad); background: var(--bad-soft); }
 .summary { display: flex; flex-wrap: wrap; gap: .4rem; }
-.st.warn { color: var(--warn); background: var(--warn-soft); }
+.st.warn { color: var(--warn); background: var(--warn-soft); padding: .05rem .5rem; border-radius: 999px; } /* not the .warn box */
 .st.fail { color: var(--bad); background: var(--bad-soft); }
 .checks { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr)); align-items: start; }
 .check-section { padding: 0; min-width: 0; }
