@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, events, frontend, health, i18n, instances, proxy
+from .. import actions, events, frontend, health, i18n, instances, proxy, testruns
 from ..config import Config
 from ..logview import LogFollower
 from . import instance as ui_instance
@@ -344,6 +344,11 @@ def make_handler(
                     self.reply_json(200, {"notes": ui_updates.notes(parse_qs(url.query).get("version", [""])[0])})
                 except actions.ActionError as exc:
                     self.reply_json(502, {"error": plain(exc.message)})
+            elif url.path == "/api/tests":
+                try:
+                    self.reply_json(200, ui_jobs.tests_info(Config.load(), jobs.tests))
+                except actions.ActionError as exc:
+                    self.reply_json(400, {"error": plain(exc.message)})
             elif url.path in ("/api/logs", "/api/logs/stream"):
                 self.logs(parse_qs(url.query), live=url.path.endswith("/stream"))
             else:
@@ -514,6 +519,12 @@ def make_handler(
                 if control.pick_folder is None:
                     return 404, {"error": "only in the window"}
                 return 200, {"path": control.pick_folder(str(body.get("start") or ""))}
+            if path == "/api/tests/run":
+                return 202, jobs.run_tests(body)
+            if path == "/api/tests/stop":
+                return 200, {"stopped": jobs.tests.stop()}
+            if path == "/api/tests/start-db":
+                return 202, {"job": jobs.start_test_db().key}
             if path == "/api/migrations/status":
                 return 200, ui_jobs.migration_status(body)
             if path == "/api/repos/check":
@@ -664,6 +675,14 @@ def make_handler(
             if key in (ui_updates.KEY, ui_instance.KEY):
                 path = ui_updates.log_path() if key == ui_updates.KEY else ui_instance.log_path()
                 return {"current": path, "previous": instances.previous_log_path(path)}.get(which)
+            if key.startswith("test:"):
+                try:
+                    root = ui_jobs.backend(Config.load())
+                except actions.ActionError:
+                    return None
+                project = key.removeprefix("test:")
+                return testruns.files(root, project)["log"] if which == "current" and project in \
+                    testruns.projects(root) else None
             if frontend.is_key(key):
                 return {"current": frontend.log_path(), "previous": instances.previous_log_path(frontend.log_path()),
                         "install": frontend.install_log_path(), "build": frontend.build_log_path()}.get(which)
@@ -755,7 +774,7 @@ def make_app() -> tuple[Hub, ui_jobs.Jobs]:
 
     def build() -> dict:
         state = build_state(jobs=jobs.snapshot(), doctor=jobs.doctor.summary(), health=jobs.health.summary(),
-                            changes=jobs.changes.summary())
+                            changes=jobs.changes.summary(), tests=jobs.tests.summary())
         i18n.set_language(state["language"])  # the server's own messages follow a change made in the CLI too
         notify["on"] = state["notify"]
         recent.observe(state, notify=state["notify"])

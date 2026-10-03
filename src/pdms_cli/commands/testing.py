@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -11,36 +12,101 @@ import questionary
 import typer
 from rich.table import Table
 
-from .. import completion, events, migrations, repos, runner
+from .. import actions, completion, events, migrations, prompts, repos, runner, testruns
 from ..config import Config
 from ..i18n import _
 from .common import PASSTHROUGH, app, console, fail, interactive_terminal, pick
-from .run import Profile, confirm_protected, ensure_installed
+from .run import ensure_installed
 from .services import resolve_service
 
 
-def run_in_service(service: Path, cmd: list[str], env: dict[str, str]) -> None:
+def run_in_service(service: Path, cmd: list[str], env: dict[str, str]) -> int:
     console.rule(" ".join([Path(cmd[0]).stem, *cmd[1:]]))
     try:
-        result = subprocess.run(cmd, cwd=service, env=env)
+        return subprocess.run(cmd, cwd=service, env=env).returncode
     except KeyboardInterrupt:
         raise typer.Exit(130)
-    raise typer.Exit(result.returncode)
+
+
+def resolve_project(cfg: Config, name: Optional[str], path: Optional[Path]) -> Path:
+    """A service as ``pdms run`` finds it, or a package with tests (``common/core``) by its path or folder name."""
+    backend = repos.active_backend(cfg)
+    if backend and backend.is_dir() and not path:
+        if name:
+            found = [backend / p for p in testruns.projects(backend) if name in (p, Path(p).name)]
+            if len(found) == 1 and not runner.is_service(found[0]):
+                return found[0]
+        else:
+            here = Path.cwd().resolve()
+            for folder in (here, *here.parents):
+                if not folder.is_relative_to(backend.resolve()):
+                    break
+                if (folder / "pyproject.toml").is_file() and (folder / "tests").is_dir() \
+                        and not runner.find_service_upwards(here):
+                    return folder
+    return resolve_service(cfg, name, path)
+
+
+def test_db(cfg: Config, db: Optional[str], start_db: bool) -> str:
+    """The local database the tests use: --db (refused when shared), the only local one, or a choice; without any,
+    the one of docker-compose_tests.yml (--start-db, or asked)."""
+    backend = repos.active_backend(cfg)
+    if start_db:
+        return start_compose_db(cfg, backend)
+    if db:
+        try:
+            testruns.require_local(cfg, db)
+        except actions.ActionError as exc:
+            fail(exc.message)
+        return db
+    local = testruns.local_dbs(cfg)
+    if len(local) == 1:
+        return local[0]
+    if local:
+        prompts.require_tty()
+        default = cfg.last_db if cfg.last_db in local else local[0]
+        return prompts.select_name(_("Choose {kind}:", kind=_("local database")), local, default)
+    compose = backend / testruns.TEST_DB_COMPOSE if backend else None
+    if compose and compose.is_file() and interactive_terminal() and questionary.confirm(
+        _("Tests only run against a local database and there is none. Start the one of {file} (Docker, port {port})?",
+          file=testruns.TEST_DB_COMPOSE, port=testruns.TEST_DB.port), default=True,
+    ).unsafe_ask():
+        return start_compose_db(cfg, backend)
+    fail(testruns.no_local_db_hint(backend))
+
+
+def start_compose_db(cfg: Config, backend: Optional[Path]) -> str:
+    if not backend:
+        fail(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
+    with console.status(_("Starting the test database ({file})...", file=testruns.TEST_DB_COMPOSE)):
+        try:
+            name = testruns.start_test_db(cfg, backend)
+        except actions.ActionError as exc:
+            fail(exc.message)
+    console.print("[green]✓[/] " + _("Test database '{name}' ready on port {port}.", name=name,
+                                      port=cfg.dbs[name].port))
+    return name
 
 
 @app.command(context_settings=PASSTHROUGH, help=_(
-    "Run the service's tests (poetry run pytest). Extra arguments go to pytest, e.g. pdms test -- -k name -x."
+    "Run the tests of a service or package (poetry run pytest) against a local database, never a shared one. "
+    "Extra arguments go to pytest, e.g. pdms test -- -k name -x. The result shows in pdms ui → Tests."
 ))
 def test(
     ctx: typer.Context,
     service: Optional[str] = typer.Argument(
-        None, help=_("Service (name or path relative to the backend folder)."), autocompletion=completion.services
+        None, help=_("Service or package (name or path relative to the backend folder)."),
+        autocompletion=completion.services,
     ),
     user: Optional[str] = typer.Option(
         None, "--user", "-u", help=_("Inject this user's DEV_* variables."), autocompletion=completion.users
     ),
     db: Optional[str] = typer.Option(
-        None, "--db", "-d", help=_("Inject this database's DB_PG_CONNECTION_STR."), autocompletion=completion.dbs
+        None, "--db", "-d", help=_("Local database for DB_PG_CONNECTION_STR (only local ones are allowed)."),
+        autocompletion=completion.local_dbs,
+    ),
+    start_db: bool = typer.Option(
+        False, "--start-db", help=_("Start the database of backend/docker-compose_tests.yml and use it."),
     ),
     install: Optional[bool] = typer.Option(
         None, "--install/--no-install", "-i/-n",
@@ -49,17 +115,27 @@ def test(
     path: Optional[Path] = typer.Option(None, "--path", "-C", help=_("Service folder (defaults to the current one).")),
 ) -> None:
     cfg = Config.load()
-    target = resolve_service(cfg, service, path)
-    env = runner.poetry_environ()
-    if user or db:
-        user_name = pick(cfg.users, _("user"), user, cfg.last_user)
-        db_name = pick(cfg.dbs, _("database"), db, cfg.last_db)
-        prof = Profile(target, user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], cfg.defaults.host, 0)
-        confirm_protected(cfg, prof, False)
-        env.update(runner.service_env(cfg.defaults, prof.user, prof.db))
-        console.print(_("Profile: {user} @ {db}", user=user_name, db=db_name))
+    target = resolve_project(cfg, service, path)
+    db_name = test_db(cfg, db, start_db)
+    dev_user = cfg.users[pick(cfg.users, _("user"), user)] if user else None
+    env = testruns.test_env(cfg, cfg.dbs[db_name], dev_user)
+    console.print(_("Database: {db} ({url})", db=db_name, url=cfg.dbs[db_name].url(mask=True))
+                  + (" · " + _("user {user}", user=user) if user else ""))
     ensure_installed(cfg, target, install)
-    run_in_service(target, [runner.poetry(), "run", "pytest", *ctx.args], env)
+    backend = repos.active_backend(cfg)
+    project = target.resolve().relative_to(backend.resolve()).as_posix() \
+        if backend and target.resolve().is_relative_to(backend.resolve()) else ""
+    if not project:
+        raise typer.Exit(run_in_service(target, [runner.poetry(), "run", "pytest", *ctx.args], env))
+    paths = testruns.files(backend, project)
+    paths["xml"].parent.mkdir(parents=True, exist_ok=True)
+    paths["xml"].unlink(missing_ok=True)
+    began = time.time()
+    code = run_in_service(target, testruns.pytest_command(paths["xml"], ctx.args), env)
+    if not any(a.startswith(("--junitxml", "--junit-xml")) for a in ctx.args):
+        testruns.record(backend, project, db=db_name, code=code, started=began, seconds=time.time() - began,
+                        commit=repos.git_commit(backend.parent), origin="cli")
+    raise typer.Exit(code)
 
 
 def resolve_migrations(cfg: Config, given: Optional[Path]) -> Path:

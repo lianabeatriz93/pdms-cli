@@ -149,7 +149,7 @@ def profiles(cfg: Config) -> dict[str, dict]:
 
 
 def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, doctor: dict | None = None,
-                health: dict | None = None, changes: dict | None = None) -> dict:
+                health: dict | None = None, changes: dict | None = None, tests: dict | None = None) -> dict:
     """Everything the page shows: repo, users and DBs (names only), instances, proxy, local events and jobs."""
     cfg = cfg or Config.load()
     items = list(instances.load().values())
@@ -187,5 +187,6 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, 
         "doctor": doctor or {"running": False, "at": "", "counts": {}, "problems": []},
         "health": health or {"dbs": [], "running": False, "slow_ms": 0},
         "changes": changes or {"stale": [], "pending": [], "commits": [], "head": "", "at": ""},
+        "tests": tests or {"running": [], "queued": [], "failing": 0, "version": 0, "error": ""},
         "jobs": jobs or {},
     }

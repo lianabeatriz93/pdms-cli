@@ -13,7 +13,7 @@ import typer
 from rich.markup import escape
 from rich.text import Text
 
-from .. import actions, desktop
+from .. import actions, desktop, repos
 from ..config import Config
 from ..i18n import _
 from .common import app, console, fail, settle
@@ -102,6 +102,8 @@ def ui_cmd(
     threading.Thread(target=jobs.doctor.watch, args=(stopped,), name="pdms-ui-doctor-watch", daemon=True).start()
     threading.Thread(target=jobs.health.watch, args=(stopped,), name="pdms-ui-health-watch", daemon=True).start()
     threading.Thread(target=jobs.changes.watch, args=(stopped,), name="pdms-ui-changes-watch", daemon=True).start()
+    threading.Thread(target=jobs.tests.count_failing, args=(repos.active_backend(Config.load()),),
+                     name="pdms-ui-tests-count", daemon=True).start()
     console.print("[green]✓[/] " + _("pdms ui is running at {url}", url=url), highlight=False, soft_wrap=True)
     try:
         if window:
