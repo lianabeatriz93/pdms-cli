@@ -351,12 +351,15 @@ def service_env(cfg: Config, launch: ServiceLaunch) -> dict[str, str]:
     extra = dict(launch.events.env)
     if launch.events.kind == "local" and (found := repo_event_map(cfg, launch.service)):
         extra.update(events.topic_env(*found))  # its own topics; the rest of the setup may be a whole stack's
-    if launch.parallel or cfg.defaults.warm_connections:
-        extra["PYTHONPATH"] = str(events.PATCH_DIR)  # its sitecustomize.py loads pdms_parallel.py
+    query_stats = cfg.defaults.query_stats and not launch.is_consumer
+    if launch.parallel or cfg.defaults.warm_connections or query_stats:
+        extra["PYTHONPATH"] = str(events.PATCH_DIR)  # its sitecustomize.py loads pdms_parallel.py and pdms_queries.py
         if launch.parallel:
             extra["PDMS_PARALLEL_REQUESTS"] = "1"
         if cfg.defaults.warm_connections:
             extra["PDMS_WARM_CONNECTIONS"] = str(cfg.defaults.warm_connections)
+        if query_stats:
+            extra["PDMS_QUERY_STATS"] = "1"
     return runner.build_env(cfg.defaults, launch.user, launch.db, extra)
 
 

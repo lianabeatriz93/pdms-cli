@@ -37,6 +37,7 @@ const DEFAULTS = [
   ["update_check", N_("Tell me about new pdms versions"), "check", N_("Checked at most once a day.")],
   ["ui_at_login", N_("Open pdms ui when I log in"), "check", N_("In the tray, without its window. To have it in the app menu too: pdms ui --install.")],
   ["parallel_requests", N_("Requests in parallel"), "check", N_("Each request of a service runs in its own thread, so a slow database query only holds up its own request. Applies when a service starts.")],
+  ["query_stats", N_("Database time per request"), "check", N_("Each request of a service says how long it spent in the database and which queries it ran; Proxy shows them with the request. Applies when a service starts.")],
   ["warm_connections", N_("Connections opened at start"), "number", N_("Database connections each service opens as soon as it starts, so its first requests don't wait for them (0: when needed). Applies when a service starts.")],
   ["notify", N_("Desktop notifications"), "check", N_("When a service fails to load or stops by itself, while pdms ui runs (also from the tray).")],
   ["env", N_("Extra environment variables"), "env", N_("Injected on every run, after the profile's own.")],

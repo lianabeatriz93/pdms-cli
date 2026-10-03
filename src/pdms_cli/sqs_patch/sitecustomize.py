@@ -11,7 +11,8 @@ one message in that local queue (``pdms events peek pdms-sns``) and answered lik
 machine; with ``PDMS_SNS_LOG`` it is also written there, readable (``pdms logs sns`` and the sns row of ``pdms ui``).
 Other SNS calls go to ElasticMQ, which rejects them, instead of the real AWS.
 
-The speed-ups for slow databases (requests in parallel, connections opened at start) live in pdms_parallel.py.
+The speed-ups for slow databases (requests in parallel, connections opened at start) live in pdms_parallel.py, and
+the database time and queries of each request in pdms_queries.py.
 """
 
 import base64
@@ -196,5 +197,12 @@ try:
     import pdms_parallel  # this folder: requests in parallel and connections opened at start (see that module)
 
     pdms_parallel.install()
+except Exception:  # noqa: BLE001 - same as above
+    pass
+
+try:
+    import pdms_queries  # this folder: database time and queries of each request (see that module)
+
+    pdms_queries.install()  # after pdms_parallel: it measures around the thread a request runs in
 except Exception:  # noqa: BLE001 - same as above
     pass

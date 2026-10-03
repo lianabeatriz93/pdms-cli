@@ -111,6 +111,9 @@ class Defaults:
     # Database connections each service opens as soon as it starts, so its first requests don't wait for them
     # (0: open them on demand, as the service would on its own).
     warm_connections: int = 2
+    # Each request of a service says how long it spent in the database and which queries it ran (pdms proxy keeps
+    # them for pdms ui; the service's log warns about the same query run many times). See sqs_patch/pdms_queries.py.
+    query_stats: bool = True
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 
