@@ -1,7 +1,8 @@
-"""Loaded by Python at startup in services run by pdms with local events (pdms puts this folder on PYTHONPATH).
+"""Loaded by Python at startup in services run by pdms (pdms puts this folder on PYTHONPATH).
 
-It sends every SQS client created through botocore to the local ElasticMQ given in ``PDMS_SQS_ENDPOINT``, with
-dummy credentials, without touching the service code or other AWS clients (S3 & co. keep their normal endpoint).
+With local events, it sends every SQS client created through botocore to the local ElasticMQ given in
+``PDMS_SQS_ENDPOINT``, with dummy credentials, without touching the service code or other AWS clients (S3 & co. keep
+their normal endpoint).
 PDMS services pin botocore 1.29, which predates ``AWS_ENDPOINT_URL_SQS``, hence the patch. Being a
 ``sitecustomize``, it also applies in every process uvicorn ``--reload`` spawns.
 
@@ -9,6 +10,8 @@ SNS has no local server: with ``PDMS_SNS_QUEUE_URL`` every ``Publish`` and ``Pub
 one message in that local queue (``pdms events peek pdms-sns``) and answered like AWS would, so nothing leaves the
 machine; with ``PDMS_SNS_LOG`` it is also written there, readable (``pdms logs sns`` and the sns row of ``pdms ui``).
 Other SNS calls go to ElasticMQ, which rejects them, instead of the real AWS.
+
+The speed-ups for slow databases (requests in parallel, connections opened at start) live in pdms_parallel.py.
 """
 
 import base64
@@ -187,4 +190,11 @@ def _patch() -> None:
 try:
     _patch()
 except Exception:  # noqa: BLE001 - a broken patch must never stop the service from starting
+    pass
+
+try:
+    import pdms_parallel  # this folder: requests in parallel and connections opened at start (see that module)
+
+    pdms_parallel.install()
+except Exception:  # noqa: BLE001 - same as above
     pass

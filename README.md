@@ -149,7 +149,24 @@ marked as protected.
 
 Options of `pdms run [SERVICE]`: `-u/--user`, `-d/--db`, `-p/--port`, `--host`, `-b/--background` / `-f/--foreground`,
 `-i/--install` / `-n/--no-install` (force / skip the install), `--reload/--no-reload`, `-y/--yes` (no confirmation for protected DBs),
-`-C/--path`.
+`-C/--path`, `--parallel/--no-parallel` (see below).
+
+### Slow databases
+
+PDMS services query the database synchronously inside `async` endpoints, so while one query waits, the whole service
+waits: through a slow line or a tunnel, the requests of a page queue up behind each other. `pdms` changes two things
+when it starts a service, without touching the repo (a `sitecustomize` on the service's `PYTHONPATH`, like local
+events; see `src/pdms_cli/sqs_patch/pdms_parallel.py`):
+
+- **Requests in parallel** (`parallel_requests = true`, or `pdms run --no-parallel` for one run): each request runs
+  in its own thread, so a slow query only holds up its own request. The log says `[pdms] requests run in parallel`;
+  `pdms ui` tags a service started without it as "one request at a time".
+- **Connections opened at start** (`warm_connections = 2`, 0 to turn it off): each service opens that many database
+  connections as soon as it starts, so its first requests don't wait for them (the log says how long they took).
+
+Neither makes a query faster: each one still costs what the line takes to go there and back. Both apply when a
+service starts (restart it after changing them), and only to services started by `pdms` (CLI, `pdms ui` or its
+Debug in VS Code), never in AWS.
 
 ### Smart install
 
@@ -601,6 +618,8 @@ events = "auto"                           # auto | local | aws: where services p
 events_port = 9324                        # local ElasticMQ (pdms events up)
 db_timeout = 15                           # seconds for `pdms db test` (or `pdms db test -t 30`)
 proxy_timeout = 300                       # seconds the proxy waits for an answer before a 502 (or `pdms proxy -t 600`)
+parallel_requests = true                  # each request of a service in its own thread (see "Slow databases")
+warm_connections = 2                      # database connections each service opens as it starts (0 = when needed)
 
 [defaults.env]
 # extra variables injected on every run

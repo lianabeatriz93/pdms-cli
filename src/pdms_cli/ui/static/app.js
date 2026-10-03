@@ -244,6 +244,14 @@ function lastPublish(item) {
   return item.last_publish ? t("last {time}", { time: new Date(item.last_publish).toLocaleTimeString() }) : t("nothing yet");
 }
 
+// Services answer requests in parallel by default: tell the ones that don't (started with --no-parallel, the setting
+// off, or by an older pdms).
+function serialTag(item) {
+  if (item.parallel !== false || item.isSns || item.isStray || item.queue || item.status === "stopped") return "";
+  return el("span", { class: "tag", title: t("A slow query holds up every other request of this service. Restart it to use the Requests in parallel setting.") },
+    t("one request at a time"));
+}
+
 function row(item) {
   const job = state.jobs[item.key];
   const running = item.status !== "stopped" && item.started_at && !(job && !job.error);
@@ -252,7 +260,7 @@ function row(item) {
     : el("td", running ? { class: "num", "data-started": item.started_at } : { class: "num" }, running ? uptime(item.started_at) : "");
   const kind = [item.key === logs.key ? "picked" : "", item.isStray ? "outside-row" : "", item.status === "error" ? "error-row" : ""].filter(Boolean).join(" ");
   return el("tr", kind ? { class: kind } : {},
-    el("td", { class: "mono" }, item.label || item.key),
+    el("td", { class: "mono" }, item.label || item.key, serialTag(item)),
     statusCell(item, job),
     el("td", { class: "mono" }, item.url || ""),
     el("td", {}, item.repo || "-"),
@@ -1935,6 +1943,8 @@ const DEFAULTS = [
   ["banner", N_("Show the PDMS banner"), "check", N_("When the interactive menu opens.")],
   ["update_check", N_("Tell me about new pdms versions"), "check", N_("Checked at most once a day.")],
   ["ui_at_login", N_("Open pdms ui when I log in"), "check", N_("In the tray, without its window. To have it in the app menu too: pdms ui --install.")],
+  ["parallel_requests", N_("Requests in parallel"), "check", N_("Each request of a service runs in its own thread, so a slow database query only holds up its own request. Applies when a service starts.")],
+  ["warm_connections", N_("Connections opened at start"), "number", N_("Database connections each service opens as soon as it starts, so its first requests don't wait for them (0: when needed). Applies when a service starts.")],
   ["notify", N_("Desktop notifications"), "check", N_("When a service fails to load or stops by itself, while pdms ui runs (also from the tray).")],
   ["env", N_("Extra environment variables"), "env", N_("Injected on every run, after the profile's own.")],
 ];
@@ -2301,7 +2311,7 @@ function settingInput(key, kind, value) {
     rows.append(button(t("Add variable"), () => { rows.lastChild.before(envRow("", "")); defaultsChanged(); rows.lastChild.previousSibling.firstChild.focus(); }));
     return rows;
   }
-  return el("input", kind === "number" ? { type: "number", id, min: "1", value: String(value) } : { id, value });
+  return el("input", kind === "number" ? { type: "number", id, min: key === "warm_connections" ? "0" : "1", value: String(value) } : { id, value });
 }
 
 function envRow(name, value) {

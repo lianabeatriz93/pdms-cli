@@ -514,6 +514,8 @@ ES: dict[str, str] = {
     "{seconds} s per request": "{seconds} s por petición",
     "Seconds to wait for each answer before replying 502 (default: the proxy_timeout setting).":
         "Segundos de espera por cada respuesta antes de devolver 502 (por defecto: el ajuste proxy_timeout).",
+    "Each request in its own thread, so a slow query only holds up its own (default: the parallel_requests setting).":
+        "Cada petición en su propio hilo, así una consulta lenta solo frena la suya (por defecto: el ajuste parallel_requests).",
     "Proxy timeout: seconds to wait for a service (slow databases need more):":
         "Tiempo de espera del proxy: segundos que espera a un servicio (con bases de datos lentas hace falta más):",
     "no answer after {seconds} s (raise it with pdms proxy --timeout or the proxy_timeout default)":
@@ -1087,6 +1089,10 @@ ES: dict[str, str] = {
         "No hay repo de migraciones (pdms-db-migrations) para '{alias}': configúralo en Configuración → Repos.",
     "Port of pdms proxy:":
         "Puerto de pdms proxy:",
+    "Run each request of a service in its own thread (a slow query only holds up its own request)?":
+        "¿Atender cada petición de un servicio en su propio hilo (una consulta lenta solo frena su propia petición)?",
+    "Database connections each service opens when it starts (0 = when needed):":
+        "Conexiones a la base de datos que abre cada servicio al arrancar (0 = cuando hagan falta):",
     "Port to listen on (default: the proxy_port setting, 28800).":
         "Puerto en el que escuchar (por defecto: el ajuste proxy_port, 28800).",
     "pdms takes the next free port; to start somewhere else, change it in the defaults.":

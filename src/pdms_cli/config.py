@@ -105,6 +105,12 @@ class Defaults:
     theme: str = "system"
     # pdms ui tells the desktop when a service fails to load or stops by itself (while it runs, also in the tray).
     notify: bool = True
+    # Each request of a service runs in its own thread, so a slow database query only holds up its own request
+    # (PDMS services query the database synchronously inside async endpoints). See sqs_patch/pdms_parallel.py.
+    parallel_requests: bool = True
+    # Database connections each service opens as soon as it starts, so its first requests don't wait for them
+    # (0: open them on demand, as the service would on its own).
+    warm_connections: int = 2
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 

@@ -251,6 +251,8 @@ def send_message(cfg: Config, event_map: events.EventMap, queue: str, message: s
 
 # --------------------------------------------------------------------------- services
 
+MAX_WARM_CONNECTIONS = 5  # the pool PDMS services keep (DB_PG_CONNECTION_POOL_SIZE); more would be closed again
+
 
 @dataclass
 class ServiceLaunch:
@@ -267,6 +269,7 @@ class ServiceLaunch:
     events: EventsSetup
     cmd: list[str]
     queue: str = ""
+    parallel: bool = False  # each request in its own thread (see sqs_patch/pdms_parallel.py)
 
     @property
     def is_consumer(self) -> bool:
@@ -284,6 +287,7 @@ def plan_service(
     reload: bool | None = None,
     events_mode: str | None = None,
     events_ready: EventsSetup | None = None,
+    parallel: bool | None = None,
 ) -> ServiceLaunch:
     """Decide how ``service`` runs. Raises :class:`PortBusy` or :class:`LocalEventsDown` for the user to answer.
 
@@ -308,6 +312,7 @@ def plan_service(
     return ServiceLaunch(
         service, user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], host, port, reload, setup, cmd,
         queue=consumer[0].name if consumer else "",
+        parallel=not consumer and (cfg.defaults.parallel_requests if parallel is None else parallel),
     )
 
 
@@ -346,6 +351,12 @@ def service_env(cfg: Config, launch: ServiceLaunch) -> dict[str, str]:
     extra = dict(launch.events.env)
     if launch.events.kind == "local" and (found := repo_event_map(cfg, launch.service)):
         extra.update(events.topic_env(*found))  # its own topics; the rest of the setup may be a whole stack's
+    if launch.parallel or cfg.defaults.warm_connections:
+        extra["PYTHONPATH"] = str(events.PATCH_DIR)  # its sitecustomize.py loads pdms_parallel.py
+        if launch.parallel:
+            extra["PDMS_PARALLEL_REQUESTS"] = "1"
+        if cfg.defaults.warm_connections:
+            extra["PDMS_WARM_CONNECTIONS"] = str(cfg.defaults.warm_connections)
     return runner.build_env(cfg.defaults, launch.user, launch.db, extra)
 
 
@@ -358,7 +369,7 @@ def start_service(
     return instances.start(
         launch.service, launch.cmd, service_env(cfg, launch), host=launch.host, port=launch.port,
         user=launch.user_name, db=launch.db_name, reload=launch.reload, deps=installed_parts(launch.service),
-        events=launch.events.kind, queue=launch.queue,
+        events=launch.events.kind, queue=launch.queue, parallel=launch.parallel,
     )
 
 
@@ -1327,6 +1338,7 @@ def save_defaults(cfg: Config, defaults: Defaults) -> None:
         events_port=_number("events_port", defaults.events_port, 1, 65535),
         db_timeout=_number("db_timeout", defaults.db_timeout, 1, 600),
         proxy_timeout=_number("proxy_timeout", defaults.proxy_timeout, 1, MAX_PROXY_TIMEOUT),
+        warm_connections=_number("warm_connections", defaults.warm_connections, 0, MAX_WARM_CONNECTIONS),
         proxy_port=_number("proxy_port", defaults.proxy_port, 1, 65535),
         theme=_one_of("theme", defaults.theme, THEMES),
         env=dict(defaults.env),
