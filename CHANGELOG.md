@@ -1,3 +1,9 @@
+## v0.3.4 (2026-10-03)
+
+### Feat
+
+- **run**: requests in parallel and connections opened at start, for slow databases
+
 ## v0.3.3 (2026-10-03)
 
 ### Feat
