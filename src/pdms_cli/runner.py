@@ -153,12 +153,3 @@ def exec_server(service: Path, cmd: list[str], env: dict[str, str]) -> None:
                 continue  # the server got the same Ctrl+C and is shutting down; wait for it
     os.chdir(service)
     os.execvpe(cmd[0], cmd, env)
-
-
-def test_connection(db: Database, timeout: int) -> str:
-    import psycopg
-
-    with psycopg.connect(
-        host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password, connect_timeout=timeout
-    ) as conn:
-        return conn.execute("select version()").fetchone()[0]

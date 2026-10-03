@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, events, frontend, i18n, instances, proxy
+from .. import actions, events, frontend, health, i18n, instances, proxy
 from ..config import Config
 from ..logview import LogFollower
 from . import instance as ui_instance
@@ -505,6 +505,11 @@ def make_handler(
                 if not isinstance(databases, bool):
                     raise actions.ActionError("databases must be true or false")
                 return (202, {}) if jobs.doctor.run(databases=databases) else (409, {"error": "Doctor is running."})
+            if path == "/api/health/run":
+                return (202, {}) if jobs.health.run() else (409, {"error": "Already measuring."})
+            if path == "/api/health/line":
+                ms = health.line()
+                return 200, {"ms": None if ms is None else round(ms), "host": health.LINE_HOST[0]}
             if path == "/api/ui/pick-folder":
                 if control.pick_folder is None:
                     return 404, {"error": "only in the window"}
@@ -725,7 +730,7 @@ def make_app() -> tuple[Hub, ui_jobs.Jobs]:
     notify = {"on": Config.load().defaults.notify}
 
     def build() -> dict:
-        state = build_state(jobs=jobs.snapshot(), doctor=jobs.doctor.summary())
+        state = build_state(jobs=jobs.snapshot(), doctor=jobs.doctor.summary(), health=jobs.health.summary())
         i18n.set_language(state["language"])  # the server's own messages follow a change made in the CLI too
         notify["on"] = state["notify"]
         recent.observe(state, notify=state["notify"])

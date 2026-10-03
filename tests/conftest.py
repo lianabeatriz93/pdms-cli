@@ -29,3 +29,13 @@ def fresh_strays():
     ui_state.forget_strays()
     yield
     ui_state.forget_strays()
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """Doctor's Network checks and pdms ui's health would reach the internet and resolve database host names: tests
+    get a quick line and direct routes (tests/test_health.py tries the real ones against local sockets)."""
+    from pdms_cli import health
+
+    monkeypatch.setattr(health, "line", lambda timeout=3: 20.0)
+    monkeypatch.setattr(health, "route", lambda db: health.Route("local" if db.host in health.LOCAL_NAMES else "direct"))

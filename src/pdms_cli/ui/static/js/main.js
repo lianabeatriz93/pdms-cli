@@ -32,8 +32,13 @@ import { flywayView, openFlyway, paintFlyway } from "./migrations.js";
 import { doctorReport, paintDoctor, runDoctor } from "./doctor.js";
 import { openPalette, paintPalette, palette, runPalette, typing, viewFilter } from "./palette.js";
 import { route } from "./router.js";
+import { lineCheck, measureNow } from "./status.js";
 
 $("boot-fail").remove(); // the scripts loaded: the notice for an old pdms ui is not needed
+$("db-pop-measure").addEventListener("click", measureNow);
+$("db-pop-line").addEventListener("click", lineCheck);
+document.addEventListener("click", (event) => { if (!$("db-pop").contains(event.target)) $("db-pop").hidden = true; });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") $("db-pop").hidden = true; });
 
 $("logs-close").addEventListener("click", closeLogs);
 $("logs-clear").addEventListener("click", clearLog);

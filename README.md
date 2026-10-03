@@ -374,11 +374,22 @@ Defaults, on by default) tell you when a service fails to load or stops by itsel
 **Ctrl K** (⌘K on macOS), or the search box in the title bar, finds and runs any action (restart or debug a
 service, open its logs, start a stack, go to a screen...); `/` jumps to the filter of the screen you are on.
 
+**Status bar.** At the bottom: the branch of the current repo, the user, the current database with what one round
+trip to it costs, the tunnel it goes through (a database whose host name points to this machine, like the SSM
+tunnels of devo-cli), the proxy, the local events and the pdms version. pdms ui measures the databases in use (the
+current one and those of the running services) once a minute with `select 1` on a connection it keeps open, so the
+number is what every query pays at least; the database opens the last hour of each one, **Measure now** and **Line
+check** (one connection to the internet, to tell a slow line from a slow way to the database). Home says when a
+database takes 300 ms or more per round trip, does not answer, or its tunnel is down.
+
 **Doctor** (in the sidebar) runs the checks of `pdms doctor`, grouped by section, with a filter, "Problems only" and,
 if asked, the database connections. Where pdms ui can fix something the hint is a button (edit that database, set the
 repo's migrations, forget stopped services...); otherwise it shows the command, ready to copy. **Copy report** copies
 them all as text. They run when pdms ui starts and every 15 minutes, so the sidebar shows how many warnings and
-problems there are, and Home's "Needs attention" lists the problems.
+problems there are, and Home's "Needs attention" lists the problems. Its **Network** section (also in `pdms doctor`)
+checks that something listens where each tunnel of a database should be, and how long one connection to the internet
+takes; with the database connections, each one shows its round trip, and a warning from 100 ms on. `pdms db test`
+shows the round trip too.
 
 The page uses the language of pdms (`pdms config language`, or `PDMS_LANG`) and changes with it while it is open.
 

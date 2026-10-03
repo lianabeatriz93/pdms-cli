@@ -12,6 +12,7 @@ import { paintUpdate, updateView } from "./updates.js";
 import { toggleRepoMenu } from "./repos.js";
 import { doctorView, loadDoctor, paintDoctor, paintDoctorBadge } from "./doctor.js";
 import { currentView } from "./router.js";
+import { paintStatus } from "./status.js";
 
 export let state = null;
 
@@ -41,10 +42,7 @@ function userChip() {
 function paintContext() {
   const repo = el("button", { class: "chip repo-chip", type: "button", "aria-haspopup": "menu", onclick: toggleRepoMenu },
     t("repo"), el("b", {}, (state.repo && state.repo.alias) || "-"));
-  const chips = [repo, userChip(), chip(t("db"), state.db)];
-  chips.push(chip(t("proxy"), state.proxy ? `:${state.proxy.port}` : t("off")));
-  chips.push(chip(t("events"), state.events.up ? `:${state.events.port}` : t("off")));
-  $("ctx").replaceChildren(...chips);
+  $("ctx").replaceChildren(repo, userChip()); // the database, proxy and events are in the status bar
 }
 
 // Settings → Defaults → Look: like the computer ("system"), or always light or dark.
@@ -63,11 +61,13 @@ export function paint(next) {
   // pdms ui restarted with a new version (an update): load its page, which may have changed too.
   if (updateView.loaded === null) updateView.loaded = next.version;
   else if (next.version !== updateView.loaded) { location.reload(); return; }
-  state = { jobs: {}, users: [], dbs: [], stacks: [], ...next };
+  // Defaults for what an older pdms ui server does not send yet (its page files may already be newer).
+  state = { jobs: {}, users: [], dbs: [], stacks: [], health: { dbs: [], running: false, slow_ms: 0 }, ...next };
   const relabel = useLanguage(state.language);
   if (themePreview === state.theme) themePreview = ""; // saved, or picked back
   useTheme(themePreview || state.theme);
   paintContext();
+  paintStatus();
   paintUpdate();
   paintDoctorBadge();
   if (currentView() === "doctor") {

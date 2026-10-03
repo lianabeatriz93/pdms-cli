@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import __version__, actions, events, frontend, instances, installer, migrations, proxy, repos, routes, runner, update
+from . import __version__, actions, events, frontend, health, instances, installer, migrations, proxy, repos, routes, runner, update
 from .config import Config, config_path
 from .i18n import _
 
@@ -174,8 +174,13 @@ def check_databases(cfg: Config, timeout: int) -> list[Check]:
     def probe(item: tuple[str, object]) -> Check:
         name, db = item
         try:
-            version = runner.test_connection(db, timeout)
-            return Check(section, name, OK, f"{db.host}:{db.port} · {version.split(',')[0]}")
+            version, ms = health.probe(db, timeout)
+            detail = _("{host}:{port} · {version} · {time} per round trip", host=db.host, port=db.port, version=version,
+                       time=health.describe_ms(ms))
+            if ms >= health.SLOW_MS:
+                return Check(section, name, WARN, detail, _("Every query pays at least this; a list request makes about six. "
+                                                            "A local copy of the database answers in a few ms."))
+            return Check(section, name, OK, detail)
         except Exception as exc:  # noqa: BLE001 - any driver error is the result
             return Check(section, name, FAIL, f"{db.host}:{db.port} · {str(exc).strip().splitlines()[0]}",
                          _("Check host/port/credentials with pdms db edit {name}, or the VPN.", name=name),
@@ -183,6 +188,35 @@ def check_databases(cfg: Config, timeout: int) -> list[Check]:
 
     with ThreadPoolExecutor(max_workers=min(8, len(cfg.dbs))) as pool:
         return list(pool.map(probe, cfg.dbs.items()))
+
+
+def check_network(cfg: Config) -> list[Check]:
+    """The tunnels the databases go through (without connecting to them) and the line to the internet."""
+    section = _("Network")
+    checks = []
+    for name, db in cfg.dbs.items():
+        way = health.route(db)
+        if way.kind != "tunnel":
+            continue
+        if way.up:
+            detail = f"{way.address} · {way.process}" if way.process else way.address
+            checks.append(Check(section, _("Tunnel to {name}", name=name), OK, detail))
+        else:
+            checks.append(Check(section, _("Tunnel to {name}", name=name), FAIL,
+                                _("nothing listens on {address}", address=way.address),
+                                _("{host} goes to this machine: start the tunnel to it again (the command your team "
+                                  "uses, e.g. devo ssm connect).", host=db.host)))
+    ms = health.line()
+    host = health.LINE_HOST[0]
+    if ms is None:
+        checks.append(Check(section, _("Internet"), WARN, _("no answer from {host} in 3 s", host=host),
+                            _("Without internet the remote API and the databases through tunnels do not answer.")))
+    elif ms >= health.VERY_SLOW_MS:
+        checks.append(Check(section, _("Internet"), WARN, _("{time} to {host}", time=health.describe_ms(ms), host=host),
+                            _("A slow line: every round trip to a remote database costs at least this.")))
+    else:
+        checks.append(Check(section, _("Internet"), OK, _("{time} to {host}", time=health.describe_ms(ms), host=host)))
+    return checks
 
 
 # ---------------------------------------------------------------------- repo, ports and instances
@@ -303,8 +337,8 @@ def check_instances(cfg: Config | None = None) -> list[Check]:
         return [Check(section, _("Instances"), OK, _("none running")), *outside]
     healths = instances.health_all(items)
     by_state: dict[str, list[str]] = {}
-    for key, health in healths.items():
-        by_state.setdefault(health.state, []).append(key)
+    for key, state in healths.items():
+        by_state.setdefault(state.state, []).append(key)
     checks = [Check(section, _("Instances"), OK, ", ".join(f"{len(v)} {k}" for k, v in sorted(by_state.items())))]
     if by_state.get("error"):
         checks.append(Check(section, _("With errors"), FAIL, ", ".join(by_state["error"]), "pdms ps / pdms logs <instance>",
@@ -324,4 +358,5 @@ def run_all(cfg: Config, *, databases: bool = True, timeout: int = 5) -> list[Ch
     checks = check_pdms() + check_tools() + check_config(cfg)
     if databases:
         checks += check_databases(cfg, timeout)
+    checks += check_network(cfg)
     return checks + check_repo(cfg) + check_frontend(cfg) + check_ports(cfg) + check_instances(cfg) + check_shell()
