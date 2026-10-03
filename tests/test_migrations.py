@@ -82,12 +82,13 @@ def test_other_flyway_commands_are_not_allowed(cli):
 
 
 def test_the_sibling_migrations_repo_is_found_and_remembered(cli, tmp_path, monkeypatch):
-    from pdms_cli import cli as cli_module, events
+    from pdms_cli import events
+    from pdms_cli.commands import testing
 
     monkeypatch.setattr(events, "docker_available", lambda: (True, "test"))
     monkeypatch.setattr(migrations, "image_present", lambda: True)
     calls = []
-    monkeypatch.setattr(cli_module.subprocess, "run", lambda cmd, env: calls.append((cmd, env)) or type("R", (), {"returncode": 0})())
+    monkeypatch.setattr(testing.subprocess, "run", lambda cmd, env: calls.append((cmd, env)) or type("R", (), {"returncode": 0})())
     result = cli("migrate", "info", "-d", "web-dev")
     assert result.exit_code == 0, result.output
     cmd, env = calls[0]

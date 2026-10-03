@@ -33,7 +33,7 @@ def find_service_upwards(start: Path) -> Path | None:
 
 def find_services_below(root: Path, max_depth: int = 4) -> list[Path]:
     found: list[Path] = []
-    for dirpath, dirnames, _ in os.walk(root):
+    for dirpath, dirnames, _files in os.walk(root):
         path = Path(dirpath)
         depth = len(path.relative_to(root).parts)
         dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS]

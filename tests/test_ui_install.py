@@ -15,6 +15,7 @@ import pytest
 from typer.testing import CliRunner
 
 from pdms_cli import __version__, actions, cli, desktop, proxy, transfer, update
+from pdms_cli.commands import selfupdate
 from pdms_cli.config import Config
 from pdms_cli.ui import instance as ui_instance
 from pdms_cli.ui import jobs as ui_jobs
@@ -372,7 +373,7 @@ def test_the_windows_helper_is_written_and_started(home, monkeypatch) -> None:
 
 
 def test_self_update_on_windows_hands_over_to_the_helper(home, monkeypatch) -> None:
-    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(selfupdate.sys, "platform", "win32")
     monkeypatch.setattr(update, "install_kind", lambda: "uv-tool")
     monkeypatch.setattr(update, "updates_itself", lambda: True)
     monkeypatch.setattr(update, "latest_version", lambda pre, timeout=10: "9.0.0")
