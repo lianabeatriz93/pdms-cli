@@ -520,7 +520,7 @@ def test_the_state_shows_which_stack_services_run(repo, machine, monkeypatch) ->
                         lambda items: {i.key: Health("ok" if i.alive() else "stopped") for i in items})
     monkeypatch.setattr(ui_state.events, "is_up", lambda port: False)
     assert ui_state.build_state(machine)["stacks"] == [{
-        "name": "leads", "user": "", "db": "",
+        "name": "leads", "user": "", "db": "", "overrides": {},
         "services": [{"path": "lead/lead-list", "running": ["svc@8081"]}, {"path": "lead/lead-get", "running": []}],
     }]
 

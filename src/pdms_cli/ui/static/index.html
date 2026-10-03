@@ -119,9 +119,15 @@
     </div>
     <span class="muted" id="svc-count"></span>
   </div>
+  <div class="selbar" id="svc-selbar" hidden>
+    <b id="svc-sel-count"></b>
+    <button class="btn small ghost push" id="svc-sel-clear" type="button">Clear</button>
+    <button class="btn small bad" id="svc-sel-stop" type="button">Stop</button>
+    <button class="btn small primary" id="svc-sel-restart" type="button">Restart…</button>
+  </div>
   <div class="tbl">
     <table>
-      <thead><tr><th>Instance</th><th>Status</th><th>URL</th><th>Repo</th><th>User</th><th>DB</th><th>Uptime</th><th></th></tr></thead>
+      <thead><tr><th class="pick"><input type="checkbox" id="svc-all" aria-label="Select every service"></th><th>Instance</th><th>Status</th><th>URL</th><th>Repo</th><th>User</th><th>DB</th><th>Uptime</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
     <p class="empty" id="empty" hidden>No background services. Start one here, with <code>pdms run -b</code> or with a stack.</p>
@@ -458,9 +464,19 @@
     </div>
     <label id="run-port-label" hidden>Port <input type="number" id="run-port" min="1" max="65535" placeholder="the next free one"></label>
     <p class="muted" id="run-consumer" hidden>An SQS consumer: it reads its queue from the local ElasticMQ and takes no port.</p>
+    <div class="picker" id="set-picker" hidden>
+      <div class="picker-bar">
+        <b id="set-count"></b>
+        <button class="btn small ghost push" type="button" id="set-all">All</button>
+        <button class="btn small ghost" type="button" id="set-none">None</button>
+      </div>
+      <div class="picker-list" id="set-services" aria-label="Services to restart"></div>
+    </div>
+    <label class="inline" id="set-change-label" hidden><input type="checkbox" id="set-change"> Change the user or the database of all of them</label>
     <label class="inline" id="restart-broker-label" hidden><input type="checkbox" id="restart-broker" checked> Also run the broker (broker-sqs-event), which routes events to their queues as in AWS</label>
-    <label>User <select id="restart-user"></select></label>
-    <label>Database <select id="restart-db"></select></label>
+    <label id="restart-user-label">User <select id="restart-user"></select></label>
+    <label id="restart-db-label">Database <select id="restart-db"></select></label>
+    <label class="inline" id="set-remember-label" hidden><input type="checkbox" id="set-remember"> Remember in the stack: pdms up starts them this way too</label>
     <fieldset>
       <legend>Install dependencies</legend>
       <label class="inline"><input type="radio" name="install" value="auto" checked> Only if something changed</label>
@@ -552,6 +568,10 @@
     </div>
     <label>User <select id="editor-user"></select></label>
     <label>Database <select id="editor-db"></select></label>
+    <fieldset id="editor-own" hidden>
+      <legend>With their own user or database</legend>
+      <div id="editor-overrides"></div>
+    </fieldset>
     <p class="error" id="editor-error" hidden></p>
     <div class="actions">
       <button class="btn ghost" type="button" id="editor-cancel">Cancel</button>

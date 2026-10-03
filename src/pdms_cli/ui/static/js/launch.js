@@ -6,7 +6,8 @@ import { logs, openLogs } from "./logs.js";
 import { slashes } from "./stacks.js";
 
 // go: what the dialog's button does, "restart" or "start" (its label comes from goLabel).
-const launch = { path: null, confirmed: false, after: null, run: false, service: "", go: "start" };
+// set: several instances restarted together (their keys), from a stack when stack is its name.
+const launch = { path: null, confirmed: false, after: null, run: false, service: "", go: "start", set: false, stack: "" };
 
 function goLabel() {
   return launch.go === "restart" ? t("Restart") : t("Start");
@@ -31,7 +32,9 @@ export function dbLabel(name) {
 
 // The user, database and install of a restart or a stack's up, asking again before a protected database.
 export function openLaunch({ title, key, hint, user, db, path, go, after, broker = false, run = false, service = "" }) {
-  Object.assign(launch, { path, after, run, service, confirmed: false });
+  Object.assign(launch, { path, after, run, service, confirmed: false, set: false, stack: "" });
+  $("set-picker").hidden = $("set-change-label").hidden = $("set-remember-label").hidden = true;
+  $("restart-user-label").hidden = $("restart-db-label").hidden = false;
   $("run-picker").hidden = $("run-port-label").hidden = !run;
   $("run-consumer").hidden = true;
   $("restart-broker-label").hidden = !broker;
@@ -46,6 +49,50 @@ export function openLaunch({ title, key, hint, user, db, path, go, after, broker
   $("restart-go").textContent = goLabel();
   $("restart-form").install.value = "auto";
   $("restart").showModal();
+}
+
+// Several instances at once: each keeps its own user and database unless "change" is ticked; from a stack, the change
+// can be remembered in it. They restart one after the other, each row showing its own progress.
+export function openRestartSet({ items, stack = "", picked = null }) {
+  openLaunch({
+    title: stack ? t("Restart stack") : t("Restart"), key: stack, user: items[0].user, db: items[0].db, go: "restart",
+    hint: t("Same ports, one after the other. Each keeps its user and database unless you change them for all."),
+    path: "/api/instances/restart",
+    after: (_install, data) => toast(t("Restarting {n}: each row shows its progress.", { n: data.jobs.length }), "info"),
+  });
+  Object.assign(launch, { set: true, stack });
+  $("set-services").replaceChildren(...items.map((item) => {
+    const box = el("input", { type: "checkbox", value: item.key });
+    box.checked = !picked || picked.includes(item.key);
+    box.addEventListener("change", setCount);
+    return el("label", { class: "pick" }, box, el("span", { class: "mono" }, item.key),
+      el("small", {}, t("{user} @ {db}", { user: item.user || "-", db: item.db || "-" })));
+  }));
+  $("set-picker").hidden = $("set-change-label").hidden = false;
+  $("set-change").checked = false;
+  $("set-remember").checked = false;
+  setChange();
+  setCount();
+}
+
+function setCount() {
+  const boxes = [...$("set-services").querySelectorAll("input")];
+  const n = boxes.filter((box) => box.checked).length;
+  $("set-count").textContent = t("{n} of {total}", { n, total: boxes.length });
+  $("restart-go").textContent = n === 1 ? t("Restart 1") : t("Restart {n}", { n });
+  $("restart-go").disabled = n === 0;
+}
+
+export function setChange() {
+  const change = $("set-change").checked;
+  $("restart-user-label").hidden = $("restart-db-label").hidden = !change;
+  $("set-remember-label").hidden = !change || !launch.stack;
+  resetConfirmation();
+}
+
+export function setPick(all) {
+  for (const box of $("set-services").querySelectorAll("input")) box.checked = all;
+  setCount();
 }
 
 export function openRestart(item) {
@@ -138,6 +185,14 @@ export async function submitLaunch(event) {
   event.preventDefault();
   const install = { auto: null, force: true, skip: false }[$("restart-form").install.value];
   const body = { user: $("restart-user").value, db: $("restart-db").value, install, confirmed: launch.confirmed };
+  if (launch.set) {
+    const change = $("set-change").checked;
+    Object.assign(body, {
+      keys: [...$("set-services").querySelectorAll("input:checked")].map((box) => box.value),
+      user: change ? body.user : null, db: change ? body.db : null,
+      stack: launch.stack || null, remember: change && Boolean(launch.stack) && $("set-remember").checked,
+    });
+  }
   if (!$("restart-broker-label").hidden) body.broker = $("restart-broker").checked;
   if (launch.service) Object.assign(body, { service: launch.service, port: null });
   if (launch.run) {
@@ -179,12 +234,13 @@ export async function submitLaunch(event) {
     $("restart-error").textContent = t("pdms ui is not reachable: is it still running?");
     $("restart-error").hidden = false;
   } finally {
-    $("restart-go").disabled = false;
+    $("restart-go").disabled = launch.set && !$("set-services").querySelector("input:checked");
   }
 }
 
 export function resetConfirmation() {
   launch.confirmed = false;
   $("restart-warn").hidden = true;
-  $("restart-go").textContent = goLabel();
+  if (launch.set) setCount();
+  else $("restart-go").textContent = goLabel();
 }

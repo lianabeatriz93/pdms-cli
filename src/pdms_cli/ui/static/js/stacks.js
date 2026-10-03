@@ -3,7 +3,7 @@
 import { $, act, button, el, failedText, icon, phaseLabel, post, toast } from "./core.js";
 import { state } from "./state.js";
 import { showLogs } from "./logs.js";
-import { dbLabel, fetchServices, openUp, options, runningNote, runningOn } from "./launch.js";
+import { dbLabel, fetchServices, openRestartSet, openUp, options, runningNote, runningOn } from "./launch.js";
 
 // What a stack without its own user or database shows.
 export function ask() {
@@ -29,13 +29,18 @@ function stackShown(stack) {
 // Stopped stacks are folded to one line; these were opened by hand (running ones are always open).
 const stacksView = { open: new Set() };
 
-function stackChip(svc, text) {
+// A service of the stack: its state, its ports (each opens its logs) and, when it starts with another user or database
+// than the rest (an exception remembered in the stack), which one.
+function stackChip(svc, text, own) {
   const cut = svc.path.lastIndexOf("/");
   const name = cut < 0 ? svc.path : svc.path.slice(cut + 1);
   const failing = svc.running.some((key) => (state.instances.find((i) => i.key === key) || {}).status === "error");
-  const kind = ["svc", svc.running.length ? (failing ? "bad" : "on") : "", text && svc.path.toLowerCase().includes(text) ? "hit" : ""];
-  return el("li", { class: kind.filter(Boolean).join(" "), title: svc.path },
+  const kind = ["svc", svc.running.length ? (failing ? "bad" : "on") : "", text && svc.path.toLowerCase().includes(text) ? "hit" : "",
+    own ? "other-profile" : ""];
+  const as = own ? [own.user, own.db].filter(Boolean).join(" @ ") : "";
+  return el("li", { class: kind.filter(Boolean).join(" "), title: as ? `${svc.path} · ${as}` : svc.path },
     el("span", { class: "name" }, name),
+    ...(as ? [el("span", { class: "as" }, as)] : []),
     ...svc.running.map((key) => button(key.slice(key.indexOf("@") + 1), () => showLogs(key), {
       class: "btn tiny link", title: t("Logs of {key}", { key }),
     })));
@@ -65,15 +70,18 @@ function stackCard(stack) {
   if (job && job.error) actions.append(button(t("Dismiss"), () => act(`${stackPath(stack.name)}/dismiss`)));
   if (!busy) {
     if (up < total) actions.append(button(t("Start"), () => openUp(stack), { class: "btn small primary" }));
+    if (up) actions.append(button(t("Restart…"), () => restartStack(stack)));
     if (up) actions.append(button(t("Stop"), () => act(`${stackPath(stack.name)}/down`), { class: "btn small bad" }));
     actions.append(button(t("Edit"), () => openEditor(stack)));
     actions.append(button(t("Delete"), () => removeStack(stack), { class: "btn small ghost" }));
   }
   const card = el("article", { class: `card stack${open ? "" : " folded"}` },
     el("header", {}, toggle, el("h2", { class: "mono" }, stack.name), status, actions),
-    el("p", { class: "muted meta" }, t("user {user} · db {db}", { user: stack.user || ask(), db: stack.db || ask() })),
+    el("p", { class: "muted meta" }, t("user {user} · db {db}", { user: stack.user || ask(), db: stack.db || ask() })
+      + (Object.keys(stack.overrides || {}).length ? ` · ${t("{n} with their own user or database", { n: Object.keys(stack.overrides).length })}` : "")),
   );
-  if (open) card.append(el("ul", { class: "svc-chips" }, ...stack.services.map((svc) => stackChip(svc, text))));
+  const overrides = stack.overrides || {};
+  if (open) card.append(el("ul", { class: "svc-chips" }, ...stack.services.map((svc) => stackChip(svc, text, overrides[svc.path]))));
   else {
     const names = stack.services.map((svc) => svc.path.slice(svc.path.lastIndexOf("/") + 1));
     card.append(el("p", { class: "folded-list mono" }, names.slice(0, 3).join(", ")
@@ -114,7 +122,7 @@ async function removeStack(stack) {
   }
 }
 
-const editor = { name: null, order: [], picked: new Set() };
+const editor = { name: null, order: [], picked: new Set(), overrides: {} };
 
 export function slashes(path) {
   return path.replaceAll("\\", "/").replace(/\/+$/, "");
@@ -130,6 +138,8 @@ export async function openEditor(stack = null) {
   editor.order = [...current, ...rest.filter((svc) => ports[svc]), ...rest.filter((svc) => !ports[svc])];
   editor.picked = new Set(current);
   editor.name = stack ? stack.name : null;
+  editor.overrides = stack ? JSON.parse(JSON.stringify(stack.overrides || {})) : {};
+  paintOverrides();
 
   $("editor-title").textContent = stack ? t("Edit {name}", { name: stack.name }) : t("New stack");
   $("editor-name-label").hidden = Boolean(stack);
@@ -168,6 +178,7 @@ export async function saveEditor(event) {
   const body = {
     services: editor.order.filter((svc) => editor.picked.has(svc)),
     user: $("editor-user").value, db: $("editor-db").value, new: !editor.name,
+    overrides: Object.fromEntries(Object.entries(editor.overrides || {}).filter(([svc]) => editor.picked.has(svc))),
   };
   if (!body.services.length) {
     $("editor-error").textContent = t("A stack needs at least one service.");
@@ -190,4 +201,22 @@ export async function saveEditor(event) {
   } finally {
     $("editor-save").disabled = false;
   }
+}
+
+// Restart all the running services of the stack, or the ones picked; with another user or database if asked, which the
+// stack can remember for them.
+function restartStack(stack) {
+  const items = stack.services.flatMap((svc) => svc.running).map((key) => state.instances.find((i) => i.key === key)).filter(Boolean);
+  if (items.length) openRestartSet({ items, stack: stack.name });
+}
+
+// The stack's exceptions (services that start with another user or database), each one removable.
+function paintOverrides() {
+  const entries = Object.entries(editor.overrides);
+  $("editor-own").hidden = !entries.length;
+  $("editor-overrides").replaceChildren(...entries.map(([svc, own]) => el("div", { class: "own-row" },
+    el("span", { class: "mono" }, svc), el("span", { class: "muted" }, [own.user, own.db].filter(Boolean).join(" @ ")),
+    button("✕", () => { delete editor.overrides[svc]; paintOverrides(); },
+      { class: "btn tiny ghost", title: t("Start it like the rest"), "aria-label": t("Start {service} like the rest", { service: svc }) }),
+  )));
 }
