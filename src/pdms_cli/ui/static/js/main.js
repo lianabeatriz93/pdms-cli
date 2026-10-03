@@ -6,9 +6,9 @@
 
 import { $, act, toast } from "./core.js";
 import { connect, paint, state } from "./state.js";
-import { adoptStrays, paintServices, servicesView, tickUptimes } from "./services.js";
+import { adoptStrays, paintServices, pickAllShown, pickedItems, servicesView, stopPicked, tickUptimes } from "./services.js";
 import { clearLog, closeLogs, logs, openLogs, showLogs } from "./logs.js";
-import { filterRun, openRun, resetConfirmation, submitLaunch } from "./launch.js";
+import { filterRun, openRestartSet, openRun, resetConfirmation, setChange, setPick, submitLaunch } from "./launch.js";
 import { filterEditor, openEditor, paintStacks, saveEditor } from "./stacks.js";
 import {
   closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyView, resetProxyPort, showDetailTab,
@@ -43,6 +43,13 @@ document.addEventListener("keydown", (event) => { if (event.key === "Escape") $(
 $("logs-close").addEventListener("click", closeLogs);
 $("logs-clear").addEventListener("click", clearLog);
 for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => openLogs(logs.key, tab.dataset.which));
+$("svc-all").addEventListener("change", () => pickAllShown($("svc-all").checked));
+$("svc-sel-clear").addEventListener("click", () => { servicesView.selected.clear(); paintServices(); });
+$("svc-sel-stop").addEventListener("click", stopPicked);
+$("svc-sel-restart").addEventListener("click", () => { const items = pickedItems(); if (items.length) openRestartSet({ items }); });
+$("set-change").addEventListener("change", setChange);
+$("set-all").addEventListener("click", () => setPick(true));
+$("set-none").addEventListener("click", () => setPick(false));
 $("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info")));
 $("adopt-all").addEventListener("click", () => adoptStrays(null));
 $("svc-filter").addEventListener("input", () => state && paintServices());

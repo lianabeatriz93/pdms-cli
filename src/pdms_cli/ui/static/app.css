@@ -131,13 +131,25 @@ td.row-actions .ibtn + .ibtn, td.row-actions .btn + .ibtn, td.row-actions .ibtn 
   .main { overflow: auto; min-height: 0; }
   .side { overflow-y: auto; min-height: 0; }
   .main:has(> #view-services:not([hidden])) { grid-template-rows: minmax(0, 1fr); align-content: stretch; }
-  #view-services:not([hidden]) { min-height: 0; grid-template-rows: auto auto minmax(8rem, 1fr); }
-  #view-services:not([hidden]):has(> .logs:not([hidden])) { grid-template-rows: auto auto minmax(8rem, 1fr) minmax(12rem, 1fr); }
-  #view-services > .tbl { overflow: auto; min-height: 0; }
+  #view-services:not([hidden]) { min-height: 0; display: flex; flex-direction: column; }
+  #view-services > * { flex: none; }
+  #view-services > .tbl { overflow: auto; min-height: 8rem; flex: 1 1 0; }
   #view-services > .tbl thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: inset 0 -1px 0 var(--line); }
-  #view-services > .logs { min-height: 0; overflow: hidden; grid-template-rows: auto minmax(0, 1fr); }
+  #view-services > .logs { min-height: 12rem; flex: 1 1 0; overflow: hidden; grid-template-rows: auto minmax(0, 1fr); }
   #view-services > .logs .logs-text { height: auto; min-height: 0; resize: none; }
 }
+/* Picking several services: a checkbox column and the bar of what is picked. */
+.tbl th.pick, .tbl td.pick { width: 2rem; padding-right: 0; }
+.tbl td.pick input, .tbl th.pick input { width: 15px; height: 15px; accent-color: var(--primary); vertical-align: -2px; }
+.tbl tr.chosen td { background: color-mix(in srgb, var(--accent-soft) 60%, var(--surface)); }
+.selbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; padding: .5rem .8rem; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 8px; font-size: .84rem; }
+.selbar b { color: var(--accent); }
+.group .btn.small { margin-left: .6rem; text-transform: none; letter-spacing: 0; }
+.picker-list label small { margin-left: auto; color: var(--muted); font-size: .74rem; }
+.svc.other-profile { box-shadow: inset 3px 0 0 var(--db); }
+.svc .as { color: var(--db); font-size: .7rem; }
+.own-row { display: flex; align-items: center; gap: .6rem; font-size: .82rem; padding: .15rem 0; }
+.own-row .btn { margin-left: auto; }
 .tbl td.row-actions { position: sticky; right: 0; background: var(--surface); box-shadow: -10px 0 10px -10px rgb(0 0 0 / .25); }
 .tbl tr.current td.row-actions { background: var(--accent-soft); }
 #rows tr.group td { background: var(--bg); padding: .3rem .7rem; font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }

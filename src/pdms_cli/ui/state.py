@@ -41,7 +41,7 @@ def stacks_state(cfg: Config, live: dict[str, list[str]]) -> list[dict]:
     root = backend.resolve() if backend and backend.is_dir() else None
     return [
         {
-            "name": name, "user": stack.user, "db": stack.db,
+            "name": name, "user": stack.user, "db": stack.db, "overrides": stack.overrides,
             "services": [
                 {"path": svc, "running": live.get(str(root / svc), []) if root else []} for svc in stack.services
             ],

@@ -103,7 +103,7 @@ function tracebackRow(item) {
       pre.append(el("span", EXCEPTION.test(line.text) ? { class: "exc" } : {}, line.text), "\n");
     }
   }
-  return el("tr", { class: "trace-row error-row" }, el("td", { colspan: "8" }, pre));
+  return el("tr", { class: "trace-row error-row" }, el("td", { colspan: "9" }, pre));
 }
 
 function lastPublish(item) {
@@ -118,14 +118,32 @@ function serialTag(item) {
     t("one request at a time"));
 }
 
+// A pdms instance (not the proxy, the local SNS, the frontend nor a process outside pdms) can be picked.
+function selectable(item) {
+  return !item.isProxy && !item.isSns && !item.isStray && !item.isFrontend && !item.placeholder;
+}
+
+function pickCell(item) {
+  if (!selectable(item)) return el("td", { class: "pick" });
+  const box = el("input", { type: "checkbox", "aria-label": t("Select {key}", { key: item.key }) });
+  box.checked = servicesView.selected.has(item.key);
+  box.addEventListener("change", () => {
+    if (box.checked) servicesView.selected.add(item.key); else servicesView.selected.delete(item.key);
+    paintServices();
+  });
+  return el("td", { class: "pick" }, box);
+}
+
 function row(item) {
   const job = state.jobs[item.key];
   const running = item.status !== "stopped" && item.started_at && !(job && !job.error);
   const uptimeCell = item.isSns
     ? el("td", { class: "num muted" }, lastPublish(item))
     : el("td", running ? { class: "num", "data-started": item.started_at } : { class: "num" }, running ? uptime(item.started_at) : "");
-  const kind = [item.key === logs.key ? "picked" : "", item.isStray ? "outside-row" : "", item.status === "error" ? "error-row" : ""].filter(Boolean).join(" ");
+  const kind = [item.key === logs.key ? "picked" : "", item.isStray ? "outside-row" : "", item.status === "error" ? "error-row" : "",
+    servicesView.selected.has(item.key) ? "chosen" : ""].filter(Boolean).join(" ");
   return el("tr", kind ? { class: kind } : {},
+    pickCell(item),
     el("td", { class: "mono" }, item.label || item.key, serialTag(item)),
     statusCell(item, job),
     el("td", { class: "mono" }, item.url || ""),
@@ -187,7 +205,8 @@ function serviceShown(item) {
     .join(" ").toLowerCase().includes(text);
 }
 
-export const servicesView = { show: "all", traces: new Set() }; // traces: keys whose traceback is open
+// traces: keys whose traceback is open; selected: keys picked to restart or stop together
+export const servicesView = { show: "all", traces: new Set(), selected: new Set() };
 
 const EXCEPTION = /^[\w.]*(Error|Exception|Exit)\b/;
 
@@ -209,7 +228,15 @@ function groupedRows(items) {
   const rows = [];
   for (const name of order) {
     const label = name === "\u0001other" ? t("Other") : name === "\u0002outside" ? t("Outside pdms") : t("Stack {name}", { name });
-    const head = el("td", { colspan: "7" }, label, el("span", { class: "muted" }, ` · ${groups.get(name).length}`));
+    const head = el("td", { colspan: "8" }, label, el("span", { class: "muted" }, ` · ${groups.get(name).length}`));
+    const pickable = groups.get(name).filter(selectable).map((item) => item.key);
+    if (name !== "\u0002outside" && pickable.length > 1) {
+      const all = pickable.every((key) => servicesView.selected.has(key));
+      head.append(button(all ? t("Unselect them") : t("Select all {n}", { n: pickable.length }), () => {
+        for (const key of pickable) if (all) servicesView.selected.delete(key); else servicesView.selected.add(key);
+        paintServices();
+      }, { class: "btn small ghost" }));
+    }
     const extra = el("td", { class: "row-actions" });
     if (name === "\u0002outside" && groups.get(name).length > 1) extra.append(button(t("Adopt all"), () => adoptStrays(null)));
     rows.push(el("tr", { class: "group" }, head, extra));
@@ -223,8 +250,11 @@ function groupedRows(items) {
 
 export function paintServices() {
   const items = serviceItems();
+  const pickable = new Set(items.filter(selectable).map((item) => item.key));
+  for (const key of servicesView.selected) if (!pickable.has(key)) servicesView.selected.delete(key); // gone meanwhile
   const shown = items.filter(serviceShown);
   $("rows").replaceChildren(...groupedRows(shown));
+  paintSelection(items.filter((item) => pickable.has(item.key)), shown.filter(selectable));
   const counts = { all: items.length, problems: items.filter(problem).length, outside: items.filter((item) => item.isStray).length };
   for (const node of document.querySelectorAll("#svc-seg button")) {
     node.querySelector("span").textContent = String(counts[node.dataset.show]);
@@ -251,4 +281,35 @@ export function paintServices() {
 
 export function tickUptimes() {
   for (const cell of document.querySelectorAll("[data-started]")) cell.textContent = uptime(cell.dataset.started);
+}
+
+// The bar of what is picked, and the header's box that picks every shown service.
+function paintSelection(pickable, shownPickable) {
+  const picked = pickable.filter((item) => servicesView.selected.has(item.key));
+  $("svc-selbar").hidden = !picked.length;
+  $("svc-sel-count").textContent = picked.length === 1 ? t("1 selected") : t("{n} selected", { n: picked.length });
+  $("svc-sel-stop").textContent = t("Stop {n}", { n: picked.length });
+  $("svc-sel-restart").textContent = t("Restart {n}…", { n: picked.length });
+  const all = $("svc-all");
+  all.checked = shownPickable.length > 0 && shownPickable.every((item) => servicesView.selected.has(item.key));
+  all.indeterminate = !all.checked && shownPickable.some((item) => servicesView.selected.has(item.key));
+  all.disabled = !shownPickable.length;
+}
+
+export function pickedItems() {
+  return serviceItems().filter((item) => selectable(item) && servicesView.selected.has(item.key));
+}
+
+export function pickAllShown(on) {
+  for (const item of serviceItems().filter(serviceShown).filter(selectable)) {
+    if (on) servicesView.selected.add(item.key); else servicesView.selected.delete(item.key);
+  }
+  paintServices();
+}
+
+export function stopPicked() {
+  const keys = pickedItems().map((item) => item.key);
+  for (const key of keys) act(`/api/instances/${encodeURIComponent(key)}/stop`);
+  servicesView.selected.clear();
+  paintServices();
 }
