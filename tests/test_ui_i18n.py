@@ -94,8 +94,12 @@ def page_texts() -> set[str]:
 JS_STRING = r'"((?:\\.|[^"\\])*)"'
 
 
+def page_scripts() -> str:
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted((STATIC / "js").glob("*.js")))
+
+
 def js_texts() -> set[str]:
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+    source = page_scripts()
     return {json.loads(f'"{text}"') for text in re.findall(r"\b(?:t|N_)\(\s*" + JS_STRING, source)}
 
 
@@ -130,6 +134,6 @@ def test_placeholders_and_markup_match() -> None:
             re.findall(r"</?\w+>", english)) == sorted(re.findall(r"</?\w+>", spanish)), english
 
 
-def test_app_js_never_passes_a_template_to_t() -> None:
-    source = (STATIC / "app.js").read_text(encoding="utf-8")
+def test_the_scripts_never_pass_a_template_to_t() -> None:
+    source = page_scripts()
     assert not re.findall(r"\b(?:t|N_)\(\s*`", source)

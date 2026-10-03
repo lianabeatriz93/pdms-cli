@@ -1,0 +1,209 @@
+// pdms ui: paints /api/state, follows /api/stream and runs the actions. Text only goes in through textContent,
+// never as HTML. Every text it shows is translated with the t and N_ functions of i18n.js (loaded before, global).
+//
+// This module wires the page's controls and starts painting. router.js decides which screen shows; each screen
+// lives in its own module, and core.js has the helpers they share.
+
+import { $, act, toast } from "./core.js";
+import { connect, paint, state } from "./state.js";
+import { adoptStrays, paintServices, servicesView, tickUptimes } from "./services.js";
+import { clearLog, closeLogs, logs, openLogs, showLogs } from "./logs.js";
+import { filterRun, openRun, resetConfirmation, submitLaunch } from "./launch.js";
+import { filterEditor, openEditor, paintStacks, saveEditor } from "./stacks.js";
+import {
+  closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyView, resetProxyPort, showProxyTab,
+  submitProxyStart,
+} from "./proxy.js";
+import {
+  brokerQueue, closePeek, eventsView, eventsVisible, fillTemplate, loadQueues, openConsumerStart, openEventsUp,
+  openPeek, openSend, paintEvents, paintMap, paintQueues, paintSns, purge, sendTargetChanged, showEventsTab, stopEvents,
+  submitSend,
+} from "./events.js";
+import {
+  defaultsChanged, filterDefaults, findDbUsers, openDb, openExport, openUser, openUserImport, paintDbs, paintDefaults,
+  paintImport, paintUsers, readImport, saveDb, saveDefaults, saveUser, settingsView, showSettingsTab, submitExport,
+  submitImport, submitUserImport, testDbForm, toggleDbPassword, usersCount,
+} from "./settings.js";
+import { openFrontendStart, paintFrontendMode, resetFrontendPort, submitFrontendStart } from "./frontend.js";
+import { saveSetup, startAll, stopAll } from "./home.js";
+import { UPDATE_JOB, checkNow, copyCommand, openUpdate, submitUpdate } from "./updates.js";
+import { browseRepo, openRepo, paintRepos, repoForm, repoPathChanged, saveRepo, submitSwitch } from "./repos.js";
+import { flywayView, openFlyway, paintFlyway } from "./migrations.js";
+import { doctorReport, paintDoctor, runDoctor } from "./doctor.js";
+import { openPalette, paintPalette, palette, runPalette, typing, viewFilter } from "./palette.js";
+import { route } from "./router.js";
+
+$("logs-close").addEventListener("click", closeLogs);
+$("logs-clear").addEventListener("click", clearLog);
+for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => openLogs(logs.key, tab.dataset.which));
+$("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info")));
+$("adopt-all").addEventListener("click", () => adoptStrays(null));
+$("svc-filter").addEventListener("input", () => state && paintServices());
+for (const node of document.querySelectorAll("#svc-seg button")) {
+  node.addEventListener("click", () => { servicesView.show = node.dataset.show; if (state) paintServices(); });
+}
+$("stack-filter").addEventListener("input", () => state && paintStacks());
+$("stack-running").addEventListener("change", () => state && paintStacks());
+$("run-new").addEventListener("click", () => state && openRun());
+$("run-filter").addEventListener("input", filterRun);
+$("run-filter").addEventListener("keydown", (event) => { if (event.key === "Enter") event.preventDefault(); });
+$("run-port").addEventListener("input", resetConfirmation);
+$("restart-form").addEventListener("submit", submitLaunch);
+$("stack-new").addEventListener("click", () => openEditor());
+$("editor-form").addEventListener("submit", saveEditor);
+$("editor-cancel").addEventListener("click", () => $("editor").close());
+$("editor-filter").addEventListener("input", filterEditor);
+$("editor-filter").addEventListener("keydown", (event) => { if (event.key === "Enter") event.preventDefault(); });
+$("proxy-start").addEventListener("click", openProxyStart);
+$("proxy-stop").addEventListener("click", () => act(`/api/instances/${encodeURIComponent(state.proxy.key)}/stop`));
+$("proxy-form").addEventListener("submit", submitProxyStart);
+$("proxy-cancel").addEventListener("click", () => $("proxy-dialog").close());
+$("proxy-port").addEventListener("input", resetProxyPort);
+$("proxy-no-remote").addEventListener("change", () => { $("proxy-remote").disabled = $("proxy-no-remote").checked; });
+for (const tab of $("proxy-tabs").children) tab.addEventListener("click", () => showProxyTab(tab.dataset.tab));
+$("req-filter").addEventListener("input", paintRequests);
+$("req-errors").addEventListener("change", paintRequests);
+$("req-clear").addEventListener("click", () => { proxyView.requests = []; closeRequest(); paintRequests(); });
+$("req-d-close").addEventListener("click", () => closeRequest());
+$("route-filter").addEventListener("input", paintRoutes);
+$("route-local").addEventListener("change", paintRoutes);
+$("route-refresh").addEventListener("click", loadRoutes);
+$("events-start").addEventListener("click", openEventsUp);
+$("events-off-start").addEventListener("click", openEventsUp);
+$("events-off-browse").addEventListener("click", () => { eventsView.browse = true; paintEvents(); showEventsTab(eventsView.tab); });
+$("events-stop").addEventListener("click", stopEvents);
+$("events-send").addEventListener("click", () => openSend());
+$("events-broker").addEventListener("click", () => openConsumerStart(brokerQueue().consumer, "broker"));
+for (const tab of $("events-tabs").children) tab.addEventListener("click", () => showEventsTab(tab.dataset.tab));
+$("queue-filter").addEventListener("input", paintQueues);
+$("queue-busy").addEventListener("change", paintQueues);
+$("queue-purge-all").addEventListener("click", () => purge([]));
+$("peek-refresh").addEventListener("click", () => openPeek(eventsView.peek));
+$("peek-purge").addEventListener("click", () => purge([eventsView.peek]));
+$("peek-close").addEventListener("click", closePeek);
+$("type-filter").addEventListener("input", paintMap);
+$("sns-topic").addEventListener("change", paintSns);
+$("sns-filter").addEventListener("input", paintSns);
+$("sns-clear").addEventListener("click", () => { eventsView.sns = []; paintSns(); });
+$("send-form").addEventListener("submit", submitSend);
+$("send-cancel").addEventListener("click", () => $("send").close());
+$("send-template").addEventListener("click", fillTemplate);
+$("send-target").addEventListener("input", sendTargetChanged);
+setInterval(() => { if (eventsVisible("queues") && state && state.events.up) loadQueues(); }, 3000);
+window.addEventListener("hashchange", route);
+route();
+$("restart-cancel").addEventListener("click", () => $("restart").close());
+for (const tab of $("settings-tabs").children) tab.addEventListener("click", () => showSettingsTab(tab.dataset.tab));
+$("db-filter").addEventListener("input", paintDbs);
+$("db-protected").addEventListener("change", paintDbs);
+$("db-new").addEventListener("click", () => openDb());
+$("db-form").addEventListener("submit", saveDb);
+$("db-cancel").addEventListener("click", () => $("db-dialog").close());
+$("db-test").addEventListener("click", testDbForm);
+$("db-eye").addEventListener("click", toggleDbPassword);
+$("db-password").addEventListener("input", () => { settingsView.passwordTouched = true; });
+$("db-protected-box").addEventListener("change", () => { settingsView.protectedTouched = true; });
+
+// Like pdms db add: a database that is not on this machine is protected unless said otherwise.
+$("db-host").addEventListener("input", () => {
+  if (!settingsView.protectedTouched) $("db-protected-box").checked = !["localhost", "127.0.0.1", ""].includes($("db-host").value.trim());
+});
+for (const form of ["db-form", "user-form"]) {
+  $(form).addEventListener("input", (event) => event.target.removeAttribute("aria-invalid"));
+}
+$("user-filter").addEventListener("input", paintUsers);
+$("user-new").addEventListener("click", () => openUser());
+$("user-form").addEventListener("submit", saveUser);
+$("user-cancel").addEventListener("click", () => $("user-dialog").close());
+$("defaults-filter").addEventListener("input", filterDefaults);
+$("defaults-form").addEventListener("input", defaultsChanged);
+$("defaults-form").addEventListener("change", defaultsChanged);
+$("defaults-form").addEventListener("submit", (event) => { event.preventDefault(); if (defaultsChanged()) saveDefaults(); });
+$("defaults-save").addEventListener("click", saveDefaults);
+$("defaults-discard").addEventListener("click", paintDefaults);
+$("settings-export").addEventListener("click", () => settingsView.data && openExport());
+$("export-secrets").addEventListener("change", () => { $("export-warn").hidden = !$("export-secrets").checked; });
+$("export-form").addEventListener("submit", submitExport);
+$("export-cancel").addEventListener("click", () => $("export-dialog").close());
+$("settings-import").addEventListener("click", () => $("import-file").click());
+$("import-file").addEventListener("change", readImport);
+$("import-form").addEventListener("change", (event) => { if (event.target.name === "mode") paintImport(); });
+$("import-form").addEventListener("submit", submitImport);
+$("import-cancel").addEventListener("click", () => $("import-dialog").close());
+$("user-import").addEventListener("click", () => settingsView.data && openUserImport());
+$("users-find").addEventListener("click", findDbUsers);
+$("users-search").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); findDbUsers(); } });
+$("users-found").addEventListener("change", usersCount);
+$("users-all").addEventListener("change", () => {
+  for (const box of $("users-found").querySelectorAll("input")) box.checked = $("users-all").checked;
+  usersCount();
+});
+$("users-form").addEventListener("submit", submitUserImport);
+$("users-cancel").addEventListener("click", () => $("users-dialog").close());
+$("restart-db").addEventListener("change", resetConfirmation);
+$("front-new").addEventListener("click", () => openFrontendStart());
+$("front-form").addEventListener("submit", submitFrontendStart);
+$("front-cancel").addEventListener("click", () => $("front-dialog").close());
+$("front-form").addEventListener("change", (event) => {
+  if (event.target.name === "mode") paintFrontendMode();
+  if (event.target.name === "mode" || event.target.id === "front-rebuild") resetFrontendPort();
+});
+$("home-start").addEventListener("click", () => startAll());
+$("update-chip").addEventListener("click", openUpdate);
+document.addEventListener("click", (event) => { if (!$("repo-menu").contains(event.target)) $("repo-menu").hidden = true; });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") $("repo-menu").hidden = true; });
+$("repo-filter").addEventListener("input", () => settingsView.data && paintRepos());
+$("repo-new").addEventListener("click", () => openRepo());
+$("repo-form").addEventListener("submit", saveRepo);
+$("repo-cancel").addEventListener("click", () => $("repo-dialog").close());
+$("repo-browse").addEventListener("click", browseRepo);
+$("repo-path").addEventListener("input", repoPathChanged);
+$("repo-name").addEventListener("input", () => { repoForm.nameTouched = true; });
+$("repo-form").addEventListener("input", (event) => event.target.removeAttribute("aria-invalid"));
+$("switch-form").addEventListener("submit", submitSwitch);
+$("switch-cancel").addEventListener("click", () => $("switch-dialog").close());
+$("doctor-run").addEventListener("click", runDoctor);
+$("flyway-close").addEventListener("click", () => $("flyway-dialog").close());
+$("flyway-refresh").addEventListener("click", () => openFlyway(flywayView.db));
+$("flyway-filter").addEventListener("input", paintFlyway);
+$("flyway-pending").addEventListener("change", paintFlyway);
+$("doctor-copy").addEventListener("click", doctorReport);
+$("palette-open").addEventListener("click", openPalette);
+$("palette-input").addEventListener("input", () => { palette.index = 0; paintPalette(); });
+$("palette-list").addEventListener("click", (event) => {
+  const item = event.target.closest("li[data-index]");
+  if (item) runPalette(Number(item.dataset.index));
+});
+$("palette-input").addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const last = palette.shown.length - 1;
+    palette.index = event.key === "ArrowDown" ? Math.min(palette.index + 1, last) : Math.max(palette.index - 1, 0);
+    paintPalette();
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    runPalette(palette.index);
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    if ($("palette").open) $("palette").close(); else openPalette();
+  } else if (event.key === "/" && !event.ctrlKey && !event.metaKey && !typing(event.target) && !document.querySelector("dialog[open]")) {
+    const filter = viewFilter();
+    if (filter) { event.preventDefault(); filter.focus(); filter.select(); }
+  }
+});
+if (/Mac|iPhone|iPad/.test(navigator.platform)) $("palette-key").textContent = "⌘ K";
+$("doctor-filter").addEventListener("input", paintDoctor);
+$("doctor-problems").addEventListener("change", paintDoctor);
+$("version-open").addEventListener("click", openUpdate);
+$("version-check").addEventListener("click", checkNow);
+$("update-form").addEventListener("submit", submitUpdate);
+$("update-cancel").addEventListener("click", () => $("update-dialog").close());
+$("update-copy").addEventListener("click", copyCommand);
+$("update-log").addEventListener("click", () => { $("update-dialog").close(); showLogs(UPDATE_JOB); });
+$("home-stop").addEventListener("click", stopAll);
+for (const id of ["setup-stack", "setup-events", "setup-proxy", "setup-frontend", "setup-mode"]) $(id).addEventListener("change", saveSetup);
+fetch("/api/state").then((response) => response.json()).then(paint).finally(connect);
+setInterval(tickUptimes, 1000);
