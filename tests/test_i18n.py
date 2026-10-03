@@ -52,12 +52,12 @@ def test_placeholders_match(english):
 
 def test_no_spanish_left_in_source():
     offenders = []
-    for path in SRC.glob("*.py"):
+    for path in SRC.rglob("*.py"):
         if path.name == "i18n.py":
             continue
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if SPANISH_HINT.search(line):
-                offenders.append(f"{path.name}:{number}: {line.strip()}")
+                offenders.append(f"{path.relative_to(SRC)}:{number}: {line.strip()}")
     assert not offenders, "\n".join(offenders)
 
 

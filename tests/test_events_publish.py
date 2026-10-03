@@ -196,17 +196,19 @@ def test_local_env_names_the_sns_queue_and_each_services_topics():
 
 
 def test_pdms_logs_sns_shows_what_was_published(tmp_path, monkeypatch):
-    from pdms_cli import cli
+    import typer
+
+    from pdms_cli.commands import common, instances as instance_commands
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    with pytest.raises(cli.typer.Exit), cli.console.capture() as captured:
-        cli.logs(["sns"], False, None, False, None, False)
+    with pytest.raises(typer.Exit), common.console.capture() as captured:
+        instance_commands.logs(["sns"], False, None, False, None, False)
     assert "Nothing was published to the local SNS yet." in captured.get()
 
     events.sns_log_path().parent.mkdir(parents=True)
     events.sns_log_path().write_text("2026-10-01T10:00:00+00:00 lead → sns-account-publish.fifo\n  hi\n", encoding="utf-8")
-    with cli.console.capture() as captured:
-        cli.logs(["sns"], False, None, False, 5, False)
+    with common.console.capture() as captured:
+        instance_commands.logs(["sns"], False, None, False, 5, False)
     assert "lead → sns-account-publish.fifo" in captured.get() and "  hi" in captured.get()
 
 

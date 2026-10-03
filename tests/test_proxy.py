@@ -293,38 +293,39 @@ class _Answer:
 
 
 def _busy_ports(monkeypatch, busy: set[int], tty: bool) -> None:
-    from pdms_cli import cli
+    from pdms_cli import runner
+    from pdms_cli.commands import proxy as proxy_commands
 
-    monkeypatch.setattr(cli.instances, "running_ports", lambda: set())
-    monkeypatch.setattr(cli.runner, "port_is_free", lambda host, port: port not in busy)
-    monkeypatch.setattr(cli, "interactive_terminal", lambda: tty)
+    monkeypatch.setattr(instances, "running_ports", lambda: set())
+    monkeypatch.setattr(runner, "port_is_free", lambda host, port: port not in busy)
+    monkeypatch.setattr(proxy_commands, "interactive_terminal", lambda: tty)
 
 
 def test_proxy_port_keeps_a_free_port(monkeypatch) -> None:
-    from pdms_cli import cli
+    from pdms_cli.commands import proxy as proxy_commands
 
     _busy_ports(monkeypatch, set(), tty=False)
-    assert cli.proxy_port(8000) == 8000
+    assert proxy_commands.proxy_port(8000) == 8000
 
 
 def test_proxy_port_offers_the_next_free_one_in_a_terminal(monkeypatch) -> None:
-    from pdms_cli import cli
+    from pdms_cli.commands import proxy as proxy_commands
 
     _busy_ports(monkeypatch, {8000, 8001}, tty=True)
     asked = []
-    monkeypatch.setattr(cli.questionary, "confirm", lambda message, **kw: asked.append(message) or _Answer(True))
-    assert cli.proxy_port(8000) == 8002
+    monkeypatch.setattr(proxy_commands.questionary, "confirm", lambda message, **kw: asked.append(message) or _Answer(True))
+    assert proxy_commands.proxy_port(8000) == 8002
     assert asked and "8002" in asked[0]
 
 
 def test_proxy_port_fails_without_a_terminal(monkeypatch) -> None:
     import typer
 
-    from pdms_cli import cli
+    from pdms_cli.commands import proxy as proxy_commands
 
     _busy_ports(monkeypatch, {8000}, tty=False)
     with pytest.raises(typer.Exit):
-        cli.proxy_port(8000)
+        proxy_commands.proxy_port(8000)
 
 
 def test_restore_frontend_removes_a_file_it_created(tmp_path):

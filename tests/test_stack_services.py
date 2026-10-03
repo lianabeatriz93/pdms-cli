@@ -8,13 +8,13 @@ from types import SimpleNamespace
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 
-from pdms_cli import cli
+from pdms_cli.commands import stacks
 
 
 def test_ask_stack_services_lists_the_whole_repo(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path
     candidates = [root / name for name in ("lead/b", "lead/a", "lead/running", "broker/sqs", "lead/current")]
-    monkeypatch.setattr(cli, "running_by_service",
+    monkeypatch.setattr(stacks, "running_by_service",
                         lambda: {str(root / "lead/running"): [8090], str(root / "broker/sqs"): [0],
                                  str(root / "lead/current"): [8080]})
     seen = {}
@@ -27,8 +27,8 @@ def test_ask_stack_services_lists_the_whole_repo(tmp_path: Path, monkeypatch) ->
         picked = ["lead/a", "lead/current", "gone/old"]
         return SimpleNamespace(application=SimpleNamespace(key_bindings=bindings), unsafe_ask=lambda: picked)
 
-    monkeypatch.setattr(cli.questionary, "checkbox", checkbox)
-    result = cli.ask_stack_services(root, candidates, ["lead/current", "gone/old"])
+    monkeypatch.setattr(stacks.questionary, "checkbox", checkbox)
+    result = stacks.ask_stack_services(root, candidates, ["lead/current", "gone/old"])
 
     assert [c.value for c in seen["choices"]] == ["lead/current", "gone/old", "broker/sqs", "lead/running",
                                                   "lead/a", "lead/b"]
