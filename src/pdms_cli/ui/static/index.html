@@ -10,6 +10,9 @@
 <script src="/static/js/main.js" type="module"></script>
 </head>
 <body>
+<!-- Shown after a few seconds unless main.js starts and removes it: a pdms ui started before an update cannot
+     serve the new page's scripts. Pure CSS, so even that old server shows it. -->
+<p class="boot-fail" id="boot-fail" role="alert">pdms ui could not load its page. If pdms was just updated, restart pdms ui: <b>Quit pdms ui</b> in the tray icon (or Ctrl+C in its terminal), then open it again.</p>
 <header class="titlebar">
   <span class="brand" translate="no"><img src="/static/icon.svg" alt="" width="20" height="20"> pdms</span>
   <span class="live" id="live" title="Connecting…"></span>

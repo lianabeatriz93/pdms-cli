@@ -168,6 +168,12 @@ dialog legend { font-size: .82rem; color: var(--muted); padding: 0 .3rem; }
 .warn { color: var(--warn); background: var(--warn-soft); padding: .4rem .6rem; border-radius: 6px; }
 .error { color: var(--bad); background: var(--bad-soft); padding: .4rem .6rem; border-radius: 6px; white-space: pre-wrap; }
 
+.boot-fail {
+  position: fixed; inset: 40% 16px auto; z-index: 100; max-width: 34rem; margin: 0 auto; padding: .9rem 1.1rem;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--warn); border-radius: 8px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / .2); visibility: hidden; animation: boot-fail 0s 4s forwards;
+}
+@keyframes boot-fail { to { visibility: visible; } }
 .toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: .4rem; max-width: min(28rem, calc(100vw - 32px)); }
 .toast { padding: .5rem .8rem; border-radius: 8px; font-size: .85rem; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 4px 14px rgb(0 0 0 / .15); }
 .toast.error { color: var(--bad); border-color: var(--bad); }
