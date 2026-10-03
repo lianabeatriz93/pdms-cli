@@ -147,7 +147,7 @@ class Gateway:
     remote: str | None  # e.g. https://<id>.execute-api.us-east-1.amazonaws.com/dev
     impersonate: DevUser | None = None
     timeout: float = 300  # seconds to wait for the answer of a service or the remote API
-    log: Callable[..., None] = lambda *args: None  # (method, path, status, target, seconds, capture id)
+    log: Callable[..., None] = lambda *args: None  # (method, path, status, target, seconds, capture id, db detail)
     recorder: captures.Recorder | None = None  # the background proxy keeps each request for pdms ui
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -290,7 +290,7 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
             return body
 
         def done(self, started: float, path: str, status: int, target: str, sent: bytes | None,
-                 answer_headers: list[tuple[str, str]], answer: bytes | None) -> None:
+                 answer_headers: list[tuple[str, str]], answer: bytes | None, db: dict | None = None) -> None:
             """Log the request (and keep it, in the background proxy) once it was answered."""
             seconds, ident = time.monotonic() - started, ""
             if gateway.recorder:
@@ -298,10 +298,10 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                 headers = [(k, v) for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP]
                 try:
                     gateway.recorder.record(captures.entry(ident, self.command, path, status, target, seconds,
-                                                           headers, sent, answer_headers, answer))
+                                                           headers, sent, answer_headers, answer, db))
                 except OSError:
                     ident = ""  # a full disk must not break the proxy
-            gateway.log(self.command, path.split("?", 1)[0], status, target, seconds, ident)
+            gateway.log(self.command, path.split("?", 1)[0], status, target, seconds, ident, db)
 
         def forward(self) -> None:
             started = time.monotonic()
@@ -358,8 +358,10 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
             finally:
                 conn.close()
 
+            answer_headers = [(k, v) for k, v in response.getheaders() if k.lower() != captures.QUERIES_HEADER]
+            db = captures.query_detail(response.getheaders()) if target.kind == "local" else None
             self.send_response(response.status)
-            for key, value in response.getheaders():
+            for key, value in answer_headers:
                 if key.lower() not in HOP_BY_HOP and key.lower() not in CORS_RESPONSE_HEADERS:
                     self.send_header(key, value)
             self.cors()
@@ -368,14 +370,23 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(data)
-            self.done(started, path, response.status, label, body, response.getheaders(), data)
+            self.done(started, path, response.status, label, body, answer_headers, data, db)
 
     return Handler
 
 
-def format_request(method: str, path: str, status: int, target: str, seconds: float, ident: str = "") -> str:
+def db_text(db: dict | None) -> str:
+    """`` db 3623ms 10q ×9``: the request's database time and queries, and the most repeated one when it stands out."""
+    if not db:
+        return ""
+    queries, ms, repeated = captures.db_totals(db)
+    return f" db {ms}ms {queries}q" + (f" ×{repeated}" if repeated >= captures.REPEATED else "")
+
+
+def format_request(method: str, path: str, status: int, target: str, seconds: float, ident: str = "",
+                   db: dict | None = None) -> str:
     """One line of the background proxy's log (the terminal shows the same, in colour); ``#id`` names its capture."""
-    line = f"{datetime.now():%H:%M:%S} {method:<6} {path} {status} → {target}  {seconds * 1000:.0f}ms"
+    line = f"{datetime.now():%H:%M:%S} {method:<6} {path} {status} → {target}  {seconds * 1000:.0f}ms{db_text(db)}"
     return f"{line} #{ident}" if ident else line
 
 

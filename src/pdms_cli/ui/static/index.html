@@ -43,7 +43,7 @@
   <a href="#home" data-view="home" title="Home"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg><span class="lbl">Home</span></a>
   <a href="#services" data-view="services" title="Services"><svg class="i" aria-hidden="true"><use href="#i-services"/></svg><span class="lbl">Services</span><span class="cnt" id="count"></span><span class="badge bad" id="svc-badge" hidden></span></a>
   <a href="#stacks" data-view="stacks" title="Stacks"><svg class="i" aria-hidden="true"><use href="#i-stacks"/></svg><span class="lbl">Stacks</span><span class="cnt" id="stack-count"></span></a>
-  <a href="#proxy" data-view="proxy" title="Proxy"><svg class="i" aria-hidden="true"><use href="#i-proxy"/></svg><span class="lbl">Proxy</span><span class="sdot" id="proxy-on"></span></a>
+  <a href="#proxy" data-view="proxy" title="Requests"><svg class="i" aria-hidden="true"><use href="#i-proxy"/></svg><span class="lbl">Requests</span><span class="sdot" id="proxy-on"></span></a>
   <a href="#events" data-view="events" title="Events"><svg class="i" aria-hidden="true"><use href="#i-events"/></svg><span class="lbl">Events</span><span class="sdot" id="events-on"></span></a>
   <a href="#doctor" data-view="doctor" class="side-end" title="Doctor"><svg class="i" aria-hidden="true"><use href="#i-doctor"/></svg><span class="lbl">Doctor</span><span class="badge" id="doctor-badge" hidden></span></a>
   <a href="#settings" data-view="settings" title="Settings"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg><span class="lbl">Settings</span></a>
@@ -160,7 +160,7 @@
 
 <section class="view" id="view-proxy" hidden>
   <div class="bar">
-    <h1>Proxy</h1><span class="muted" id="proxy-summary"></span>
+    <h1>Requests</h1><span class="muted" id="proxy-summary"></span>
     <div class="bar-actions push">
       <a class="btn" id="proxy-docs" target="_blank" rel="noopener noreferrer" hidden>Open /docs</a>
       <button class="btn bad" id="proxy-stop" type="button" hidden>Stop proxy</button>
@@ -177,14 +177,19 @@
   <div class="panel" id="proxy-requests">
     <div class="bar">
       <input type="search" id="req-filter" placeholder="Filter by path, service or status" aria-label="Filter requests" autocomplete="off">
-      <label class="inline"><input type="checkbox" id="req-errors"> Errors only</label>
+      <div class="seg" id="req-seg" role="group" aria-label="Show">
+        <button type="button" data-show="all" aria-pressed="true">All <span></span></button>
+        <button type="button" data-show="slow" aria-pressed="false" title="One second or more">Slow <span></span></button>
+        <button type="button" data-show="repeated" aria-pressed="false" title="The same query five times or more in one request">N+1 <span></span></button>
+        <button type="button" data-show="errors" aria-pressed="false">Errors <span></span></button>
+      </div>
       <span class="muted" id="req-count"></span>
       <button class="btn ghost push" id="req-clear" type="button">Clear</button>
     </div>
     <div class="split" id="req-split">
       <div class="tbl">
         <table>
-          <thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>Went to</th><th class="num">Took</th></tr></thead>
+          <thead><tr><th>Time</th><th>Request</th><th>Status</th><th class="num">Total</th><th>Database</th><th class="num">Queries</th></tr></thead>
           <tbody id="req-rows"></tbody>
         </table>
         <p class="empty" id="req-empty"></p>
@@ -193,6 +198,11 @@
         <div class="panel-head">
           <h2 id="req-detail-title"><span class="method" id="req-d-method"></span> <span class="mono" id="req-d-path"></span></h2>
           <button class="ibtn push" id="req-d-close" type="button" title="Close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-forget"/></svg></button>
+        </div>
+        <div class="tabs req-tabs" id="req-d-tabs" role="tablist">
+          <button type="button" role="tab" data-tab="trace">Trace</button>
+          <button type="button" role="tab" data-tab="queries">Queries</button>
+          <button type="button" role="tab" data-tab="http">Request</button>
         </div>
         <div class="req-body" id="req-d-body"></div>
       </section>

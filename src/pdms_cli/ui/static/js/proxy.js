@@ -1,6 +1,6 @@
 // Proxy: starting it, its requests with their detail (curl, replay) and its routes.
 
-import { $, act, button, copyText, el, failedText, phaseLabel, post, toast, uptime } from "./core.js";
+import { $, act, button, copyText, el, failedText, phaseLabel, post, repoPath, toast, uptime } from "./core.js";
 import { state } from "./state.js";
 import { nearBottom, showLogs } from "./logs.js";
 import { options } from "./launch.js";
@@ -9,12 +9,19 @@ import { currentView } from "./router.js";
 const MAX_REQUESTS = 2000;
 
 // One line of the background proxy's log (proxy.format_request): 15:42:07 GET    /api/v1/lead/tp 200 → lead-tp-list@8081  14ms
-// A background proxy that keeps its requests ends the line with the id of the capture: … 14ms #1a2b3c4d
-const REQUEST = /^(\d\d:\d\d:\d\d) (\S+) +(\S+) (\d{3}) → (\S+) +(\d+)ms(?: #([0-9a-f]{8}))?$/;
+// A local service that measures its queries adds its database time, queries and most repeated one: … 14ms db 9ms 3q ×5
+// A background proxy that keeps its requests ends the line with the id of the capture: … #1a2b3c4d
+const REQUEST = /^(\d\d:\d\d:\d\d) (\S+) +(\S+) (\d{3}) → (\S+) +(\d+)ms(?: db (\d+)ms (\d+)q(?: ×(\d+))?)?(?: #([0-9a-f]{8}))?$/;
+const SLOW_MS = 1000;
+const REPEATED = 5; // the same query this many times in one request (as captures.REPEATED)
 
 const NOT_LOCAL = new Set(["remote", "missing", "other-repo", "docs"]);
 
-export const proxyView = { tab: "requests", stream: null, requests: [], routes: null, routesFor: "", picked: "" }; // picked: capture id
+// picked: capture id; show: the filter of the list; detail: the picked request's capture, painted in detailTab
+export const proxyView = {
+  tab: "requests", stream: null, requests: [], routes: null, routesFor: "", picked: "", show: "all", detail: null,
+  detailTab: "trace",
+};
 
 export function proxyJob() {
   return state.jobs.proxy || (state.proxy && state.jobs[state.proxy.key]) || null;
@@ -90,14 +97,37 @@ function syncRequests() {
 function parseRequest(line) {
   const match = REQUEST.exec(line);
   if (!match) return null;
-  const [, time, method, path, status, target, ms, id] = match;
-  return { time, method, path, status: Number(status), target, ms: Number(ms), id: id || "" };
+  const [, time, method, path, status, target, ms, db, queries, repeated, id] = match;
+  return {
+    time, method, path, status: Number(status), target, ms: Number(ms), id: id || "",
+    db: db === undefined ? null : Number(db), queries: Number(queries || 0), repeated: Number(repeated || 0),
+  };
 }
+
+const REQUEST_FILTERS = {
+  all: () => true,
+  slow: (req) => req.ms >= SLOW_MS,
+  repeated: (req) => req.repeated >= REPEATED,
+  errors: (req) => req.status >= 400,
+};
 
 function requestShown(req) {
   const text = $("req-filter").value.trim().toLowerCase();
-  if ($("req-errors").checked && req.status < 400) return false;
+  if (!REQUEST_FILTERS[proxyView.show](req)) return false;
   return !text || `${req.method} ${req.path} ${req.status} ${req.target}`.toLowerCase().includes(text);
+}
+
+// 840 ms, 3.62 s
+export function duration(ms) {
+  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`;
+}
+
+// How much of the request was database: purple, the rest of the service: blue.
+function dbBar(req) {
+  if (req.db === null) return el("span", { class: "muted", title: t("The service did not say: it is not local, or it was started without Database time per request.") }, "–");
+  const share = req.ms ? Math.min(100, Math.round((req.db / req.ms) * 100)) : 0;
+  return el("span", { class: "db-cell", title: t("{share}% of the request in the database", { share }) },
+    el("span", { class: "db-bar" }, el("i", { style: `width: ${share}%` })), duration(req.db));
 }
 
 function codeClass(status) {
@@ -127,13 +157,19 @@ function requestRow(req) {
     onclick: open, onkeydown: (event) => { if (event.key === "Enter") open(); },
   } : {};
   if (req.id) attrs["data-id"] = req.id;
+  const queries = el("td", { class: "num" }, req.db === null ? "" : String(req.queries));
+  if (req.repeated >= REPEATED) {
+    queries.append(el("span", { class: "flag-n1", title: t("The same query ran {count} times", { count: req.repeated }) }, `N+1 ×${req.repeated}`));
+  }
   return el("tr", attrs,
     el("td", { class: "mono muted" }, req.time),
-    el("td", { class: "method" }, req.method),
-    el("td", { class: "mono req-path" }, ...slashBreaks(req.path)),
+    el("td", { class: "req-path" },
+      el("span", { class: "method" }, req.method), " ", el("span", { class: "mono" }, ...slashBreaks(req.path)),
+      el("span", { class: `hint ${local ? "mono" : `target-${req.target === "other-repo" ? "other" : req.target}`}` }, req.target)),
     el("td", { class: `num ${codeClass(req.status)}` }, String(req.status)),
-    el("td", { class: local ? "mono" : `target-${req.target === "other-repo" ? "other" : req.target}` }, req.target),
-    el("td", { class: "num muted" }, `${req.ms}ms`),
+    el("td", { class: `num ${req.ms >= SLOW_MS ? "slow" : "muted"}` }, duration(req.ms)),
+    el("td", {}, dbBar(req)),
+    queries,
   );
 }
 
@@ -161,6 +197,7 @@ async function pickRequest(req) {
   $("req-detail").hidden = false;
   $("req-d-method").textContent = req.method;
   $("req-d-path").textContent = req.path;
+  proxyView.detail = null;
   $("req-d-body").replaceChildren(el("p", { class: "muted" }, t("Loading…")));
   let data;
   try {
@@ -171,7 +208,122 @@ async function pickRequest(req) {
     if (proxyView.picked === req.id) $("req-d-body").replaceChildren(el("p", { class: "error" }, error.message));
     return;
   }
-  if (proxyView.picked === req.id) paintRequestDetail(req, data);
+  if (proxyView.picked === req.id) {
+    proxyView.detail = { req, data };
+    showDetailTab(proxyView.detailTab);
+  }
+}
+
+export function showDetailTab(tab) {
+  proxyView.detailTab = tab;
+  for (const node of $("req-d-tabs").children) node.setAttribute("aria-selected", String(node.dataset.tab === tab));
+  if (!proxyView.detail) return;
+  const { req, data } = proxyView.detail;
+  if (tab === "trace") paintTrace(data.request);
+  else if (tab === "queries") paintQueries(data.request);
+  else paintRequestDetail(req, data);
+}
+
+const NO_DB = N_("The service did not say what it asked the database: it is not a local service, or it was started before Database time per request was on (Settings → Defaults; restart it).");
+
+// A round number of milliseconds for the axis: 1, 2 or 5 × 10ⁿ, so 4 to 5 ticks cover the request.
+function tickStep(max) {
+  const rough = max / 4;
+  const power = 10 ** Math.floor(Math.log10(rough || 1));
+  return [1, 2, 5, 10].map((n) => n * power).find((step) => step >= rough);
+}
+
+function traceRow(label, title, kind, from, to, text, scale) {
+  const left = (from / scale) * 100;
+  const width = Math.max(((to - from) / scale) * 100, 0.6);
+  return [
+    el("div", { class: "wf-label", title }, label),
+    el("div", { class: "wf-track" },
+      el("span", { class: `wf-bar ${kind}`, style: `left: ${left}%; width: ${width}%` }),
+      el("em", { style: `left: ${Math.min(left + width, 80)}%` }, text)),
+  ];
+}
+
+// The request on a time line: the proxy, the service, opening connections and each statement (when it ran first and
+// last). Times come from the service, from when it got the request.
+function paintTrace(capture) {
+  const db = capture.db;
+  const nodes = [];
+  if (!db) nodes.push(el("p", { class: "muted" }, t(NO_DB)));
+  const statements = db ? [...db.statements].sort((a, b) => a.first_ms - b.first_ms).slice(0, 12) : [];
+  const end = Math.max(capture.ms, db ? db.answered_ms : 0, ...statements.map((s) => s.last_ms), 1);
+  const step = tickStep(end);
+  const scale = Math.ceil(end / step) * step;
+  const rows = [...traceRow(`→ ${capture.target}`, t("Through the proxy, until the answer came back"), "px", 0, capture.ms, duration(capture.ms), scale)];
+  if (db) {
+    rows.push(...traceRow(t("service"), t("Until the service started answering"), "srv", 0, db.answered_ms, duration(db.answered_ms), scale));
+    if (db.connections) {
+      const first = Math.min(...db.statements.map((s) => s.first_ms), db.answered_ms);
+      rows.push(...traceRow(t("open {n} connection(s)", { n: db.connections }), t("New database connections (a dozen round trips each)"),
+        "conn", Math.max(0, first - db.connect_ms), first, duration(db.connect_ms), scale));
+    }
+    for (const statement of statements) {
+      const label = statement.sql.length > 42 ? `${statement.sql.slice(0, 41)}…` : statement.sql;
+      const text = statement.count > 1 ? `×${statement.count} · ${duration(statement.ms)}` : duration(statement.ms);
+      rows.push(...traceRow(label, statement.sql, statement.count >= REPEATED ? "db n1" : "db", statement.first_ms, statement.last_ms, text, scale));
+    }
+  }
+  const ticks = [];
+  for (let at = 0; at <= scale; at += step) ticks.push(el("span", {}, duration(at)));
+  rows.push(el("div"), el("div", { class: "wf-axis" }, ...ticks));
+  nodes.push(el("div", { class: "wf" }, el("div", { class: "wf-grid" }, ...rows)));
+  nodes.push(el("div", { class: "wf-legend" },
+    ...[["px", t("proxy")], ["srv", t("service")], ["conn", t("connecting")], ["db", t("database")], ["db n1", t("same query again and again")]]
+      .map(([kind, label]) => el("span", {}, el("i", { class: `wf-bar ${kind}` }), label))));
+  if (db && db.more) nodes.push(el("p", { class: "muted" }, t("{n} quicker statements are not shown.", { n: db.more })));
+  $("req-d-body").replaceChildren(...nodes);
+}
+
+function openCaller(where) {
+  const cut = where.lastIndexOf(":");
+  act("/api/code/open", { path: where.slice(0, cut), line: Number(where.slice(cut + 1)) || 0 });
+}
+
+// lead_repository.py:212, opening VS Code there; the whole path in its title.
+function callerButton(where) {
+  if (!where) return "";
+  const name = where.split(/[\\/]/).pop();
+  return button(name, () => openCaller(where), { class: "btn link", title: `${repoPath(where)} · ${t("Open in VS Code")}` });
+}
+
+function paintQueries(capture) {
+  const db = capture.db;
+  if (!db) {
+    $("req-d-body").replaceChildren(el("p", { class: "muted" }, t(NO_DB)));
+    return;
+  }
+  const queries = db.statements.reduce((sum, s) => sum + s.count, 0);
+  const inDb = db.statements.reduce((sum, s) => sum + s.ms, 0) + db.transaction_ms;
+  const facts = [t("{n} queries", { n: queries }), t("{time} in the database", { time: duration(inDb) })];
+  if (db.transactions) facts.push(t("{n} commits or rollbacks", { n: db.transactions }));
+  if (db.connections) facts.push(t("{n} new connection(s) in {time}", { n: db.connections, time: duration(db.connect_ms) }));
+  const nodes = [el("p", { class: "req-facts" }, facts.join(" · "))];
+  const worst = db.statements.reduce((a, b) => (b.count > a.count ? b : a), { count: 0 });
+  if (worst.count >= REPEATED) {
+    nodes.push(el("div", { class: "callout-n1" },
+      el("b", {}, t("{count} of {total} queries are the same one", { count: worst.count, total: queries })),
+      el("span", {}, t("They took {time} of this request, probably one query per row of a list: loading them together saves a round trip each.", { time: duration(worst.ms) })),
+      el("div", { class: "req-actions" }, callerButton(worst.caller),
+        button(t("Copy SQL"), () => copyText(worst.sql, t("Copied.")))),
+    ));
+  }
+  const rows = db.statements.map((statement) => el("tr", {},
+    el("td", { class: "sql", title: statement.sql }, statement.sql),
+    el("td", { class: "num" }, String(statement.count)),
+    el("td", { class: "num" }, duration(statement.ms)),
+    el("td", {}, callerButton(statement.caller)),
+  ));
+  nodes.push(el("div", { class: "tbl" }, el("table", {},
+    el("thead", {}, el("tr", {}, el("th", {}, t("Query")), el("th", { class: "num" }, t("Times")), el("th", { class: "num" }, t("Time")), el("th", {}, t("Where")))),
+    el("tbody", {}, ...rows))));
+  if (db.more) nodes.push(el("p", { class: "muted" }, t("{n} quicker statements are not shown.", { n: db.more })));
+  nodes.push(el("p", { class: "muted" }, t("Only the SQL text is kept, never the values sent with it.")));
+  $("req-d-body").replaceChildren(...nodes);
 }
 
 function headerList(pairs) {
@@ -230,6 +382,10 @@ export function paintRequests() {
 function paintRequestsNote() {
   const shown = $("req-rows").children.length;
   const total = proxyView.requests.length;
+  for (const node of document.querySelectorAll("#req-seg button")) {
+    node.querySelector("span").textContent = String(proxyView.requests.filter(REQUEST_FILTERS[node.dataset.show]).length);
+    node.setAttribute("aria-pressed", String(node.dataset.show === proxyView.show));
+  }
   $("req-count").textContent = total ? t("{shown} of {total}", { shown, total }) : "";
   const running = state && state.proxy;
   let note = "";

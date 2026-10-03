@@ -11,8 +11,8 @@ import { clearLog, closeLogs, logs, openLogs, showLogs } from "./logs.js";
 import { filterRun, openRun, resetConfirmation, submitLaunch } from "./launch.js";
 import { filterEditor, openEditor, paintStacks, saveEditor } from "./stacks.js";
 import {
-  closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyView, resetProxyPort, showProxyTab,
-  submitProxyStart,
+  closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyView, resetProxyPort, showDetailTab,
+  showProxyTab, submitProxyStart,
 } from "./proxy.js";
 import {
   brokerQueue, closePeek, eventsView, eventsVisible, fillTemplate, loadQueues, openConsumerStart, openEventsUp,
@@ -64,7 +64,10 @@ $("proxy-port").addEventListener("input", resetProxyPort);
 $("proxy-no-remote").addEventListener("change", () => { $("proxy-remote").disabled = $("proxy-no-remote").checked; });
 for (const tab of $("proxy-tabs").children) tab.addEventListener("click", () => showProxyTab(tab.dataset.tab));
 $("req-filter").addEventListener("input", paintRequests);
-$("req-errors").addEventListener("change", paintRequests);
+for (const node of document.querySelectorAll("#req-seg button")) {
+  node.addEventListener("click", () => { proxyView.show = node.dataset.show; paintRequests(); });
+}
+for (const tab of $("req-d-tabs").children) tab.addEventListener("click", () => showDetailTab(tab.dataset.tab));
 $("req-clear").addEventListener("click", () => { proxyView.requests = []; closeRequest(); paintRequests(); });
 $("req-d-close").addEventListener("click", () => closeRequest());
 $("route-filter").addEventListener("input", paintRoutes);

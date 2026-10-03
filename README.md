@@ -332,7 +332,11 @@ or the next free one, and **Start frontend** the web app in dev or build mode (l
 its install and build logs, and **Rebuild**. The stacks screen starts (like `pdms up`) and stops (`pdms down`) a stack, shows which of its
 services run, and creates, edits and deletes stacks with a searchable list of the repo's services. The proxy screen
 starts the proxy in the background (like `pdms proxy -b`: it asks for another port when the one you chose is in use)
-and stops it, and follows its requests live with where each one went. A click on a request shows what it sent and
+and stops it, and follows its requests live (the sidebar calls it **Requests**) with where each one went, how long
+it took and, for local services, how much of it was database and how many queries it ran ([database time per
+request](#slow-databases)); **Slow**, **N+1** and **Errors** filter them. A request's **Trace** puts the proxy, the
+service, opening connections and each query on one time line, and **Queries** lists them with the service line that
+ran each one (it opens VS Code there), pointing out the same query run again and again. A click on a request shows what it sent and
 what came back (headers, with `Authorization` and cookies hidden, and bodies up to 64 KB), with **Copy as curl**,
 **Replay** (sent through the proxy again, as it came) and **Open the log here** (the local service's log with its lines
 marked). The background proxy keeps them in `proxy-requests.jsonl` in the state folder, readable only by you and never

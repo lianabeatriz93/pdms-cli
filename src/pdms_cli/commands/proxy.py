@@ -40,12 +40,14 @@ def resolve_remote(cfg: Config, root: Path, remote: Optional[str], no_remote: bo
     return url
 
 
-def log_request(method: str, path: str, status: int, target: str, seconds: float, ident: str = "") -> None:
+def log_request(method: str, path: str, status: int, target: str, seconds: float, ident: str = "",
+                db: dict | None = None) -> None:
     color = "green" if status < 400 else "yellow" if status < 500 else "red"
     where = "dim" if target in ("remote", "missing", "other-repo") else "cyan"
     console.print(Text.assemble(
         (f"{datetime.now():%H:%M:%S} ", "dim"), (f"{method:<6} ", "bold"), (f"{path} ", ""),
         (f"{status} ", color), ("→ ", "dim"), (target, where), (f"  {seconds * 1000:.0f}ms", "dim"),
+        (proxy.db_text(db), "magenta" if "×" in proxy.db_text(db) else "dim"),
     ), soft_wrap=True)
 
 

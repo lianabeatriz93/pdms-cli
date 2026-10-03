@@ -8,6 +8,8 @@ what leaves for the page (:func:`public`) or a curl command has the secret ones 
 
 from __future__ import annotations
 
+import base64
+import binascii
 import http.client
 import json
 import os
@@ -25,6 +27,9 @@ BODY_LIMIT = 64 * 1024
 FILE_LIMIT = 4 << 20
 SECRET_HEADERS = {"authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key"}
 HIDDEN = "(hidden)"
+# A service's answer carries what the request asked the database (sqs_patch/pdms_queries.py): kept, not passed on.
+QUERIES_HEADER = "x-pdms-queries"
+REPEATED = 5  # the same statement this many times in one request: probably one query per row (as in pdms_queries)
 
 
 def path() -> Path:
@@ -69,13 +74,37 @@ class Recorder:
 
 def entry(ident: str, method: str, path_: str, status: int, target: str, seconds: float,
           request_headers: list[tuple[str, str]], request_body: bytes | None,
-          response_headers: list[tuple[str, str]], response_body: bytes | None) -> dict:
-    return {
+          response_headers: list[tuple[str, str]], response_body: bytes | None, db: dict | None = None) -> dict:
+    kept = {
         "id": ident, "at": datetime.now().isoformat(timespec="seconds"), "method": method, "path": path_,
         "status": status, "target": target, "ms": round(seconds * 1000),
         "request": {"headers": [list(pair) for pair in request_headers], "body": body(request_body)},
         "response": {"headers": [list(pair) for pair in response_headers], "body": body(response_body)},
     }
+    if db is not None:
+        kept["db"] = db
+    return kept
+
+
+def query_detail(headers: list[tuple[str, str]]) -> dict | None:
+    """What the service said its request asked the database, from its answer's headers (None if it did not)."""
+    for name, value in headers:
+        if name.lower() != QUERIES_HEADER:
+            continue
+        try:
+            data = json.loads(base64.b64decode(value, validate=True))
+        except (ValueError, binascii.Error):
+            return None
+        return data if isinstance(data, dict) and isinstance(data.get("statements"), list) else None
+    return None
+
+
+def db_totals(db: dict) -> tuple[int, int, int]:
+    """``(queries, milliseconds in the database, times the most repeated statement ran)``."""
+    statements = [s for s in db.get("statements", []) if isinstance(s, dict)]
+    queries = sum(int(s.get("count", 0)) for s in statements)
+    ms = sum(int(s.get("ms", 0)) for s in statements) + int(db.get("transaction_ms", 0))
+    return queries, ms, max((int(s.get("count", 0)) for s in statements), default=0)
 
 
 def find(ident: str, file: Path | None = None) -> dict | None:

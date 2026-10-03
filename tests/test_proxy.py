@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import os
@@ -414,8 +415,9 @@ def test_the_background_proxy_keeps_each_request_for_its_detail(gateway_url, tmp
          body='{"name": "Ana"}')
     call(port, "GET", "/api/v1/nowhere")
     wait_for(lambda: len(logged) == 2)  # logged right after answering
-    (method, path, status, target, _seconds, ident), other = logged
+    (method, path, status, target, _seconds, ident, db), other = logged
     assert (method, path, status, target) == ("POST", "/api/v1/leads/tp", 200, "remote") and len(ident) == 8
+    assert db is None  # only local services say what they asked the database
     assert other[1] == "/api/v1/nowhere" and other[5] != ident
     assert proxy.format_request(*logged[0]).endswith(f"ms #{ident}")
 
@@ -452,3 +454,43 @@ def test_captures_rotate_and_big_or_binary_bodies_are_not_replayed(tmp_path, mon
     assert big["truncated"] and len(big["text"]) == captures.BODY_LIMIT
     capture = captures.entry("x", "POST", "/x", 200, "remote", 0, [], b"a" * (captures.BODY_LIMIT + 1), [], None)
     assert "64 KB" in captures.replayable(capture)
+
+
+def test_what_a_local_service_asked_the_database_is_kept_not_passed_on(gateway_url, tmp_path, monkeypatch):
+    detail = {"v": 1, "answered_ms": 3640, "connect_ms": 0, "connections": 0, "transactions": 2, "transaction_ms": 20,
+              "statements": [{"sql": "SELECT name FROM pdms_user WHERE id = %(id)s", "count": 9, "ms": 2720,
+                              "first_ms": 400, "last_ms": 3300, "caller": "/svc/repo.py:12"},
+                             {"sql": "SELECT id FROM lead", "count": 1, "ms": 300, "first_ms": 50, "last_ms": 350,
+                              "caller": "/svc/repo.py:20"}], "more": 0}
+    encoded = base64.b64encode(json.dumps(detail).encode()).decode()
+
+    def end_headers(self):  # the service's answer, as pdms_queries.py makes it
+        if self.path != "/openapi.json":
+            self.send_header("x-pdms-db", "queries=10; time=3.040; connect=0.000; transactions=2")
+            self.send_header("x-pdms-queries", encoded)
+        BaseHTTPRequestHandler.end_headers(self)
+
+    monkeypatch.setattr(Echo, "end_headers", end_headers)
+    logged = []
+    recorder = captures.Recorder(tmp_path / "requests.jsonl")
+    port = gateway_url(recorder=recorder, log=lambda *line: logged.append(line))
+    response, data = call(port, "GET", "/api/v1/leads/tp")
+    assert data["server"] == "local"
+    assert response.getheader("x-pdms-db").startswith("queries=10")  # readable in the browser
+    assert response.getheader("x-pdms-queries") is None  # the detail stays in pdms
+
+    wait_for(lambda: len(logged) == 1)
+    *_, ident, db = logged[0]
+    assert db == detail
+    assert proxy.format_request(*logged[0]).endswith(f" db 3040ms 10q ×9 #{ident}")
+    kept = captures.find(ident, recorder.file)
+    assert kept["db"] == detail
+    assert all(name.lower() != "x-pdms-queries" for name, _ in kept["response"]["headers"])
+
+
+def test_a_broken_query_header_is_ignored() -> None:
+    assert captures.query_detail([("X-Pdms-Queries", "not base64!")]) is None
+    assert captures.query_detail([("x-pdms-queries", base64.b64encode(b"[1, 2]").decode())]) is None
+    assert captures.query_detail([("content-type", "x")]) is None
+    assert proxy.db_text(None) == ""
+    assert proxy.db_text({"statements": [{"count": 2, "ms": 10}], "transaction_ms": 5}) == " db 15ms 2q"
