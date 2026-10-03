@@ -29,7 +29,7 @@ def instance_state(cfg: Config, inst: instances.Instance, health: instances.Heal
     return {
         "key": inst.key, "name": inst.name, "service": inst.service, "repo": repos.repo_of(cfg, inst.service) or "",
         "host": inst.host, "port": inst.port, "queue": inst.queue, "user": inst.user, "db": inst.db,
-        "events": inst.events, "reload": inst.reload, "started_at": inst.started_at,
+        "events": inst.events, "reload": inst.reload, "parallel": inst.parallel, "started_at": inst.started_at,
         "status": health.state, "detail": health.detail,
         "traceback": traceback_state(cfg, inst.log) if health.state == "error" else [],
     }

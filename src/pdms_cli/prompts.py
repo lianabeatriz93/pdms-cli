@@ -168,6 +168,14 @@ def ask_defaults(current: Defaults) -> Defaults:
     proxy_port = questionary.text(
         _("Port of pdms proxy:"), default=str(current.proxy_port), validate=_is_int,
     ).unsafe_ask()
+    parallel_requests = questionary.confirm(
+        _("Run each request of a service in its own thread (a slow query only holds up its own request)?"),
+        default=current.parallel_requests,
+    ).unsafe_ask()
+    warm_connections = questionary.text(
+        _("Database connections each service opens when it starts (0 = when needed):"),
+        default=str(current.warm_connections), validate=_is_int,
+    ).unsafe_ask()
     env = dict(current.env)
     while questionary.confirm(
         _("Add/edit extra environment variables? (current: {current})", current=", ".join(env) or _("none")),
@@ -184,5 +192,5 @@ def ask_defaults(current: Defaults) -> Defaults:
         current, language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
         smart_install=smart_install if install else current.smart_install, update_check=update_check, events=events_mode, banner=banner,
         ui_at_login=ui_at_login, db_timeout=int(db_timeout), proxy_timeout=int(proxy_timeout),
-        proxy_port=int(proxy_port), env=env,
+        proxy_port=int(proxy_port), parallel_requests=parallel_requests, warm_connections=int(warm_connections), env=env,
     )

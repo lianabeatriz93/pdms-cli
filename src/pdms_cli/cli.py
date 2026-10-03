@@ -405,6 +405,7 @@ def do_run(
     path: Optional[Path] = None,
     background: Optional[bool] = None,
     events_mode: Optional[str] = None,
+    parallel: Optional[bool] = None,
 ) -> None:
     cfg = Config.load()
     service = resolve_service(cfg, service_name, path)
@@ -414,7 +415,7 @@ def do_run(
         background = sys.stdin.isatty() and prompts.ask_background()
     launch = settle(lambda: actions.plan_service(
         cfg, prof.service, user_name=prof.user_name, db_name=prof.db_name, port=prof.port or None, host=prof.host,
-        reload=reload, events_mode=events_mode,
+        reload=reload, events_mode=events_mode, parallel=parallel,
     ))
     warn_events(launch.events)
 
@@ -422,7 +423,7 @@ def do_run(
         what = {_("Consumer"): f"{launch.queue} → {consumer[1].handler}"}
     else:
         what = {_("Server"): f"http://{launch.host}:{launch.port}  reload={yes_no(launch.reload)}  "
-                             f"log={cfg.defaults.logging_level}"}
+                             f"parallel={yes_no(launch.parallel)}  log={cfg.defaults.logging_level}"}
     print_summary(cfg, prof, {
         **what,
         _("Mode"): _("background") if background else _("foreground"),
@@ -493,8 +494,12 @@ def run(
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
     path: Optional[Path] = typer.Option(None, "--path", "-C", help=_("Service folder (defaults to the current one).")),
     events_mode: Optional[str] = typer.Option(None, "--events", help=EVENTS_HELP, autocompletion=completion.event_modes),
+    parallel: Optional[bool] = typer.Option(
+        None, "--parallel/--no-parallel",
+        help=_("Each request in its own thread, so a slow query only holds up its own (default: the parallel_requests setting)."),
+    ),
 ) -> None:
-    do_run(service, user, db, port, host, install, reload, yes, path, background, events_mode)
+    do_run(service, user, db, port, host, install, reload, yes, path, background, events_mode, parallel)
 
 
 # --------------------------------------------------------------------------- debugging
