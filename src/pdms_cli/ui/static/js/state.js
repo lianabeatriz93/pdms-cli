@@ -13,6 +13,7 @@ import { toggleRepoMenu } from "./repos.js";
 import { doctorView, loadDoctor, paintDoctor, paintDoctorBadge } from "./doctor.js";
 import { currentView } from "./router.js";
 import { paintStatus } from "./status.js";
+import { syncTests, watchStartDb } from "./tests.js";
 
 export let state = null;
 
@@ -62,7 +63,10 @@ export function paint(next) {
   if (updateView.loaded === null) updateView.loaded = next.version;
   else if (next.version !== updateView.loaded) { location.reload(); return; }
   // Defaults for what an older pdms ui server does not send yet (its page files may already be newer).
-  state = { jobs: {}, users: [], dbs: [], stacks: [], health: { dbs: [], running: false, slow_ms: 0 }, ...next };
+  state = {
+    jobs: {}, users: [], dbs: [], stacks: [], health: { dbs: [], running: false, slow_ms: 0 },
+    tests: { running: [], queued: [], failing: 0, version: 0, error: "" }, ...next,
+  };
   const relabel = useLanguage(state.language);
   if (themePreview === state.theme) themePreview = ""; // saved, or picked back
   useTheme(themePreview || state.theme);
@@ -81,6 +85,8 @@ export function paint(next) {
   const wasUp = eventsView.up;
   eventsView.up = state.events.up;
   paintEvents();
+  syncTests();
+  watchStartDb();
   if (wasUp !== undefined && wasUp !== eventsView.up && currentView() === "events") showEventsTab(eventsView.tab);
   if (logs.key) paintLogTabs();
   syncSettings();

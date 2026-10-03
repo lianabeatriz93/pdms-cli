@@ -704,3 +704,25 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 .swatch.dark { background: #121922; } .swatch.dark i { background: #0e141c; }
 .swatch.system { background: linear-gradient(135deg, #eef2f7 50%, #121922 50%); }
 .swatch.system i { background: transparent; }
+
+/* Tests */
+.tests-dbs { display: inline-flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .84rem; }
+.tests-dbs label { display: inline-flex; align-items: center; gap: .3rem; font-family: var(--mono); font-size: .8rem; cursor: pointer; }
+.tests-dbs input, #tests-all { accent-color: var(--primary); }
+.tests-nodb { padding: .9rem 1rem; display: grid; gap: .5rem; }
+.tests-nodb h2 { margin: 0; font-size: .95rem; }
+.tests-nodb p { margin: 0; }
+#tests-rows td.why { white-space: normal; color: var(--muted); font-size: .8rem; min-width: 10rem; }
+#tests-rows tr.fail td { background: color-mix(in srgb, var(--bad-soft) 45%, var(--surface)); }
+#tests-rows tr.error-row td { background: color-mix(in srgb, var(--bad-soft) 45%, var(--surface)); padding-top: 0; white-space: normal; }
+#tests-rows tr.chosen td { background: color-mix(in srgb, var(--accent-soft) 60%, var(--surface)); }
+.res { display: inline-flex; gap: .5rem; font: .78rem/1 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.res .p { color: var(--ok); }
+.res .f { color: var(--bad); font-weight: 600; }
+.res .s { color: var(--muted); }
+.tests-nodb .bar-actions, #view-tests .bar-actions { flex-wrap: wrap; }
+.tests-nodb .btn { white-space: normal; text-align: left; }
+@media (max-width: 640px) {
+  #view-tests .bar-actions { margin-left: 0; }
+  #tests-filter { flex: 1 1 12rem; min-width: 0; }
+}

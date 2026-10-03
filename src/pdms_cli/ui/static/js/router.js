@@ -5,8 +5,9 @@ import { paintProxy } from "./proxy.js";
 import { eventsView, paintEvents, showEventsTab } from "./events.js";
 import { loadSettings } from "./settings.js";
 import { loadDoctor } from "./doctor.js";
+import { loadTests } from "./tests.js";
 
-const VIEWS = ["home", "services", "stacks", "proxy", "events", "doctor", "settings"];
+const VIEWS = ["home", "services", "stacks", "proxy", "events", "tests", "doctor", "settings"];
 
 export function currentView() {
   const view = location.hash.slice(1);
@@ -23,4 +24,5 @@ export function route() {
   if (view === "events") showEventsTab(eventsView.tab);
   if (view === "settings") loadSettings();
   if (view === "doctor") loadDoctor();
+  if (view === "tests") loadTests();
 }

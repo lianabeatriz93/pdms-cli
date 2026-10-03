@@ -55,10 +55,12 @@ export function clearLog() {
 }
 
 export function paintLogTabs() {
+  const testRun = logs.key.startsWith("test:"); // a test run has one log, its install included
   const noInstall = logs.key.startsWith("proxy") || ["sns", "ui", "update"].includes(logs.key);
   for (const tab of $("logs-tabs").children) {
     tab.setAttribute("aria-selected", String(tab.dataset.which === logs.which));
-    tab.hidden = (tab.dataset.which === "install" && noInstall) || (tab.dataset.which === "build" && logs.key !== "frontend");
+    tab.hidden = (testRun && tab.dataset.which !== "current") || (tab.dataset.which === "install" && noInstall)
+      || (tab.dataset.which === "build" && logs.key !== "frontend");
   }
   const job = state && state.jobs[logs.key];
   $("logs-note").textContent = job && !job.error ? phaseLabel(job.phase) : logs.find ? t("marked: {request}", { request: logs.find.label }) : "";
@@ -67,6 +69,9 @@ export function paintLogTabs() {
 export function openLogs(key, which = "current", find = null) {
   if (logs.stream) logs.stream.close();
   Object.assign(logs, { key, which, find, seek: Boolean(find) });
+  // The pane opens under the screen that asked for it (Services, Tests).
+  const view = document.querySelector(".view:not([hidden])");
+  if (view && $("logs").parentElement !== view) view.append($("logs"));
   $("logs").hidden = false;
   $("logs-key").textContent = key;
   paintLogTabs();
