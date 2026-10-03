@@ -33,6 +33,8 @@ import { doctorReport, paintDoctor, runDoctor } from "./doctor.js";
 import { openPalette, paintPalette, palette, runPalette, typing, viewFilter } from "./palette.js";
 import { route } from "./router.js";
 
+$("boot-fail").remove(); // the scripts loaded: the notice for an old pdms ui is not needed
+
 $("logs-close").addEventListener("click", closeLogs);
 $("logs-clear").addEventListener("click", clearLog);
 for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => openLogs(logs.key, tab.dataset.which));

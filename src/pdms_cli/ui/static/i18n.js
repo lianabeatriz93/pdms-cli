@@ -24,6 +24,8 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "pdms ui could not load its page. If pdms was just updated, restart pdms ui: <b>Quit pdms ui</b> in the tray icon (or Ctrl+C in its terminal), then open it again.":
+      "pdms ui no pudo cargar su página. Si acabas de actualizar pdms, reinicia pdms ui: <b>Salir de pdms ui</b> en el icono de la bandeja (o Ctrl+C en su terminal) y vuelve a abrirlo.",
     "'{name}' deleted.": "'{name}' eliminado.",
     "'{name}' is a protected database. Use it anyway?": "'{name}' es una base de datos protegida. ¿Usarla igualmente?",
     "'{name}' saved.": "'{name}' guardado.",
