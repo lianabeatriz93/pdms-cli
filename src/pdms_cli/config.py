@@ -125,12 +125,24 @@ class Stack:
     # Optional fixed user/db aliases; empty means "ask when starting".
     user: str = ""
     db: str = ""
+    # Services that run with another user or database than the rest: path -> {"user": ..., "db": ...} (either may
+    # be missing). Set from a partial restart with "Remember in the stack", or in the stack editor.
+    overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    def profile_of(self, service: str, user: str, db: str) -> tuple[str, str]:
+        """The user and database ``service`` starts with, given the stack's own (``user``, ``db``)."""
+        own = self.overrides.get(service, {})
+        return own.get("user") or user, own.get("db") or db
 
 
 def _stack(data: dict[str, Any]) -> Stack:
     stack = _from_dict(Stack, data)
     # Service paths are stored with "/" on every OS (a config written on Windows may still use "\\").
     stack.services = [str(svc).replace("\\", "/") for svc in stack.services]
+    stack.overrides = {
+        str(svc).replace("\\", "/"): {k: str(v) for k, v in own.items() if k in ("user", "db") and v}
+        for svc, own in (stack.overrides or {}).items() if isinstance(own, dict)
+    }
     return stack
 
 

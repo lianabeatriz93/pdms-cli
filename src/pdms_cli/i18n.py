@@ -311,8 +311,6 @@ ES: dict[str, str] = {
     "Switch to this user.": "Cambiar a este usuario.",
     "Switch to this database.": "Cambiar a esta base de datos.",
     "Ask which user and DB to use.": "Preguntar qué usuario y DB usar.",
-    "Restart a background service (same port; same user and DB by default).":
-        "Reinicia un servicio en segundo plano (mismo puerto; por defecto mismo usuario y DB).",
     "Which instance do you want to restart?": "¿Qué instancia quieres reiniciar?",
     "Database:": "Base de datos:",
     "app failed to load": "error al cargar la app",
@@ -1115,6 +1113,28 @@ ES: dict[str, str] = {
         "{time} hasta {host}",
     "{version} · {time} per round trip":
         "{version} · {time} por ida y vuelta",
+    "--remember needs --stack and a user or a database (-u, -d or --change).":
+        "--remember necesita --stack y un usuario o una base de datos (-u, -d o --change).",
+    "Instances (or parts of the service names). With --stack, which of its services.":
+        "Instancias (o partes de los nombres de servicio). Con --stack, cuáles de sus servicios.",
+    "No service of the stack {name} is running: pdms up {name}":
+        "Ningún servicio del stack {name} está corriendo: pdms up {name}",
+    "Not running in the stack {name}: {names}":
+        "No están corriendo en el stack {name}: {names}",
+    "Pick the services to restart.":
+        "Elige los servicios que quieres reiniciar.",
+    "Restart background services (same ports; same user and DB by default).":
+        "Reinicia servicios en segundo plano (mismos puertos; mismo usuario y BD por defecto).",
+    "The running services of this stack (all, or the ones named).":
+        "Los servicios de este stack que están corriendo (todos, o los indicados).",
+    "The stack {name} starts them that way from now on.":
+        "A partir de ahora el stack {name} los arranca así.",
+    "With --stack and -u/-d: the stack starts these services that way from now on.":
+        "Con --stack y -u/-d: el stack arranca estos servicios así a partir de ahora.",
+    "{path} is not a service of the current repo.":
+        "{path} no es un servicio del repo actual.",
+    "{service} is not in the stack {name}.":
+        "{service} no está en el stack {name}.",
     "Measure the database time and the queries of each request (pdms ui shows them with the request)?":
         "¿Medir el tiempo en la base de datos y las consultas de cada petición (pdms ui las muestra con la petición)?",
     "Database connections each service opens when it starts (0 = when needed):":

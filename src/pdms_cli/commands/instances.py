@@ -15,9 +15,9 @@ from rich.table import Table
 from .. import actions, completion, events, frontend, installer, instances, logview, prompts, proxy, repos
 from ..config import Config
 from ..i18n import _
-from .common import app, console, fail, pick, print_endpoints, print_restored, show_menu
+from .common import app, console, fail, pick, print_endpoints, print_restored, settle, show_menu
 from .run import Profile, confirm_protected, do_run
-from .services import stack_paths
+from .services import backend_root, stack_paths
 
 
 def status_text(state: str) -> str:
@@ -415,36 +415,77 @@ def stop(
         console.print("[green]✓[/] " + _("{key} stopped.", key=frontend.KEY))
 
 
-@app.command(help=_("Restart a background service (same port; same user and DB by default)."))
+@app.command(help=_("Restart background services (same ports; same user and DB by default)."))
 def restart(
-    key: Optional[str] = typer.Argument(None, help=_("Instance (or part of the service name)."), autocompletion=completion.instance_keys),
+    keys: Optional[list[str]] = typer.Argument(
+        None, help=_("Instances (or parts of the service names). With --stack, which of its services."),
+        autocompletion=completion.instance_keys,
+    ),
     user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Switch to this user."), autocompletion=completion.users),
     db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Switch to this database."), autocompletion=completion.dbs),
     change: bool = typer.Option(False, "--change", "-c", help=_("Ask which user and DB to use.")),
     install: Optional[bool] = typer.Option(
         None, "--install/--no-install", "-i/-n", help=_("Force (-i) or skip (-n) the install; by default only if something changed.")
     ),
+    stack: Optional[str] = typer.Option(
+        None, "--stack", "-s", help=_("The running services of this stack (all, or the ones named)."), autocompletion=completion.stacks,
+    ),
+    remember: bool = typer.Option(
+        False, "--remember", help=_("With --stack and -u/-d: the stack starts these services that way from now on."),
+    ),
 ) -> None:
-    inst = pick_instance(key, message=_("Which instance do you want to restart?"))
     cfg = Config.load()
+    chosen = restart_targets(cfg, keys or [], stack)
+    if remember and not (stack and (user or db or change)):
+        fail(_("--remember needs --stack and a user or a database (-u, -d or --change)."))
     if change:
         prompts.require_tty()
-        user = user or prompts.select_name(_("User:"), list(cfg.users), inst.user)
-        db = db or prompts.select_name(_("Database:"), list(cfg.dbs), inst.db)
-    user, db = user or inst.user, db or inst.db
-    pick(cfg.users, _("user"), user)
-    pick(cfg.dbs, _("database"), db)
-    # Confirm before stopping: a "no" must leave the instance running.
-    database = cfg.dbs[db]
-    if database.protected and db != inst.db:
-        confirm_protected(cfg, Profile(Path(inst.service), user, cfg.users[user], db, database, inst.host, inst.port), False)
-    with console.status(_("Stopping {key}...", key=inst.key)):
-        actions.stop_service(inst)
-    do_run(
-        user=user, db=db, port=inst.port, host=inst.host, install=install, reload=inst.reload,
-        yes=True, path=Path(inst.service), background=True,
-        events_mode="local" if inst.events == "local" else None,
-    )
+        user = user or prompts.select_name(_("User:"), list(cfg.users), chosen[0].user)
+        db = db or prompts.select_name(_("Database:"), list(cfg.dbs), chosen[0].db)
+    if user:
+        pick(cfg.users, _("user"), user)
+    if db:
+        pick(cfg.dbs, _("database"), db)
+    # Confirm before stopping anything: a "no" must leave every instance running.
+    changing = next((inst for inst in chosen if db and db != inst.db), None)
+    if changing and cfg.dbs[db].protected:
+        profile_user = user or changing.user
+        confirm_protected(cfg, Profile(Path(changing.service), profile_user, cfg.users[profile_user], db, cfg.dbs[db],
+                                       changing.host, changing.port), False)
+    if remember:
+        root = backend_root(cfg)
+        for inst in chosen:
+            settle(lambda inst=inst: actions.remember_in_stack(cfg, stack, root, [Path(inst.service)],
+                                                               user or inst.user, db or inst.db))
+        console.print("[green]✓[/] " + _("The stack {name} starts them that way from now on.", name=stack))
+    for inst in chosen:
+        if len(chosen) > 1:
+            console.rule(inst.key)
+        with console.status(_("Stopping {key}...", key=inst.key)):
+            actions.stop_service(inst)
+        do_run(
+            user=user or inst.user, db=db or inst.db, port=inst.port, host=inst.host, install=install,
+            reload=inst.reload, yes=True, path=Path(inst.service), background=True,
+            events_mode="local" if inst.events == "local" else None,
+        )
+
+
+def restart_targets(cfg: Config, keys: list[str], stack: Optional[str]) -> list[instances.Instance]:
+    """The instances ``pdms restart`` restarts: the ones named, or a stack's running ones (all, or the ones named)."""
+    if not stack:
+        if not keys:
+            return [pick_instance(None, message=_("Which instance do you want to restart?"))]
+        return list({inst.key: inst for inst in (pick_instance(key) for key in keys)}.values())
+    running = actions.stack_instances(cfg, pick(cfg.stacks, _("stack"), stack), backend_root(cfg))
+    if not running:
+        fail(_("No service of the stack {name} is running: pdms up {name}", name=stack))
+    if not keys:
+        return running
+    chosen = [inst for inst in running if any(key in inst.key for key in keys)]
+    missing = [key for key in keys if not any(key in inst.key for inst in running)]
+    if missing:
+        fail(_("Not running in the stack {name}: {names}", name=stack, names=", ".join(missing)))
+    return chosen
 
 
 def frontend_logs(follow: bool, lines: Optional[int], previous: bool) -> None:
@@ -476,7 +517,7 @@ def instances_menu() -> None:
         _("Open in the browser (/docs)"): lambda: open_cmd(None, "/docs"),
         _("Show endpoints (URLs)"): lambda: urls(None, ""),
         _("Stop"): lambda: stop(None, False),
-        _("Restart"): lambda: restart(None, None, None, False, None),
-        _("Restart with another user/DB"): lambda: restart(None, None, None, True, None),
+        _("Restart"): lambda: restart(None, None, None, False, None, None, False),
+        _("Restart with another user/DB"): lambda: restart(None, None, None, True, None, None, False),
         _("Stop all"): lambda: stop(None, True),
     })

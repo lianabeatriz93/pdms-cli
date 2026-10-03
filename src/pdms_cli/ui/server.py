@@ -553,6 +553,15 @@ def make_handler(
                 return self.act_on_setting(parts[2], unquote(parts[3]), parts[4], body)
             if len(parts) == 5 and parts[:3] == ["", "api", "repos"]:
                 return self.act_on_repo(unquote(parts[3]), parts[4], body)
+            if path == "/api/instances/restart":
+                keys = body.get("keys")
+                if not isinstance(keys, list) or not all(isinstance(key, str) for key in keys):
+                    raise actions.ActionError("keys must be a list of instance keys")
+                stack, remember = body.get("stack"), body.get("remember", False)
+                if (stack is not None and not isinstance(stack, str)) or not isinstance(remember, bool):
+                    raise actions.ActionError("stack must be a stack name and remember true or false")
+                started = jobs.restart_many(keys, **launch_options(body), stack=stack or None, remember=remember)
+                return 202, {"jobs": [job.key for job in started]}
             if len(parts) != 5 or parts[:2] != ["", "api"] or parts[2] not in ("instances", "stacks"):
                 return 404, {"error": "not found"}
             if parts[2] == "stacks":
@@ -609,8 +618,14 @@ def make_handler(
                 services = body.get("services")
                 if not isinstance(services, list) or not all(isinstance(svc, str) for svc in services):
                     raise actions.ActionError("services must be a list of service paths")
+                overrides = body.get("overrides")
+                if overrides is not None and not (isinstance(overrides, dict) and all(
+                        isinstance(svc, str) and isinstance(own, dict)
+                        and all(k in ("user", "db") and isinstance(v, str) for k, v in own.items())
+                        for svc, own in overrides.items())):
+                    raise actions.ActionError("overrides must map service paths to {user, db}")
                 ui_jobs.save_stack(name, services, str(body.get("user") or ""), str(body.get("db") or ""),
-                                   new=body.get("new") is True)
+                                   new=body.get("new") is True, overrides=overrides)
                 return 200, {}
             if verb == "remove":
                 ui_jobs.remove_stack(name)

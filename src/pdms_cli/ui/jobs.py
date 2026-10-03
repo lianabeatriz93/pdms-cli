@@ -223,6 +223,56 @@ class Jobs:
 
         return self.run(inst.key, "restart", "stopping", work)
 
+    def restart_many(
+        self, keys: list[str], *, user: str | None = None, db: str | None = None, install: bool | None = None,
+        confirmed: bool = False, stack: str | None = None, remember: bool = False,
+    ) -> list[Job]:
+        """Restart several instances on their ports, one after the other (each its own job, waiting its turn).
+
+        Without ``user``/``db`` each keeps its own. Everything is checked before anything stops: unknown or busy
+        instances, a protected database, the local ElasticMQ. With ``stack`` and ``remember`` the stack keeps the new
+        user and database for these services (see :func:`actions.remember_in_stack`)."""
+        if not keys:
+            raise actions.ActionError(_("Pick the services to restart."))
+        found = [find(key) for key in dict.fromkeys(keys)]
+        cfg = Config.load()
+        if user:
+            actions.require(cfg.users, _("user"), user)
+        if db:
+            actions.require(cfg.dbs, _("database"), db)
+            if any(db != inst.db for inst in found):
+                actions.check_database(cfg, db, confirmed)
+        needs_events = any(inst.events == "local" or inst.is_consumer for inst in found)
+        if needs_events and not events.running(cfg.defaults.events_port):
+            raise actions.LocalEventsDown(cfg.defaults.events_port)
+        busy = [inst.key for inst in found if self.busy(inst.key)]
+        if busy:
+            raise actions.ActionError(_("{key} is busy.", key=", ".join(busy)))
+        if remember:
+            if not stack or not (user or db):
+                raise actions.ActionError("remember needs a stack and a user or a database")
+            root = repos.active_backend(cfg)
+            for inst in found:
+                actions.remember_in_stack(cfg, stack, root, [Path(inst.service)], user or inst.user, db or inst.db)
+        if user or db:
+            actions.remember_profile(cfg, user or found[0].user, db or found[0].db)
+        turn = threading.Lock()  # one at a time: installs and starts do not compete
+
+        def restart_one(inst: instances.Instance) -> Callable[[Job], None]:
+            def work(job: Job) -> None:
+                with turn:
+                    self.phase(job, "stopping")
+
+                    def install_step(service: Path) -> None:
+                        self.install(cfg, job, service, inst.key, install)
+                        self.phase(job, "starting")
+
+                    actions.restart_service(cfg, inst, user_name=user or inst.user, db_name=db or inst.db,
+                                            confirmed=True, install=install_step)
+            return work
+
+        return [self.run(inst.key, "restart", "waiting", restart_one(inst)) for inst in found]
+
     def debug(self, key: str) -> dict:
         """Hand the instance over to VS Code (see :func:`actions.debug_instance`); quick, so not a job."""
         inst = find(key)
@@ -727,8 +777,10 @@ def repo_consumers(root: Path) -> list[str]:
     return sorted({consumer.service for consumer in event_map.consumers.values()})
 
 
-def save_stack(name: str, services: list[str], user: str, db: str, new: bool) -> None:
-    """Create (``new``) or replace a stack; the services must exist in the current repo."""
+def save_stack(name: str, services: list[str], user: str, db: str, new: bool,
+               overrides: dict[str, dict[str, str]] | None = None) -> None:
+    """Create (``new``) or replace a stack; the services must exist in the current repo. Without ``overrides`` an
+    existing stack keeps its own (for the services it still has)."""
     cfg = Config.load()
     name = name.strip()
     if new:
@@ -739,7 +791,9 @@ def save_stack(name: str, services: list[str], user: str, db: str, new: bool) ->
     unknown = [svc for svc in services if svc not in known]
     if unknown:
         raise actions.ActionError(_("Not services of the current repo: {names}", names=", ".join(unknown)))
-    actions.save_stack(cfg, name, Stack(services=list(dict.fromkeys(services)), user=user, db=db))
+    if overrides is None:
+        overrides = {} if new else dict(cfg.stacks[name].overrides)
+    actions.save_stack(cfg, name, Stack(services=list(dict.fromkeys(services)), user=user, db=db, overrides=overrides))
 
 
 def remove_stack(name: str) -> None:

@@ -622,8 +622,9 @@ def plan_stack(
         if not consumers[path]:
             port = runner.next_free_port(host, port, taken)
             taken.add(port)
+        service_user, service_db = stack.profile_of(_relative(path, root), user_name, db_name)
         launches.append(plan_service(
-            cfg, path, user_name=user_name, db_name=db_name, port=port, host=host, events_ready=setup,
+            cfg, path, user_name=service_user, db_name=service_db, port=port, host=host, events_ready=setup,
         ))
     return StackLaunch(name, user_name, db_name, launches, running, setup)
 
@@ -635,6 +636,34 @@ def start_stack(
     return [start_service(cfg, launch, install) for launch in plan.services]
 
 
+def _relative(path: Path, root: Path) -> str:
+    """A service's path in a stack: relative to the backend folder, with "/"."""
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        raise ActionError(_("{path} is not a service of the current repo.", path=path)) from None
+
+
+def remember_in_stack(cfg: Config, name: str, root: Path, services: Iterable[Path], user: str, db: str) -> None:
+    """Make ``services`` of the stack start with ``user`` and ``db`` from now on: an exception where they differ from
+    the stack's own, none where they are the same."""
+    stack = cfg.stacks[require(cfg.stacks, _("stack"), name)]
+    require(cfg.users, _("user"), user)
+    require(cfg.dbs, _("database"), db)
+    for path in services:
+        svc = _relative(path, root)
+        if svc not in stack.services:
+            raise ActionError(_("{service} is not in the stack {name}.", service=svc, name=name))
+        own = {"user": user} if user != stack.user else {}
+        if db != stack.db:
+            own["db"] = db
+        if own:
+            stack.overrides[svc] = own
+        else:
+            stack.overrides.pop(svc, None)
+    cfg.save()
+
+
 def stack_instances(cfg: Config, name: str, root: Path) -> list[instances.Instance]:
     """Live instances of the stack's services."""
     paths = {str(p) for p in stack_paths(cfg.stacks[require(cfg.stacks, _("stack"), name)], root)}
@@ -644,6 +673,12 @@ def stack_instances(cfg: Config, name: str, root: Path) -> list[instances.Instan
 def save_stack(cfg: Config, name: str, stack: Stack) -> None:
     if not stack.services:
         raise ActionError(_("A stack needs at least one service."))
+    stack.overrides = {svc: own for svc, own in stack.overrides.items() if svc in stack.services}  # gone with them
+    for own in stack.overrides.values():
+        if own.get("user"):
+            require(cfg.users, _("user"), own["user"])
+        if own.get("db"):
+            require(cfg.dbs, _("database"), own["db"])
     if stack.user:
         require(cfg.users, _("user"), stack.user)
     if stack.db:
@@ -1188,12 +1223,23 @@ def save_db(cfg: Config, name: str, db: Database, new: bool = False) -> str:
     return name
 
 
+def _forget_in_overrides(cfg: Config, kind: str, name: str) -> None:
+    """A deleted user or database leaves the stacks' exceptions: those services start like the rest again."""
+    for stack in cfg.stacks.values():
+        for svc, own in list(stack.overrides.items()):
+            if own.get(kind) == name:
+                own.pop(kind)
+                if not own:
+                    del stack.overrides[svc]
+
+
 def remove_db(cfg: Config, name: str) -> list[str]:
     """Delete a database; the stacks that used it ask for one again when they start (returns their names)."""
     del cfg.dbs[require(cfg.dbs, _("database"), name)]
     stacks = [stack_name for stack_name, stack in cfg.stacks.items() if stack.db == name]
     for stack_name in stacks:
         cfg.stacks[stack_name].db = ""
+    _forget_in_overrides(cfg, "db", name)
     if cfg.last_db == name:
         cfg.last_db = ""
     cfg.save()
@@ -1250,6 +1296,9 @@ def rename_user(cfg: Config, name: str, new_name: str) -> str:
     for stack in cfg.stacks.values():
         if stack.user == name:
             stack.user = renamed
+        for own in stack.overrides.values():
+            if own.get("user") == name:
+                own["user"] = renamed
     if cfg.last_user == name:
         cfg.last_user = renamed
     cfg.save()
@@ -1262,6 +1311,7 @@ def remove_user(cfg: Config, name: str) -> list[str]:
     stacks = [stack_name for stack_name, stack in cfg.stacks.items() if stack.user == name]
     for stack_name in stacks:
         cfg.stacks[stack_name].user = ""
+    _forget_in_overrides(cfg, "user", name)
     if cfg.last_user == name:
         cfg.last_user = ""
     cfg.save()
