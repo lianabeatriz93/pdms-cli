@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -55,6 +56,7 @@ def test_statements_are_grouped_and_timed(queries) -> None:
     assert first == {"sql": "SELECT a FROM t WHERE id = %(id)s", "count": 2, "ms": 900, "first_ms": 100,
                      "last_ms": 1100, "caller": "/svc/repo.py:12"}
     assert (detail["connect_ms"], detail["connections"], detail["transactions"], detail["transaction_ms"]) == (1500, 1, 1, 300)
+    assert abs(detail["received_at"] - time.time()) < 5  # the wall clock, for pdms proxy's time line
 
 
 def test_the_values_sent_with_a_query_are_never_kept(queries, sqlalchemy) -> None:
@@ -95,11 +97,12 @@ def test_the_log_line_only_when_something_stands_out(queries) -> None:
 
     loop = queries.Request()
     for _ in range(9):
-        loop.query("SELECT * FROM pdms_user WHERE id = %(id)s", loop.started, 0.01, os.getcwd() + "/lead/repo.py:212")
+        loop.query("SELECT * FROM pdms_user WHERE id = %(id)s", loop.started, 0.01,
+                   os.path.join(os.getcwd(), "lead", "repo.py") + ":212")
     loop.opened(3.1)
     line = loop.log_line("GET", "/lead/8812")
     assert line == "GET /lead/8812: 9 queries in 0.09 s (+ 3.1 s opening 1 connection(s)) · the same query 9 times, " \
-                   "0.09 s (lead/repo.py:212)"
+                   f"0.09 s ({os.path.join('lead', 'repo.py')}:212)"
 
 
 def test_the_caller_is_the_service_line(queries) -> None:
@@ -275,8 +278,9 @@ def test_queries_connections_and_commits_reach_the_current_request(queries, sqla
         queries.current.reset(token)
 
     assert request.totals()[0] == 1
-    assert request.connections == 1 and request.connect >= 0.05
-    assert request.transactions == 2 and request.transaction_seconds >= 0.02
+    # Windows' clock moves in steps of about 15 ms: the 50 ms and 20 ms sleeps may measure a little less.
+    assert request.connections == 1 and request.connect >= 0.03
+    assert request.transactions == 2 and request.transaction_seconds >= 0.005
     assert conn.info == {}  # the start time does not stay on the connection
 
 
