@@ -282,9 +282,24 @@ function attention() {
       items.push(["bad", t("{name} does not answer", { name: db.name }), db.error,
         [button(t("Line check"), lineCheck), button(t("Edit {name}", { name: db.name }), () => openSetting("dbs", (data) => { const found = data.dbs.find((d) => d.name === db.name); if (found) openDb(found); }))]]);
     } else if (db.ms >= state.health.slow_ms) {
-      items.push(["db", t("{name} takes {time} per round trip", { name: db.name, time: roundTrip(db.ms) }),
-        t("Every query pays at least this, and a list request makes about six. Requests shows where the time goes."),
-        [button(t("Line check"), lineCheck), button(t("Requests"), () => { location.hash = "#proxy"; })]]);
+      const copy = state.copy && state.copy.alias;
+      if (copy && copy !== db.name) {
+        // The local copy is there: say how it compares, and offer to move the setup (and what runs on this one) to it.
+        const local = (state.health.dbs || []).find((item) => item.name === copy && !item.error);
+        const refreshed = state.copy.at ? new Date(state.copy.at).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "";
+        items.push(["db", t("{name} takes {time} per round trip", { name: db.name, time: roundTrip(db.ms) }),
+          el("span", {}, t("Every query pays at least this. Your local copy answers on this machine."),
+            el("span", { class: "compare" },
+              el("span", { class: "pill bad" }, db.name, " ", el("b", {}, roundTrip(db.ms))),
+              el("span", { class: "pill good" }, copy, " ", el("b", {}, local ? roundTrip(local.ms) : t("a few ms")),
+                refreshed ? ` · ${t("refreshed {when}", { when: refreshed })}` : ""))),
+          [button(t("Line check"), lineCheck),
+            button(t("Use the local copy"), () => useCopy(db.name, copy), { class: "btn small primary" })]]);
+      } else {
+        items.push(["db", t("{name} takes {time} per round trip", { name: db.name, time: roundTrip(db.ms) }),
+          t("Every query pays at least this, and a list request makes about six. Requests shows where the time goes."),
+          [button(t("Line check"), lineCheck), button(t("Requests"), () => { location.hash = "#proxy"; })]]);
+      }
     }
   }
   const fromDoctor = (state.doctor.problems || []).filter((check) => !HOME_COVERS.has(check.fix)
@@ -499,4 +514,16 @@ export async function switchSetup(name) {
       startAll();
     }
   }, 500);
+}
+
+// Home's slow database notice: the setup's stack and the services running on the slow database move to the copy.
+async function useCopy(slow, copy) {
+  const running = state.instances.filter((inst) => inst.db === slow && inst.status !== "stopped").map((inst) => inst.key);
+  const text = running.length
+    ? t("The setup's stack starts on {copy} from now on, and the {n} services running on {slow} restart on it with their own user: {keys}.", { copy, n: running.length, slow, keys: running.join(", ") })
+    : t("The setup's stack starts on {copy} from now on; nothing runs on {slow} now.", { copy, slow });
+  if (!await confirmDialog(t("Use the local copy instead of {slow}?", { slow }), text, t("Use the local copy"))) return;
+  act("/api/data/use-copy", { instead_of: slow }, (data) => toast(data.restarting.length
+    ? t("Restarting {n} on {copy}: each row shows its progress.", { n: data.restarting.length, copy: data.copy })
+    : t("The setup uses {copy} from its next start.", { copy: data.copy }), "info"));
 }

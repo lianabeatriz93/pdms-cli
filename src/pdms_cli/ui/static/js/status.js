@@ -22,7 +22,7 @@ function measured(name) {
   return (state.health.dbs || []).find((item) => item.name === name) || null;
 }
 
-function routeText(route) {
+export function routeText(route) {
   if (route.kind === "local") return t("this machine");
   if (route.kind === "direct") return t("straight out");
   if (route.up === false) return t("tunnel {address}: nothing listens there", { address: route.address });
@@ -63,7 +63,7 @@ export function paintStatus() {
 }
 
 // The last hour of round trips as a line (gaps where it did not answer); the newest one marked.
-function sparkline(history, level) {
+export function sparkline(history, level) {
   const NS = "http://www.w3.org/2000/svg";
   const width = 120, height = 26, pad = 3;
   const svg = document.createElementNS(NS, "svg");
