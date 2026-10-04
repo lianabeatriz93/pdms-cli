@@ -93,6 +93,10 @@ def docker_command(repo: Path, db: Database, command: str) -> list[str]:
             host = "host.docker.internal"  # Docker Desktop (macOS / Windows)
     config_files = ",".join(f for f in ("flyway.toml", "placeholder.toml") if (repo / f).is_file())
     extra = ["-ignoreMigrationPatterns=*:pending"] if command == "validate" else []  # as flyway_validate.sh
+    if command == "migrate":
+        # A session lock, not a transaction: CREATE INDEX CONCURRENTLY (executeInTransaction=false) waits for every
+        # open transaction, Flyway's own lock included, and would wait forever (Flyway's docs for this option).
+        extra.append("-postgresql.transactional.lock=false")
     return [
         "docker", "run", "--rm", "--entrypoint", "flyway", *network,
         "-v", f"{repo.resolve()}:/work", "-w", "/work",
