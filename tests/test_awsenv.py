@@ -183,10 +183,10 @@ def test_refresh_needs_a_working_session(aws_config, fake) -> None:
 
 
 def test_a_read_is_due_once_a_day_or_for_another_profile() -> None:
-    fresh = {"profile": "pdm-dev", "checked_at": awsenv.now()}
+    fresh = {"profile": "pdm-dev", "checked_at": awsenv.now(), "kept": awsenv.KEPT.pattern}
     assert not awsenv.due(fresh, "pdm-dev")
     assert awsenv.due(fresh, "pdm-qa") and awsenv.due({}, "pdm-dev")
-    assert awsenv.due({"profile": "pdm-dev", "checked_at": "2020-01-01T00:00:00+00:00"}, "pdm-dev")
+    assert awsenv.due({**fresh, "checked_at": "2020-01-01T00:00:00+00:00"}, "pdm-dev")
 
 
 # --------------------------------------------------------------------------- services ↔ Lambdas

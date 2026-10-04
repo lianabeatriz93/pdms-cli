@@ -117,6 +117,9 @@ class Defaults:
     # Profile of the user's AWS config the services use (AWS_PROFILE), with the buckets pdms reads from that
     # account's Lambdas (see awsenv.py). Empty: pdms leaves AWS as the terminal has it.
     aws_profile: str = ""
+    # Where the emails services send through SES go (see emails.py): empty, nowhere (pdms ui shows them); an
+    # address, to that one only, whoever they were for.
+    email_to: str = ""
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 

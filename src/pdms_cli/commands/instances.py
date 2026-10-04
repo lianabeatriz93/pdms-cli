@@ -12,7 +12,7 @@ import questionary
 import typer
 from rich.table import Table
 
-from .. import actions, completion, events, frontend, installer, instances, logview, prompts, proxy, repos
+from .. import actions, completion, emails, events, frontend, installer, instances, logview, prompts, proxy, repos
 from ..config import Config
 from ..i18n import _
 from .common import app, console, fail, pick, print_endpoints, print_restored, settle, show_menu
@@ -210,7 +210,7 @@ def adopt(
 @app.command(help=_("Show the console of background services (Ctrl+C to exit)."))
 def logs(
     keys: Optional[list[str]] = typer.Argument(
-        None, help=_("Instances (or parts of the service name), proxy, frontend, sns (what was published to SNS locally) or ui."),
+        None, help=_("Instances (or parts of the service name), proxy, frontend, sns (what was published to SNS locally), emails (what services sent through SES) or ui."),
         autocompletion=completion.log_keys,
     ),
     all_: bool = typer.Option(False, "--all", "-a", help=_("All running instances, including ones started later.")),
@@ -227,6 +227,8 @@ def logs(
         return proxy_logs(follow, lines, previous)
     if keys and keys[0] == events.SNS_KEY:
         return sns_logs(follow, lines, previous)
+    if keys and keys[0] == emails.KEY:
+        return email_logs(follow, lines, previous)
     if keys and frontend.is_key(keys[0]):
         return frontend_logs(follow, lines, previous)
     if keys and keys[0] == "ui":
@@ -320,6 +322,22 @@ def sns_logs(follow: bool, lines: Optional[int], previous: bool) -> None:
     sns = instances.Instance(key=events.SNS_KEY, pid=0, service="", host="", port=0, user="", db="", reload=False,
                              log=str(log), started_at="")
     logview.follow(console, [sns], lines or 100, None)
+
+
+def email_logs(follow: bool, lines: Optional[int], previous: bool) -> None:
+    """What the services sent through SES (kept here, or sent to defaults.email_to only)."""
+    log = emails.log_path()
+    if previous:
+        log = instances.previous_log_path(log)
+    if not follow or previous:
+        if not log.exists():
+            fail(_("No service has sent an email yet."))
+        console.print(instances.tail(str(log), lines or 100), markup=False, highlight=False, end="")
+        return
+    console.rule(_("{names} · Ctrl+C to exit", names=_("emails")))
+    kept = instances.Instance(key=emails.KEY, pid=0, service="", host="", port=0, user="", db="", reload=False,
+                              log=str(log), started_at="")
+    logview.follow(console, [kept], lines or 100, None)
 
 
 def proxy_logs(follow: bool, lines: Optional[int], previous: bool) -> None:

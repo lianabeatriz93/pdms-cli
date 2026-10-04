@@ -52,6 +52,16 @@ def _(text: str, /, **kwargs: object) -> str:
 
 
 ES: dict[str, str] = {
+    "'{value}' is not an email address": "'{value}' no es una dirección de email",
+    "Send the emails of the services to this address only (empty = to nobody: pdms ui shows them):": "Enviar los emails de los servicios solo a esta dirección (vacío = a nadie: pdms ui los muestra):",
+    "Where the emails services send go: an address (only there) or none (only to pdms ui).": "Adónde van los emails que envían los servicios: una dirección (solo allí) o ninguna (solo a pdms ui).",
+    "The address, or \"\" so they go nowhere. Without it: show where they go now.": "La dirección, o \"\" para que no vayan a ningún sitio. Sin ella: muestra adónde van ahora.",
+    "Emails go to {address}.": "Los emails van a {address}.",
+    "Emails go nowhere: pdms ui shows them (pdms logs emails).": "Los emails no van a ningún sitio: pdms ui los muestra (pdms logs emails).",
+    "Emails go to {address} only.": "Los emails van solo a {address}.",
+    "Services already running change when they restart.": "Los servicios que ya corren cambian al reiniciarse.",
+    "No service has sent an email yet.": "Ningún servicio ha enviado un email todavía.",
+    "emails": "emails",
     "{name} has no Flyway history: its tables were made another way, and Flyway would run every migration over them. pdms only applies migrations to a database Flyway already manages.": "{name} no tiene historial de Flyway: sus tablas se crearon de otra forma, y Flyway ejecutaría todas las migraciones encima. pdms solo aplica migraciones a una base de datos que Flyway ya gestiona.",
     "Flyway migrate failed on {name} (exit code {code}); the log says why.": "Flyway migrate falló en {name} (código de salida {code}); el log dice por qué.",
     "There is no local copy yet: make it in Data first.": "Aún no hay copia local: hazla primero en Datos.",
@@ -1107,8 +1117,8 @@ ES: dict[str, str] = {
         "No se pudo añadir pdms al menú de aplicaciones: {error}",
     "Could not change the login items: {error}":
         "No se pudieron cambiar los elementos de inicio de sesión: {error}",
-    "Instances (or parts of the service name), proxy, frontend, sns (what was published to SNS locally) or ui.":
-        "Instancias (o partes del nombre del servicio), proxy, frontend, sns (lo publicado en SNS en local) o ui.",
+    "Instances (or parts of the service name), proxy, frontend, sns (what was published to SNS locally), emails (what services sent through SES) or ui.":
+        "Instancias (o partes del nombre del servicio), proxy, frontend, sns (lo publicado en SNS en local), emails (lo que los servicios enviaron por SES) o ui.",
     "Open in the browser":
         "Abrir en el navegador",
     "Open pdms":
