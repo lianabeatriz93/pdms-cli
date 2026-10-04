@@ -23,6 +23,7 @@ from ..i18n import _
 from . import state as ui_state
 from . import updates as ui_updates
 from .control import Control
+from .aws import Aws
 from .changes import Changes
 from .doctor import Doctor
 from .health import Health
@@ -72,6 +73,7 @@ class Jobs:
         self._lock = threading.Lock()
         self.doctor = Doctor(on_change)
         self.health = Health(on_change)
+        self.aws = Aws(on_change)
         self.changes = Changes(on_change)
         self.tests = Tests(on_change)
 

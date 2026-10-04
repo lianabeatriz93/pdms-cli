@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import __version__, actions, events, frontend, health, images, instances, installer, migrations, proxy, repos, routes, runner, update
+from . import __version__, actions, awsenv, events, frontend, health, images, instances, installer, migrations, proxy, repos, routes, runner, update
 from .config import Config, config_path
 from .i18n import _
 
@@ -32,7 +32,7 @@ class Check:
     detail: str = ""
     hint: str = ""
     # What pdms ui can do about it (its hint becomes a button): update, add_user, add_db, edit_db:<name>, add_repo,
-    # repos, edit_repo:<alias>, forget_stopped, services.
+    # repos, edit_repo:<alias>, forget_stopped, services, aws (the AWS card of Data).
     fix: str = ""
 
 
@@ -370,9 +370,47 @@ def check_instances(cfg: Config | None = None) -> list[Check]:
     return checks + outside
 
 
+def check_aws(cfg: Config) -> list[Check]:
+    section = "AWS"
+    profile = cfg.defaults.aws_profile
+    if not profile:
+        if not awsenv.profiles():
+            return [Check(section, _("Profile"), OK, _("none on this computer; services use AWS as the terminal has it"))]
+        return [Check(section, _("Profile"), WARN, _("not chosen; services use AWS as the terminal has it"),
+                      _("Services that use S3 need one: pdms aws profile"), fix="aws")]
+    if profile not in awsenv.profiles():
+        return [Check(section, _("Profile"), FAIL, _("{profile} is not in {path}", profile=profile, path=awsenv.config_file()),
+                      "pdms aws profile", fix="aws")]
+    if not awsenv.cli():
+        return [Check(section, _("Profile"), FAIL, _("{profile} · the AWS CLI (aws) is not installed", profile=profile),
+                      _("Install the AWS CLI v2."))]
+    who = awsenv.session(profile, timeout=15)
+    if who.state == "ok":
+        checks = [Check(section, _("Profile"), OK, _("{profile} · account {account}", profile=profile, account=who.account))]
+    elif who.state == "expired":
+        checks = [Check(section, _("Profile"), WARN, _("{profile} · session over", profile=profile), "pdms aws login",
+                        fix="aws")]
+    else:
+        checks = [Check(section, _("Profile"), FAIL, f"{profile} · {who.detail}", "pdms aws status", fix="aws")]
+    found = awsenv.summary(cfg)
+    if not found["read_at"]:
+        checks.append(Check(section, _("Buckets"), WARN, _("the Lambdas were not read yet"), "pdms aws read", fix="aws"))
+    else:
+        checks.append(Check(section, _("Buckets"), OK, _("{services} services get them · read {when}",
+                                                         services=found["with_buckets"],
+                                                         when=found["read_at"][:16].replace("T", " "))))
+    if found["restart"]:
+        checks.append(Check(section, _("Changed buckets"), WARN, ", ".join(found["restart"]),
+                            _("They changed in AWS after these started: restart them."), fix="services"))
+    if os.environ.get("AWS_ACCESS_KEY_ID"):
+        checks.append(Check(section, "AWS_ACCESS_KEY_ID", WARN, _("set in this terminal"),
+                            _("Keys in the environment win over the profile: unset them before starting pdms.")))
+    return checks
+
+
 def run_all(cfg: Config, *, databases: bool = True, timeout: int = 5) -> list[Check]:
     checks = check_pdms() + check_tools() + check_config(cfg)
     if databases:
         checks += check_databases(cfg, timeout)
     checks += check_network(cfg)
-    return checks + check_repo(cfg) + check_frontend(cfg) + check_ports(cfg) + check_instances(cfg) + check_shell()
+    return checks + check_aws(cfg) + check_repo(cfg) + check_frontend(cfg) + check_ports(cfg) + check_instances(cfg) + check_shell()

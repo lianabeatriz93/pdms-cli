@@ -182,7 +182,8 @@ def copy_state(cfg: Config) -> dict:
 
 
 def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, doctor: dict | None = None,
-                health: dict | None = None, changes: dict | None = None, tests: dict | None = None) -> dict:
+                health: dict | None = None, changes: dict | None = None, tests: dict | None = None,
+                aws: dict | None = None) -> dict:
     """Everything the page shows: repo, users and DBs (names only), instances, proxy, local events and jobs."""
     cfg = cfg or Config.load()
     items = list(instances.load().values())
@@ -222,6 +223,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, 
         "changes": changes or {"stale": [], "pending": [], "commits": [], "head": "", "at": ""},
         "tests": tests or {"running": [], "queued": [], "failing": 0, "version": 0, "error": ""},
         "copy": copy_state(cfg),
+        "aws": aws or {"profile": cfg.defaults.aws_profile, "session": {"state": ""}},
         "new_views": [name for name in NEW_VIEWS if name not in seen_views()],
         "jobs": jobs or {},
     }

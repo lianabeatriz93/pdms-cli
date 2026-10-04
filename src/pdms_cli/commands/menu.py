@@ -11,6 +11,7 @@ from .. import __version__, banner, instances, prompts
 from ..config import Config, config_path
 from ..i18n import _
 from .common import console, show_menu
+from .aws import aws_menu
 from .dbs import db_menu
 from .doctor import doctor_cmd
 from .events import events_menu
@@ -68,6 +69,7 @@ def main_menu(first_run: bool = False) -> None:
                 questionary.Choice(_("🌐 Proxy (one port for every service)"), "proxy"),
                 questionary.Choice(_("📨 Events (local SQS)"), "events"),
                 questionary.Choice(_("🗄  Databases"), "db"),
+                questionary.Choice(_("☁  AWS (profile and buckets)"), "aws"),
                 questionary.Choice(_("👤 Users"), "user"),
                 questionary.Choice(_("⚙  Settings"), "defaults"),
                 questionary.Choice(_("✕  Exit"), "exit"),
@@ -78,7 +80,7 @@ def main_menu(first_run: bool = False) -> None:
         actions = {
             "run": do_run, "ps": instances_menu, "stack": stack_menu,
             "proxy": lambda: proxy_main(None, None, None, None, False, "dev", None, None, None),
-            "events": events_menu, "db": db_menu, "user": user_menu,
+            "events": events_menu, "db": db_menu, "aws": aws_menu, "user": user_menu,
             "defaults": settings_menu,
         }
         try:

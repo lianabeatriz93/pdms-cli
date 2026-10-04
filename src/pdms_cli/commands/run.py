@@ -13,7 +13,7 @@ import questionary
 import typer
 from rich.table import Table
 
-from .. import actions, completion, instances, prompts, runner
+from .. import actions, awsenv, completion, instances, prompts, runner
 from ..config import Config, Database, DevUser
 from ..i18n import _
 from .common import EVENTS_HELP, add_db, add_user, app, console, fail, pick, print_endpoints, settle, yes_no
@@ -315,6 +315,6 @@ def env(
         user, db = user or cfg.last_user or None, db or cfg.last_db or None
     user_name = pick(cfg.users, _("user"), user, cfg.last_user)
     db_name = pick(cfg.dbs, _("database"), db, cfg.last_db)
-    variables = runner.service_env(cfg.defaults, cfg.users[user_name], cfg.dbs[db_name])
+    variables = runner.service_env(cfg.defaults, cfg.users[user_name], cfg.dbs[db_name], awsenv.profile_env(cfg))
     for key, value in variables.items():
         print(f'{key}="{value}"' if dotenv else f"export {key}={shlex.quote(value)}")

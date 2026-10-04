@@ -6,6 +6,7 @@ import { state } from "./state.js";
 import { openFlyway } from "./migrations.js";
 import { openLogs } from "./logs.js";
 import { confirmDialog } from "./stacks.js";
+import { paintAws } from "./aws.js";
 import { dbLevel, roundTrip as roundTripText, routeText, sparkline } from "./status.js";
 
 // migrations: name → { loading, counts, flyway, error }, read once per database when the screen opens.
@@ -61,6 +62,7 @@ export function syncData() {
     }
   }
   if (dataView.data && visible) { paintJob(); paintConnections(dataView.data); }
+  if (visible) paintAws();
 }
 
 export function testNow() {
@@ -204,6 +206,7 @@ export function paintData() {
   paintSnapshots(data);
   paintTests(data);
   paintJob();
+  paintAws();
 }
 
 export function postgresUpDown(verb) {

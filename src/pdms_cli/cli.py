@@ -12,6 +12,7 @@ import typer
 
 from . import __version__
 from .commands import (  # noqa: F401 - importing them registers their commands
+    aws,
     dbs,
     doctor,
     events,
@@ -51,7 +52,7 @@ def command_name(command: typer.models.CommandInfo) -> str:
 app.registered_commands.sort(key=lambda c: COMMAND_ORDER.index(command_name(c)))
 
 # Commands that do not depend on a repo, so they never trigger the "switch repo?" question.
-REPO_AGNOSTIC = {"repo", "config", "env", "db", "user", "self-update", "setup"}
+REPO_AGNOSTIC = {"repo", "config", "env", "db", "user", "self-update", "setup", "aws"}
 
 
 def show_version(value: bool) -> None:

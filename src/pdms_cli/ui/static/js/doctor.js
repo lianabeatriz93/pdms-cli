@@ -48,6 +48,7 @@ function fixLabel(fix) {
   if (kind === "adopt") return t("Adopt all");
   if (kind === "frontend_api") return t("Fix it");
   if (kind === "pull_image") return t("Download");
+  if (kind === "aws") return t("Open Data");
   return t("Open Services");
 }
 
@@ -62,6 +63,7 @@ function runFix(fix) {
   else if (kind === "edit_repo") openSetting("repos", (data) => { const repo = data.repos.find((r) => r.name === name); if (repo) openRepo(repo); });
   else if (kind === "frontend_api") fixFrontendApi();
   else if (kind === "pull_image") pullImage(name);
+  else if (kind === "aws") location.hash = "#data";
   else if (kind === "adopt") adoptStrays(null, () => act("/api/doctor/run", { databases: false }));
   else if (kind === "forget_stopped") act("/api/clean", {}, (data) => { toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info"); act("/api/doctor/run", { databases: false }); });
   else location.hash = "#services";

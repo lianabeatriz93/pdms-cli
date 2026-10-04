@@ -34,6 +34,7 @@ import { flywayView, openFlyway, paintFlyway } from "./migrations.js";
 import { doctorReport, paintDoctor, runDoctor } from "./doctor.js";
 import { openPalette, paintPalette, palette, runPalette, typing, viewFilter } from "./palette.js";
 import { route } from "./router.js";
+import { checkAws, chooseAwsProfile, loginAws, readAws } from "./aws.js";
 import { copyLog, dataView, postgresUpDown, refreshCopy, saveSnapshot, setTestCount, testNow } from "./data.js";
 import {
   paintTests, pickAllTests, rerunFailed, runShown, showTests, startTestDb, stopTests, testsView,
@@ -72,6 +73,10 @@ $("data-job-log").addEventListener("click", copyLog);
 $("data-copy-migrations").addEventListener("click", () => dataView.data && openFlyway(dataView.data.copy.alias));
 $("data-snap-form").addEventListener("submit", saveSnapshot);
 $("data-tests-count").addEventListener("change", setTestCount);
+$("data-aws-profile").addEventListener("change", chooseAwsProfile);
+$("data-aws-read-btn").addEventListener("click", readAws);
+$("data-aws-login-btn").addEventListener("click", loginAws);
+$("data-aws-check").addEventListener("click", checkAws);
 $("tests-run").addEventListener("click", runShown);
 $("tests-rerun").addEventListener("click", rerunFailed);
 $("tests-stop").addEventListener("click", stopTests);

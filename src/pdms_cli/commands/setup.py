@@ -8,10 +8,11 @@ from typing import Optional
 import questionary
 import typer
 
-from .. import actions, i18n, migrations, onboarding, prompts, repos
+from .. import actions, awsenv, i18n, migrations, onboarding, prompts, repos
 from ..config import Config, config_path
 from ..i18n import _
-from .common import add_db, add_user, app, check_db, console
+from .aws import ask_profile, read_now
+from .common import add_db, add_user, app, check_db, console, settle
 from .doctor import doctor_cmd
 from .settings import config_defaults, config_import
 from .stacks import stack_add
@@ -185,6 +186,29 @@ def setup_users() -> None:
         setup_later("pdms user add / pdms user import")
 
 
+def setup_aws() -> None:
+    setup_step(_("AWS"))
+    cfg = Config.load()
+    if cfg.defaults.aws_profile:
+        setup_done(_("profile {profile}", profile=cfg.defaults.aws_profile))
+        return
+    if not awsenv.profiles():
+        console.print("  " + _("No AWS profiles on this computer: services use AWS as the terminal has it."))
+        setup_later("pdms aws profile")
+        return
+    console.print("  " + _("Services that use S3 need a profile, and the buckets pdms reads from its Lambdas."))
+    name = ask_profile("")
+    if not name:
+        setup_later("pdms aws profile")
+        return
+    settle(lambda: actions.set_aws_profile(cfg, name))
+    setup_done(_("profile {profile}", profile=name))
+    try:
+        read_now(cfg)
+    except typer.Exit:
+        setup_later("pdms aws read")
+
+
 def setup_stacks() -> None:
     cfg = Config.load()
     if cfg.stacks:
@@ -215,6 +239,7 @@ def setup_cmd() -> None:
     setup_migrations()
     setup_dbs()
     setup_users()
+    setup_aws()
     setup_stacks()
     if first_time and "defaults" not in imported:
         setup_step(_("Defaults"))
