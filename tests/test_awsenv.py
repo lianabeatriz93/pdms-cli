@@ -341,3 +341,38 @@ def test_pdms_ui_takes_the_code_aws_sso_login_prints(tmp_path) -> None:
     monitor._found_in(log)
     assert monitor.summary()["login"] == {"running": True, "url": "https://device.sso.us-east-1.amazonaws.com/",
                                           "code": "ABCD-EFGH", "error": ""}
+
+
+# --------------------------------------------------------------------------- credentials from the AWS CLI
+
+
+def test_services_get_the_profiles_credentials_from_the_aws_cli(aws_config, cfg) -> None:
+    env = awsenv.credentials_env(cfg)
+    text = Path(env["AWS_CONFIG_FILE"]).read_text(encoding="utf-8")
+    assert "[profile pdm-dev]" in text and "-m pdms_cli.awscreds pdm-dev" in text
+    assert str(awsenv.config_file()) in text  # the CLI reads the user's own config, not this one
+    assert awsenv.credentials_env(cfg) == env  # written again only when it changes
+
+
+@pytest.mark.parametrize("change", [{"aws_profile": ""}, {"env": {"AWS_CONFIG_FILE": "/mine"}}, {"cli": None}])
+def test_no_credentials_config_without_a_profile_the_cli_or_with_the_users_own(aws_config, cfg, monkeypatch, change):
+    if "cli" in change:
+        monkeypatch.setattr(awsenv, "cli", lambda: None)
+    if "aws_profile" in change:
+        cfg.defaults.aws_profile = ""
+    if "env" in change:
+        cfg.defaults.env = change["env"]
+    assert awsenv.credentials_env(cfg) == {}
+
+
+def test_the_credential_process_asks_the_cli_with_the_users_config(monkeypatch, tmp_path) -> None:
+    from pdms_cli import awscreds
+
+    seen = {}
+    monkeypatch.setattr(awscreds.shutil, "which", lambda name: "/usr/bin/aws")
+    monkeypatch.setenv("AWS_PROFILE", "pdm-dev")
+    monkeypatch.setattr(awscreds.subprocess, "run",
+                        lambda cmd, env, stdin: seen.update(cmd=cmd, env=env) or SimpleNamespace(returncode=0))
+    assert awscreds.main(["pdm-dev", str(tmp_path / "config")]) == 0
+    assert seen["cmd"][1:] == ["configure", "export-credentials", "--profile", "pdm-dev", "--format", "process"]
+    assert seen["env"]["AWS_CONFIG_FILE"] == str(tmp_path / "config") and "AWS_PROFILE" not in seen["env"]

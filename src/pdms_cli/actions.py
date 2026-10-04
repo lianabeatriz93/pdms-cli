@@ -352,6 +352,7 @@ def service_env(cfg: Config, launch: ServiceLaunch) -> dict[str, str]:
     if launch.events.kind == "local" and (found := repo_event_map(cfg, launch.service)):
         extra.update(events.topic_env(*found))  # its own topics; the rest of the setup may be a whole stack's
     extra.update(awsenv.env_for(cfg, launch.service))  # AWS_PROFILE and its Lambda's buckets, when a profile is chosen
+    extra.update(awsenv.credentials_env(cfg))  # and its credentials from the AWS CLI (their botocore loses SSO)
     extra.update(emails.env(cfg))  # its SES emails kept for pdms ui, or sent to one address only
     query_stats = cfg.defaults.query_stats and not launch.is_consumer
     # Always: its sitecustomize.py follows the proxy's requests through logs and events (pdms_trace.py) and loads
