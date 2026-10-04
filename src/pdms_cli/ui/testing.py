@@ -55,13 +55,13 @@ class Tests:
         return failing
 
     def run(self, cfg: Config, backend: Path, projects: list[str], dbs: list[str], dev_mode: bool = False) -> dict:
-        """Queue ``projects`` and start one worker per database of ``dbs`` (local ones only) that has none.
+        """Queue ``projects`` and start one worker per database of ``dbs`` (pdms's test databases only) that has none.
         ``dev_mode`` runs them with DEVELOPMENT_MODE on (by default it is off, whatever their .env says)."""
         if not dbs:
-            raise actions.ActionError(testruns.no_local_db_hint(backend))
+            raise actions.ActionError(testruns.no_test_db_hint())
         seen_dbs = []
         for name in dbs:
-            testruns.require_local(cfg, name)
+            testruns.require_test_db(name)
             if name not in seen_dbs:
                 seen_dbs.append(name)
         known = set(testruns.projects(backend))

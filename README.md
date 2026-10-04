@@ -603,26 +603,30 @@ in the copy under `.venv/lib/python3.*/site-packages/...` or step in with F11 fr
 ## Tests and migrations
 
 ```bash
-pdms test lead-tp-create                 # poetry run pytest in the service (smart install first), on a local DB
+pdms test lead-tp-create                 # poetry run pytest in the service (smart install first), on pdms_test_1
 pdms test lead-tp-create -- -k create -x # extra arguments go to pytest
-pdms test core -d tests -u supervisor    # a package too; pick the local DB, and inject a user's DEV_*
-pdms test lead-tp-create --start-db      # start backend/docker-compose_tests.yml (:5439) and use it
+pdms test core -d pdms_test_2 -u supervisor  # a package too; another test database, and a user's DEV_*
+pdms db local up                         # pdms's own Postgres (Docker, :5440) with 4 empty test databases
+pdms db local status                     # its databases and their size
+pdms db local tests 6 --recreate pdms_test_1  # have 6 of them; recreate one empty
 pdms test lead-tp-create --dev-mode      # DEVELOPMENT_MODE on (no token check); off by default, as deployed
 pdms migrate -d web-dev                  # flyway info: applied and pending migrations (read-only)
 pdms migrate validate -d web-dev         # flyway validate, like the pipeline (pending ones are not errors)
 pdms migrate migrate -d local            # apply them — only against a local database
 ```
 
-Tests only ever run against a **local** database (localhost, not protected): pdms always sets
-`DB_PG_CONNECTION_STR`, so a service's `.env` pointing to web-dev is never used, and a shared database is refused.
-Without a local one, `pdms test` offers to start the database of `backend/docker-compose_tests.yml`. Tests run
+Tests only ever run on **pdms's test databases** (`pdms_test_1` … in pdms's own Postgres, the `pdms-postgres`
+container on port 5440 with its data in the `pdms-postgres-data` volume): the integration tests drop and create every
+table of the database they get, so a database that keeps data — web-dev, or a local one like `pdms_sync` — would be
+wiped. pdms always sets `DB_PG_CONNECTION_STR` to one of them, so a service's `.env` is never used, and refuses any
+other database. Without them, `pdms test` offers to start that Postgres and create them (`pdms db local up`). Tests run
 with `DEVELOPMENT_MODE` off (a service's `.env` usually turns it on, and with it the token is not checked, so tests
 of unauthorized requests fail): when the `.env` turns it on, `pdms test` asks, `--dev-mode` / `--no-dev-mode`
 answer it, and the Tests screen has a Development mode checkbox; each result says how it ran. Each run keeps
 its JUnit report and result for **pdms ui → Tests**, which lists the services and packages your branch touches
 (its diff against main plus uncommitted files, including changes to local packages such as `common/core`), runs
-them with Re-run failed, and links each failure to its line in VS Code. Services share tables, so each local
-database runs one project at a time: tick more local databases to run more at once.
+them with Re-run failed, and links each failure to its line in VS Code. Services share tables, so each test
+database runs one project at a time: tick more of them to run more at once.
 
 `pdms migrate` runs [Flyway](https://flywaydb.org/) from the `pdms-db-migrations` repo (PDMP-467; the Alembic
 migrations in `backend/common/sync-database` are frozen) with the same Docker image and arguments as the
@@ -667,7 +671,7 @@ do it later).
 | `pdms run` / `pdms debug` / `pdms env` | Run a service / create a VS Code debug configuration / print a profile's variables |
 | `pdms services` | List the services of the current repo |
 | `pdms repo` | Repos menu (`list`, `add`, `use`, `edit`, `remove`) |
-| `pdms test` / `pdms migrate` | Run a service's tests on a local DB / Flyway `info`, `validate` (and `migrate` locally) |
+| `pdms test` / `pdms migrate` | Run a service's tests on a pdms test database / Flyway `info`, `validate` (and `migrate` locally) |
 | `pdms ps` / `logs` / `urls` / `open` / `stop` / `restart` | Manage background instances |
 | `pdms up` / `pdms down` | Start / stop a stack |
 | `pdms proxy` | Local API gateway (`routes` to inspect the mapping) |

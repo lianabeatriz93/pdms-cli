@@ -1,5 +1,5 @@
-"""Tests of the services (pdms test and the Tests screen): only local databases, one project at a time per database,
-JUnit results kept per project, and the projects the branch's changes touch."""
+"""Tests of the services (pdms test and the Tests screen): only pdms's test databases (the tests drop every table),
+one project at a time per database, JUnit results kept per project, and the projects the branch's changes touch."""
 
 from __future__ import annotations
 
@@ -13,14 +13,14 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from pdms_cli import actions, cli, runner, testruns
+from pdms_cli import actions, cli, localdb, runner, testruns
 from pdms_cli.config import Config, Database, Repo
 from pdms_cli.ui import jobs as ui_jobs
 from pdms_cli.ui.testing import Tests as Runner
 
 WEB = Database(host="pdm-cluster.cluster-x.us-east-1.rds.amazonaws.com", database="pdm", protected=True)
-LOCAL = Database(host="localhost", port=5434, database="pdms_sync", user="local", password="local")
-OTHER = Database(host="127.0.0.1", port=5439, database="alivi_pdms", user="local", password="local")
+DATA = Database(host="localhost", port=5434, database="pdms_sync", user="local", password="local")  # local, with data
+T1 = localdb.database("pdms_test_1")
 
 REPORT = """<?xml version="1.0" encoding="utf-8"?>
 <testsuites><testsuite name="pytest" errors="1" failures="1" skipped="1" tests="5" time="1.2">
@@ -58,6 +58,14 @@ def project(backend: Path, name: str, deps: dict[str, str] | None = None, servic
     return path
 
 
+@pytest.fixture(autouse=True)
+def pdms_postgres(monkeypatch):
+    """pdms's Postgres running with two test databases (no Docker in tests)."""
+    monkeypatch.setattr(localdb, "available", lambda timeout=15: True)
+    monkeypatch.setattr(localdb, "test_databases", lambda found=None: ["pdms_test_1", "pdms_test_2"])
+    monkeypatch.setattr(localdb, "state", lambda: {"exists": True, "running": True, "port": localdb.PORT})
+
+
 @pytest.fixture
 def repo(tmp_path) -> Path:
     root = tmp_path / "pdms"
@@ -73,36 +81,36 @@ def repo(tmp_path) -> Path:
     return root
 
 
-# ----------------------------------------------------------------------------------------- only local databases
+# ----------------------------------------------------------------------------------------- test databases only
 
 
-def test_only_local_databases_are_offered_and_accepted() -> None:
-    cfg = Config(dbs={"web-dev": WEB, "local": LOCAL, "same": LOCAL, "tests": OTHER,
-                      "tunnel": Database(host="127.0.0.6", database="pdm")})
-    assert testruns.local_dbs(cfg) == ["local", "tests"]  # "same" is the same database as "local"
-    assert testruns.require_local(cfg, "local") is LOCAL
-    with pytest.raises(actions.ActionError, match="shared"):
-        testruns.require_local(cfg, "web-dev")
-    with pytest.raises(actions.ActionError, match="shared"):
-        testruns.require_local(cfg, "tunnel")
-    with pytest.raises(actions.ActionError):
-        testruns.require_local(cfg, "nope")
+def test_only_pdms_test_databases_are_accepted(monkeypatch) -> None:
+    assert testruns.test_dbs() == ["pdms_test_1", "pdms_test_2"]
+    assert testruns.require_test_db("pdms_test_2") == localdb.database("pdms_test_2")
+    for name in ("local", "pdms_sync", "web-dev", "pdms", "iso_lead_common"):  # data, whatever its alias
+        with pytest.raises(actions.ActionError, match="drop and create every table"):
+            testruns.require_test_db(name)
+    with pytest.raises(actions.ActionError, match="does not exist"):
+        testruns.require_test_db("pdms_test_9")
+    monkeypatch.setattr(localdb, "available", lambda timeout=15: False)
+    assert testruns.test_dbs() == []  # its Postgres is not running
 
 
-def test_the_run_gets_the_local_database_and_development_mode_off(monkeypatch) -> None:
+def test_the_run_gets_a_test_database_and_development_mode_off(monkeypatch) -> None:
     """DEVELOPMENT_MODE makes restapi_fastapi skip the token check: tests of unauthorized requests would get 200. It is
     set empty (not left out), so a service's .env cannot turn it on."""
-    cfg = Config(dbs={"local": LOCAL})
+    cfg = Config()
     cfg.defaults.env = {"DB_PG_CONNECTION_STR": WEB.url(), "OTHER": "1"}
     monkeypatch.setenv("DEVELOPMENT_MODE", "true")
     monkeypatch.setenv("DB_PG_CONNECTION_STR", WEB.url())
-    env = testruns.test_env(cfg, LOCAL)
-    assert env["DB_PG_CONNECTION_STR"] == LOCAL.url()
+    env = testruns.test_env(cfg, T1)
+    assert env["DB_PG_CONNECTION_STR"] == T1.url()
     assert env["DEVELOPMENT_MODE"] == ""
     assert "OTHER" not in env and "LOGGING_LEVEL" not in env
     assert "PATH" in env
-    with pytest.raises(actions.ActionError):
-        testruns.test_env(cfg, WEB)
+    for db in (WEB, DATA):  # the last line of defence: shared, or local with data
+        with pytest.raises(actions.ActionError):
+            testruns.test_env(cfg, db)
 
 
 def test_pytest_writes_a_junit_report_unless_given_its_own(tmp_path) -> None:
@@ -196,38 +204,39 @@ def fake_runs(monkeypatch, seconds: float = 0.2):
     return seen
 
 
-def test_each_local_database_runs_one_project_at_a_time(repo, monkeypatch) -> None:
-    cfg = Config(dbs={"local": LOCAL, "tests": OTHER, "web-dev": WEB})
+def test_each_test_database_runs_one_project_at_a_time(repo, monkeypatch) -> None:
+    cfg = Config(dbs={"local": DATA, "web-dev": WEB})
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: cfg))
     seen = fake_runs(monkeypatch)
     tests = Runner()
     backend = repo / "backend"
-    with pytest.raises(actions.ActionError, match="shared"):
-        tests.run(cfg, backend, ["lead/lead-a"], ["local", "web-dev"])
-    with pytest.raises(actions.ActionError, match="No local database"):
+    for dbs in (["pdms_test_1", "local"], ["web-dev"]):
+        with pytest.raises(actions.ActionError, match="drop and create every table"):
+            tests.run(cfg, backend, ["lead/lead-a"], dbs)
+    with pytest.raises(actions.ActionError, match="not ready"):
         tests.run(cfg, backend, ["lead/lead-a"], [])
     with pytest.raises(actions.ActionError, match="not a project"):
-        tests.run(cfg, backend, ["../etc"], ["local"])
-    started = tests.run(cfg, backend, ["common/core", "lead/lead-a", "lead/lead-b"], ["local", "tests"])
+        tests.run(cfg, backend, ["../etc"], ["pdms_test_1"])
+    started = tests.run(cfg, backend, ["common/core", "lead/lead-a", "lead/lead-b"], ["pdms_test_1", "pdms_test_2"])
     assert started == {"queued": ["common/core", "lead/lead-a", "lead/lead-b"], "workers": 2}
     deadline = time.monotonic() + 5
     while len(seen) < 3 or tests.summary()["running"]:
         assert time.monotonic() < deadline
         time.sleep(0.02)
     assert sorted(p for p, *_ in seen) == ["common/core", "lead/lead-a", "lead/lead-b"]
-    for db in ("local", "tests"):  # never two at once on the same database
+    for db in ("pdms_test_1", "pdms_test_2"):  # never two at once on the same database
         spans = sorted((b, e) for _p, d, b, e in seen if d == db)
         assert all(spans[i][1] <= spans[i + 1][0] for i in range(len(spans) - 1))
-    assert {d for _p, d, *_ in seen} == {"local", "tests"}
+    assert {d for _p, d, *_ in seen} == {"pdms_test_1", "pdms_test_2"}
     assert tests.summary()["version"] == 3
 
 
 def test_stop_empties_the_queue_and_cancels_what_runs(repo, monkeypatch) -> None:
-    cfg = Config(dbs={"local": LOCAL})
+    cfg = Config()
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: cfg))
     seen = fake_runs(monkeypatch, seconds=5)
     tests = Runner()
-    tests.run(cfg, repo / "backend", ["lead/lead-a", "lead/lead-b"], ["local"])
+    tests.run(cfg, repo / "backend", ["lead/lead-a", "lead/lead-b"], ["pdms_test_1"])
     deadline = time.monotonic() + 5
     while not tests.summary()["running"]:
         assert time.monotonic() < deadline
@@ -243,7 +252,7 @@ def test_stop_empties_the_queue_and_cancels_what_runs(repo, monkeypatch) -> None
 def test_a_real_run_keeps_the_result_and_its_log(repo, monkeypatch) -> None:
     """run_tests with a stand-in for poetry that writes the report pytest would write."""
     backend = repo / "backend"
-    cfg = Config(dbs={"local": LOCAL})
+    cfg = Config(dbs={"local": DATA})
     fake = repo / "fake_poetry.py"
     fake.write_text(
         "import os, sys\n"
@@ -255,31 +264,34 @@ def test_a_real_run_keeps_the_result_and_its_log(repo, monkeypatch) -> None:
     monkeypatch.setattr(runner, "poetry", lambda: str(fake))
     monkeypatch.setattr(testruns, "pytest_command", lambda xml, extra=None: [
         sys.executable, str(fake), "run", "pytest", f"--junitxml={xml}"])
-    result = testruns.run_tests(cfg, backend, "lead/lead-b", "local", install=False)
-    assert result["outcome"] == "failed" and result["failed"] == 1 and result["db"] == "local"
+    result = testruns.run_tests(cfg, backend, "lead/lead-b", "pdms_test_1", install=False)
+    assert result["outcome"] == "failed" and result["failed"] == 1 and result["db"] == "pdms_test_1"
     log = testruns.files(backend, "lead/lead-b")["log"].read_text()
-    assert f"DB {LOCAL.url()}" in log
-    with pytest.raises(actions.ActionError, match="shared"):
-        testruns.run_tests(Config(dbs={"web-dev": WEB}), backend, "lead/lead-b", "web-dev", install=False)
+    assert f"DB {T1.url()}" in log
+    for name in ("web-dev", "local"):
+        with pytest.raises(actions.ActionError, match="drop and create every table"):
+            testruns.run_tests(cfg, backend, "lead/lead-b", name, install=False)
 
 
 # ----------------------------------------------------------------------------------------- CLI and API
 
 
-def test_pdms_test_refuses_a_shared_database_and_explains_without_a_local_one(repo, monkeypatch) -> None:
-    cfg = Config(repos={"pdms": Repo(path=str(repo))}, current_repo="pdms", dbs={"web-dev": WEB})
+def test_pdms_test_refuses_a_database_with_data_and_explains_without_test_ones(repo, monkeypatch) -> None:
+    cfg = Config(repos={"pdms": Repo(path=str(repo))}, current_repo="pdms", dbs={"web-dev": WEB, "local": DATA})
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: cfg))
     calls = []
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append(a) or subprocess.CompletedProcess(a, 0))
-    result = CliRunner().invoke(cli.app, ["test", "lead-b", "--db", "web-dev", "-n"])
-    assert result.exit_code != 0 and "shared" in result.output
-    result = CliRunner().invoke(cli.app, ["test", "lead-b", "-n"])
-    assert result.exit_code != 0 and "No local database for tests" in result.output
+    for name in ("web-dev", "local"):
+        result = CliRunner().invoke(cli.app, ["test", "lead-b", "--db", name, "-n"])
+        assert result.exit_code != 0 and "drop and create every table" in " ".join(result.output.split())
+    monkeypatch.setattr(localdb, "available", lambda timeout=15: False)
+    result = CliRunner().invoke(cli.app, ["test", "lead-b", "-n"])  # no terminal to ask whether to create them
+    assert result.exit_code != 0 and "not ready" in " ".join(result.output.split())
     assert not calls  # pytest never ran
 
 
-def test_pdms_test_runs_on_the_local_database_and_keeps_the_result(repo, monkeypatch) -> None:
-    cfg = Config(repos={"pdms": Repo(path=str(repo))}, current_repo="pdms", dbs={"web-dev": WEB, "local": LOCAL})
+def test_pdms_test_runs_on_a_test_database_and_keeps_the_result(repo, monkeypatch) -> None:
+    cfg = Config(repos={"pdms": Repo(path=str(repo))}, current_repo="pdms", dbs={"web-dev": WEB, "local": DATA})
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: cfg))
     monkeypatch.setattr(runner, "ensure_poetry", lambda: None)
     ran = {}
@@ -292,49 +304,29 @@ def test_pdms_test_runs_on_the_local_database_and_keeps_the_result(repo, monkeyp
     monkeypatch.setattr(subprocess, "run", run)
     result = CliRunner().invoke(cli.app, ["test", "core", "-n", "--", "-x"])
     assert result.exit_code == 1, result.output
-    assert ran["db"] == LOCAL.url() and Path(ran["cwd"]) == repo / "backend" / "common" / "core"
+    assert ran["db"] == T1.url() and Path(ran["cwd"]) == repo / "backend" / "common" / "core"  # the first one
     assert ran["cmd"][-1] == "-x"
     kept = testruns.results(repo / "backend")["common/core"]
-    assert kept["origin"] == "cli" and kept["db"] == "local" and kept["failed"] == 1
+    assert kept["origin"] == "cli" and kept["db"] == "pdms_test_1" and kept["failed"] == 1
 
 
-def test_the_tests_screen_gets_projects_results_affected_and_only_local_dbs(repo, monkeypatch) -> None:
-    cfg = Config(repos={"pdms": Repo(path=str(repo))}, current_repo="pdms", dbs={"web-dev": WEB, "local": LOCAL})
+def test_the_tests_screen_gets_projects_results_affected_and_only_test_dbs(repo, monkeypatch) -> None:
+    cfg = Config(repos={"pdms": Repo(path=str(repo))}, current_repo="pdms", dbs={"web-dev": WEB, "local": DATA})
     info = ui_jobs.tests_info(cfg, Runner())
     assert [p["project"] for p in info["projects"]] == ["common/core", "lead/lead-a", "lead/lead-b"]
     assert info["projects"][0]["kind"] == "package" and info["projects"][0]["result"] is None
-    assert [d["name"] for d in info["dbs"]] == ["local"]
-    assert info["compose"] is False
-    (repo / "backend" / testruns.TEST_DB_COMPOSE).write_text("services: {}\n")
-    assert ui_jobs.tests_info(cfg, Runner())["compose"] is True
-
-
-def test_the_test_database_of_the_compose_file_is_started_and_registered(repo, monkeypatch) -> None:
-    backend = repo / "backend"
-    cfg = Config(dbs={"web-dev": WEB})
-    monkeypatch.setattr(cfg, "save", lambda: None)
-    with pytest.raises(actions.ActionError, match="docker-compose_tests.yml"):
-        testruns.start_test_db(cfg, backend)
-    (backend / testruns.TEST_DB_COMPOSE).write_text("services: {}\n")
-    monkeypatch.setattr(testruns.events, "docker_available", lambda: (True, "27"))
-    calls = []
-    monkeypatch.setattr(subprocess, "run", lambda cmd, **k: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0))
-    monkeypatch.setattr(actions, "check_connection", lambda db, timeout: "PostgreSQL 18")
-    assert testruns.start_test_db(cfg, backend) == "tests"
-    assert calls[0][:3] == ["docker", "compose", "-f"] and calls[0][-1] == testruns.TEST_DB_SERVICE
-    assert (cfg.dbs["tests"].port, cfg.dbs["tests"].database) == (5439, "alivi_pdms")
-    assert testruns.start_test_db(cfg, backend) == "tests"  # registered once
-    assert testruns.local_dbs(cfg) == ["tests"]
+    assert [d["name"] for d in info["dbs"]] == ["pdms_test_1", "pdms_test_2"]  # never an alias
+    assert info["dbs"][0]["where"] == f"localhost:{localdb.PORT}/pdms_test_1"
 
 
 def test_runs_wait_for_their_turn_without_threads_left_behind(repo, monkeypatch) -> None:
-    cfg = Config(dbs={"local": LOCAL})
+    cfg = Config()
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: cfg))
     fake_runs(monkeypatch, seconds=0.3)
     tests = Runner()
     before = threading.active_count()
-    tests.run(cfg, repo / "backend", ["lead/lead-a"], ["local"])
-    tests.run(cfg, repo / "backend", ["lead/lead-a", "lead/lead-b"], ["local"])  # lead-a is not queued twice
+    tests.run(cfg, repo / "backend", ["lead/lead-a"], ["pdms_test_1"])
+    tests.run(cfg, repo / "backend", ["lead/lead-a", "lead/lead-b"], ["pdms_test_1"])  # lead-a is not queued twice
     deadline = time.monotonic() + 5
     while tests.summary()["running"] or tests.summary()["queued"] or threading.active_count() > before:
         assert time.monotonic() < deadline
@@ -343,18 +335,18 @@ def test_runs_wait_for_their_turn_without_threads_left_behind(repo, monkeypatch)
 
 
 def test_development_mode_is_off_unless_asked_and_kept_with_the_result(repo, monkeypatch) -> None:
-    cfg = Config(dbs={"local": LOCAL})
-    assert testruns.test_env(cfg, LOCAL, dev_mode=True)["DEVELOPMENT_MODE"] == "true"
+    cfg = Config()
+    assert testruns.test_env(cfg, T1, dev_mode=True)["DEVELOPMENT_MODE"] == "true"
     backend = repo / "backend"
     (backend / "lead" / "lead-a" / ".env").write_text("DEVELOPMENT_MODE=True\n")
     assert testruns.env_dev_mode(backend / "lead" / "lead-a") and not testruns.env_dev_mode(backend / "lead" / "lead-b")
-    kept = testruns.record(backend, "lead/lead-a", db="local", code=0, started=time.time(), seconds=0, commit="", origin="ui",
+    kept = testruns.record(backend, "lead/lead-a", db="pdms_test_1", code=0, started=time.time(), seconds=0, commit="", origin="ui",
                            dev_mode=True)
     assert kept["dev_mode"] is True
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: cfg))
     fake_runs(monkeypatch, seconds=0.05)
     tests = Runner()
-    tests.run(cfg, backend, ["lead/lead-a"], ["local"], dev_mode=True)
+    tests.run(cfg, backend, ["lead/lead-a"], ["pdms_test_1"], dev_mode=True)
     deadline = time.monotonic() + 5
     while tests.summary()["running"] or tests.summary()["queued"] or "lead/lead-a" not in fake_runs.modes:
         assert time.monotonic() < deadline

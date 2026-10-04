@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import __version__, actions, events, frontend, i18n, instances, proxy, repos, routes, runner, transfer, update
-from .. import migrations, testruns, userimport
+from .. import localdb, migrations, testruns, userimport
 from ..config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from ..i18n import _
 from . import state as ui_state
@@ -29,7 +29,7 @@ from .testing import Tests
 EVENTS_KEY = "events:elasticmq"  # the job of pdms events up/down (not an instance: no row of its own in Services)
 HOME_KEY = "home"  # the job of Home's Start everything / Stop everything
 REPO_KEY = "repo"  # the job of switching the current repo (stopping or moving what ran from the old one)
-TESTS_DB_KEY = "tests:db"  # the job of starting the database of docker-compose_tests.yml
+TESTS_DB_KEY = "tests:db"  # the job of starting pdms's Postgres and creating its test databases
 SWITCH_CHOICES = ("keep", "stop", "move")
 
 
@@ -140,17 +140,11 @@ class Jobs:
         return self.tests.run(cfg, backend(cfg), projects, dbs, dev_mode)
 
     def start_test_db(self) -> Job:
-        """Start the database of docker-compose_tests.yml and register it, like ``pdms test --start-db``."""
-        cfg = Config.load()
-        root = backend(cfg)
-        testruns.test_db_compose(root)
+        """Start pdms's Postgres and create its test databases, like ``pdms db local up``."""
 
         def work(job: Job) -> None:
-            log = install_log(TESTS_DB_KEY)
-            log.parent.mkdir(parents=True, exist_ok=True)
-            self.phase(job, "starting", installed=True, log_key=TESTS_DB_KEY)
-            with open(log, "w", encoding="utf-8", errors="replace") as output:
-                testruns.start_test_db(cfg, root, output)
+            self.phase(job, "starting")
+            testruns.prepare_test_dbs()
 
         return self.run(TESTS_DB_KEY, "start", "starting", work)
 
@@ -980,9 +974,10 @@ def _strings(value: object) -> bool:
 
 
 def tests_info(cfg: Config, tests: Tests) -> dict:
-    """The Tests screen: every project with its last result, the ones the branch's changes touch, and the local
-    databases (only those: tests never run against a shared one)."""
+    """The Tests screen: every project with its last result, the ones the branch's changes touch, and pdms's test
+    databases (the only ones tests run on: they drop and create every table)."""
     root = backend(cfg)
+    port = localdb.state()["port"] or localdb.PORT
     found = testruns.results(root)
     tests.count_failing(root)
     return {
@@ -990,10 +985,8 @@ def tests_info(cfg: Config, tests: Tests) -> dict:
                       "env_dev_mode": testruns.env_dev_mode(root / p)}
                      for p in testruns.projects(root)],
         "affected": testruns.affected(root),
-        "dbs": [{"name": name, "where": f"{cfg.dbs[name].host}:{cfg.dbs[name].port}/{cfg.dbs[name].database}"}
-                for name in testruns.local_dbs(cfg)],
-        "compose": (root / testruns.TEST_DB_COMPOSE).is_file(),
-        "compose_port": testruns.TEST_DB.port,
+        "dbs": [{"name": name, "where": f"localhost:{port}/{name}"} for name in testruns.test_dbs()],
+        "port": localdb.PORT,
         "root": str(root),
     }
 

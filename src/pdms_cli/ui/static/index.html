@@ -341,7 +341,7 @@
     <span class="muted" id="tests-base"></span>
   </div>
   <div class="bar filter tests-dbs-bar">
-    <span class="muted">Local databases</span>
+    <span class="muted">Test databases</span>
     <span class="tests-dbs" id="tests-dbs"></span>
     <span class="muted" id="tests-parallel"></span>
     <label class="inline tests-dev" title="DEVELOPMENT_MODE=true: no token check, requests act as the DEV_* user. Off by default, as deployed, whatever the service's .env says."><input type="checkbox" id="tests-dev-mode"> Development mode</label>
@@ -350,14 +350,12 @@
   <p class="error" id="tests-error" hidden></p>
   <p class="error" id="tests-run-error" hidden></p>
   <section class="card tests-nodb" id="tests-nodb" aria-labelledby="tests-nodb-title" hidden>
-    <h2 id="tests-nodb-title">No local database for tests</h2>
-    <p class="muted">Tests write and delete rows, so pdms runs them only against a local database, never a shared one like web-dev.</p>
+    <h2 id="tests-nodb-title">No test databases yet</h2>
+    <p class="muted">The integration tests drop and create every table of the database they get, so pdms runs them only on its own test databases (pdms_test_1, pdms_test_2…, empty), never on one that keeps data like web-dev or your local copy.</p>
     <div class="bar-actions">
-      <button class="btn primary" id="tests-start-db" type="button">Start the test database</button>
-      <button class="btn" id="tests-add-db" type="button">Add a local database</button>
+      <button class="btn primary" id="tests-start-db" type="button">Create the test databases</button>
     </div>
     <p class="muted" id="tests-nodb-job" hidden></p>
-    <div class="bar-actions"><button class="btn small" id="tests-nodb-log" type="button" hidden>See the output</button></div>
   </section>
   <div class="selbar" id="tests-selbar" hidden>
     <b id="tests-sel-count"></b>
@@ -370,7 +368,7 @@
     </table>
     <p class="empty" id="tests-empty" hidden></p>
   </div>
-  <p class="muted note">The same as <code>pdms test</code>, whose runs also show here. Services share tables, so each local database runs one project at a time; pick more databases to run more at once.</p>
+  <p class="muted note">The same as <code>pdms test</code>, whose runs also show here. Services share tables, so each test database runs one project at a time; pick more databases to run more at once.</p>
 </section>
 
 <section class="view" id="view-doctor" hidden>

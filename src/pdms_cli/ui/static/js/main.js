@@ -35,7 +35,7 @@ import { doctorReport, paintDoctor, runDoctor } from "./doctor.js";
 import { openPalette, paintPalette, palette, runPalette, typing, viewFilter } from "./palette.js";
 import { route } from "./router.js";
 import {
-  addLocalDb, paintTests, startDbLog, pickAllTests, rerunFailed, runShown, showTests, startTestDb, stopTests, testsView,
+  paintTests, pickAllTests, rerunFailed, runShown, showTests, startTestDb, stopTests, testsView,
 } from "./tests.js";
 import { lineCheck, measureNow } from "./status.js";
 
@@ -71,8 +71,6 @@ $("tests-sel-clear").addEventListener("click", () => { testsView.selected.clear(
 $("tests-filter").addEventListener("input", paintTests);
 $("tests-dev-mode").addEventListener("change", paintTests);
 $("tests-start-db").addEventListener("click", startTestDb);
-$("tests-add-db").addEventListener("click", addLocalDb);
-$("tests-nodb-log").addEventListener("click", startDbLog);
 for (const node of document.querySelectorAll("#tests-seg button")) node.addEventListener("click", () => showTests(node.dataset.show));
 $("clean").addEventListener("click", () => act("/api/clean", {}, (data) => toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info")));
 $("adopt-all").addEventListener("click", () => adoptStrays(null));
