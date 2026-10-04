@@ -1,6 +1,6 @@
 // Stacks: their cards, starting and stopping them, and the stack editor.
 
-import { $, act, button, el, failedText, icon, phaseLabel, post, toast } from "./core.js";
+import { $, act, button, el, failedText, getJson, icon, phaseLabel, post, toast } from "./core.js";
 import { state } from "./state.js";
 import { showLogs } from "./logs.js";
 import { dbLabel, fetchServices, openRestartSet, openUp, options, runningNote, runningOn } from "./launch.js";
@@ -91,7 +91,13 @@ function stackCard(stack) {
   return card;
 }
 
+// Services pdms runs from the current repo: they can become a stack as they run.
+export function runningInRepo() {
+  return state.instances.filter((inst) => inst.status !== "stopped" && state.repo && inst.repo === state.repo.alias).length;
+}
+
 export function paintStacks() {
+  $("stack-from-running").hidden = !runningInRepo();
   const shown = state.stacks.filter(stackShown);
   $("stacks").replaceChildren(...shown.map(stackCard));
   $("stacks-empty").hidden = state.stacks.length > 0;
@@ -128,23 +134,30 @@ export function slashes(path) {
   return path.replaceAll("\\", "/").replace(/\/+$/, "");
 }
 
-export async function openEditor(stack = null) {
+// A new stack with the services running now, as they run (the user and database most use, the others' as their own).
+export async function openFromRunning() {
+  const { data, error } = await getJson("/api/stacks/from-running");
+  if (error) { toast(error); return; }
+  openEditor(null, data);
+}
+
+// ``preset`` (a new stack only): its services, user, database and exceptions, already picked.
+export async function openEditor(stack = null, preset = null) {
   const found = await fetchServices();
   if (!found) return;
   const ports = runningOn(slashes(found.root));
+  const from = stack ? { ...stack, services: stack.services.map((svc) => svc.path) } : preset;
   // Like pdms stack edit: the stack's services first, then the running ones, then the rest.
-  const current = stack ? stack.services.map((svc) => svc.path) : [];
+  const current = from ? from.services.filter((svc) => found.services.includes(svc)) : [];
   const rest = found.services.filter((svc) => !current.includes(svc));
   editor.order = [...current, ...rest.filter((svc) => ports[svc]), ...rest.filter((svc) => !ports[svc])];
   editor.picked = new Set(current);
   editor.name = stack ? stack.name : null;
-  editor.overrides = stack ? JSON.parse(JSON.stringify(stack.overrides || {})) : {};
+  editor.overrides = from ? JSON.parse(JSON.stringify(from.overrides || {})) : {};
   paintOverrides();
 
-  $("editor-title").textContent = stack ? t("Edit {name}", { name: stack.name }) : t("New stack");
-  $("editor-name-label").hidden = Boolean(stack);
-  $("editor-name").required = !stack;
-  $("editor-name").value = "";
+  $("editor-title").textContent = stack ? t("Edit {name}", { name: stack.name }) : preset ? t("New stack with the running services") : t("New stack");
+  $("editor-name").value = stack ? stack.name : "";
   $("editor-filter").value = "";
   $("editor-services").replaceChildren(...editor.order.map((svc) => {
     const box = el("input", { type: "checkbox", value: svc });
@@ -155,8 +168,8 @@ export async function openEditor(stack = null) {
     });
     return el("label", { class: "pick", "data-svc": svc.toLowerCase() }, box, el("span", { class: "mono" }, svc), runningNote(ports[svc]));
   }));
-  options($("editor-user"), ["", ...state.users], stack ? stack.user : "", (name) => name || ask());
-  options($("editor-db"), ["", ...state.dbs.map((item) => item.name)], stack ? stack.db : "", (name) => name ? dbLabel(name) : ask());
+  options($("editor-user"), ["", ...state.users], from ? from.user : "", (name) => name || ask());
+  options($("editor-db"), ["", ...state.dbs.map((item) => item.name)], from ? from.db : "", (name) => name ? dbLabel(name) : ask());
   $("editor-error").hidden = true;
   editorCount();
   $("editor").showModal();
@@ -174,10 +187,11 @@ export function filterEditor() {
 
 export async function saveEditor(event) {
   event.preventDefault();
-  const name = editor.name || $("editor-name").value.trim();
+  const typed = $("editor-name").value.trim();
+  const name = editor.name || typed;
   const body = {
     services: editor.order.filter((svc) => editor.picked.has(svc)),
-    user: $("editor-user").value, db: $("editor-db").value, new: !editor.name,
+    user: $("editor-user").value, db: $("editor-db").value, new: !editor.name, rename: editor.name ? typed : "",
     overrides: Object.fromEntries(Object.entries(editor.overrides || {}).filter(([svc]) => editor.picked.has(svc))),
   };
   if (!body.services.length) {
@@ -190,7 +204,8 @@ export async function saveEditor(event) {
     const { status, data } = await post(`${stackPath(name)}/save`, body);
     if (status === 200) {
       $("editor").close();
-      toast(t("Stack '{name}' saved.", { name }), "info");
+      const saved = data.name || name;
+      toast(saved !== name ? t("Stack '{name}' saved as '{new}'.", { name, new: saved }) : t("Stack '{name}' saved.", { name: saved }), "info");
       return;
     }
     $("editor-error").textContent = data.error || t("pdms ui answered {status}", { status });

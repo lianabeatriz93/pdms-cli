@@ -11,7 +11,7 @@ import {
   addAllLogs, addLogSource, clearLog, clearRequestFilter, closeLogs, setLogFilter, showLogs, switchLogTab, toggleDock,
 } from "./logs.js";
 import { filterRun, openRestartSet, openRun, resetConfirmation, setChange, setPick, submitLaunch } from "./launch.js";
-import { filterEditor, openEditor, paintStacks, saveEditor } from "./stacks.js";
+import { filterEditor, openEditor, openFromRunning, paintStacks, saveEditor } from "./stacks.js";
 import {
   closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyView, requestLogs, resetProxyPort, showDetailTab,
   showProxyTab, submitProxyStart,
@@ -100,6 +100,8 @@ $("run-filter").addEventListener("keydown", (event) => { if (event.key === "Ente
 $("run-port").addEventListener("input", resetConfirmation);
 $("restart-form").addEventListener("submit", submitLaunch);
 $("stack-new").addEventListener("click", () => openEditor());
+$("stack-from-running").addEventListener("click", openFromRunning);
+$("svc-save-stack").addEventListener("click", openFromRunning);
 $("editor-form").addEventListener("submit", saveEditor);
 $("editor-cancel").addEventListener("click", () => $("editor").close());
 $("editor-filter").addEventListener("input", filterEditor);

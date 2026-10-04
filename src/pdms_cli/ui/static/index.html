@@ -34,6 +34,8 @@
   <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
   <symbol id="i-forget" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></symbol>
   <symbol id="i-debug" viewBox="0 0 24 24"><rect x="7" y="8" width="10" height="12" rx="5"/><path d="M12 12v8M9.5 5.5L10.5 8M14.5 5.5L13.5 8M3.5 13H7M17 13h3.5M5 19l2.4-1.4M19 19l-2.4-1.4M5 7.5l2.4 1.4M19 7.5l-2.4 1.4"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M7.5 5l11 7-11 7z"/></symbol>
@@ -119,6 +121,7 @@
   <div class="bar">
     <h1>Services</h1><span class="muted" id="summary"></span>
     <div class="bar-actions push">
+      <button class="btn" id="svc-save-stack" type="button" hidden title="A new stack with the services of the repo running now, as they run">Save as stack</button>
       <button class="btn" id="svc-all-logs" type="button" title="Every running service, the proxy, the local SNS and the frontend, interleaved">All logs</button>
       <button class="btn ghost" id="clean" type="button" hidden>Forget stopped</button>
       <button class="btn" id="adopt-all" type="button" hidden>Adopt all</button>
@@ -155,7 +158,10 @@
 <section class="view" id="view-stacks" hidden>
   <div class="bar">
     <h1>Stacks</h1><span class="muted" id="stack-summary"></span>
-    <button class="btn primary push" id="stack-new" type="button">New stack</button>
+    <div class="bar-actions push">
+      <button class="btn" id="stack-from-running" type="button" hidden title="A new stack with the services of the repo running now, as they run">From running services</button>
+      <button class="btn primary" id="stack-new" type="button">New stack</button>
+    </div>
   </div>
   <div class="bar filter">
     <input type="search" id="stack-filter" placeholder="Filter by stack, service, user or DB" aria-label="Filter stacks" autocomplete="off">

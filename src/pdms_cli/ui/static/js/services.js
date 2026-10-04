@@ -6,7 +6,7 @@ import {
 import { state } from "./state.js";
 import { logs, openLogs } from "./logs.js";
 import { openRestart } from "./launch.js";
-import { confirmDialog } from "./stacks.js";
+import { confirmDialog, runningInRepo } from "./stacks.js";
 import { frontendActions, jobLog, staleText } from "./frontend.js";
 import { HOME_JOB } from "./home.js";
 
@@ -275,6 +275,7 @@ export function paintServices() {
   if ((state.strays || []).length) parts.push(t("{n} outside pdms", { n: state.strays.length }));
   $("summary").textContent = parts.join(" · ");
   $("clean").hidden = !state.instances.some((i) => i.status === "stopped");
+  $("svc-save-stack").hidden = !runningInRepo();
   $("adopt-all").hidden = !(state.strays || []).length;
   $("front-new").hidden = !state.frontend || state.frontend.running || Boolean(state.jobs.frontend && !state.jobs.frontend.error);
 }
