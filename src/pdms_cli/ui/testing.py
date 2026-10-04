@@ -26,6 +26,7 @@ class Tests:
         self._procs: dict[str, subprocess.Popen] = {}
         self._workers: set[str] = set()  # databases with a worker thread
         self._cancelled: set[str] = set()  # stopped runs: no result is kept for them
+        self._dev_mode: dict[str, bool] = {}  # project → run with DEVELOPMENT_MODE on
         self._backend: Path | None = None
         self._failing = 0
         self._version = 0
@@ -53,8 +54,9 @@ class Tests:
             self.on_change()
         return failing
 
-    def run(self, cfg: Config, backend: Path, projects: list[str], dbs: list[str]) -> dict:
-        """Queue ``projects`` and start one worker per database of ``dbs`` (local ones only) that has none."""
+    def run(self, cfg: Config, backend: Path, projects: list[str], dbs: list[str], dev_mode: bool = False) -> dict:
+        """Queue ``projects`` and start one worker per database of ``dbs`` (local ones only) that has none.
+        ``dev_mode`` runs them with DEVELOPMENT_MODE on (by default it is off, whatever their .env says)."""
         if not dbs:
             raise actions.ActionError(testruns.no_local_db_hint(backend))
         seen_dbs = []
@@ -72,6 +74,7 @@ class Tests:
             self._backend = backend
             added = [p for p in projects if p not in self._queue and p not in self._running]
             self._queue.extend(added)
+            self._dev_mode.update({project: dev_mode for project in added})
             self.error = ""
             start = [db for db in seen_dbs if db not in self._workers][:max(0, len(self._queue))]
             self._workers.update(start)
@@ -84,6 +87,7 @@ class Tests:
         """Empty the queue and stop the runs; their results stay as they were."""
         with self._lock:
             self._queue.clear()
+            self._dev_mode.clear()
             procs = list(self._procs.items())
             self._cancelled.update(self._running)  # also one still installing: it will not start pytest
             stopped = sorted(self._cancelled)
@@ -98,7 +102,7 @@ class Tests:
                 self._workers.discard(db)
                 return None
             project = self._queue.pop(0)
-            self._running[project] = {"db": db, "started": time.time()}
+            self._running[project] = {"db": db, "started": time.time(), "dev_mode": self._dev_mode.pop(project, False)}
             return project
 
     def _work(self, db: str) -> None:
@@ -106,8 +110,10 @@ class Tests:
             self.on_change()
             backend = self._backend
             assert backend is not None  # set by run() before any worker starts
+            with self._lock:
+                dev_mode = self._running[project]["dev_mode"]
             try:
-                testruns.run_tests(Config.load(), backend, project, db,
+                testruns.run_tests(Config.load(), backend, project, db, dev_mode=dev_mode,
                                    started=lambda proc, p=project: self._started(p, proc),
                                    cancelled=lambda p=project: self._was_cancelled(p))
             except actions.ActionError as exc:

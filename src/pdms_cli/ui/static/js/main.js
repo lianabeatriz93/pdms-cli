@@ -59,6 +59,7 @@ $("tests-stop").addEventListener("click", stopTests);
 $("tests-all").addEventListener("change", () => pickAllTests($("tests-all").checked));
 $("tests-sel-clear").addEventListener("click", () => { testsView.selected.clear(); paintTests(); });
 $("tests-filter").addEventListener("input", paintTests);
+$("tests-dev-mode").addEventListener("change", paintTests);
 $("tests-start-db").addEventListener("click", startTestDb);
 $("tests-add-db").addEventListener("click", addLocalDb);
 $("tests-nodb-log").addEventListener("click", startDbLog);
