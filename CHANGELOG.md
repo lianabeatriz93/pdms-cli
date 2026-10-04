@@ -1,3 +1,17 @@
+## v0.4.2 (2026-10-04)
+
+### Feat
+
+- **ui**: save the running services as a stack, and rename a stack in its editor
+- **stacks**: a stack from the running services, and renaming stacks
+- **ui**: Events shows the emails services send, Settings where they go
+- **emails**: SES emails of local services are kept, or sent to one address only
+
+### Fix
+
+- **ui**: toasts show above the status bar, with an icon and a close button
+- **aws**: services take the profile's credentials from the AWS CLI
+
 ## v0.4.1 (2026-10-04)
 
 ### Fix
