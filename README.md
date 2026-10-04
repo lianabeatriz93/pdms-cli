@@ -364,7 +364,11 @@ events: the broker and the consumers carry it along) and write each SQS send, SN
 `trace.jsonl` in the state folder. The request's **Trace** adds them to its time line, and **Logs of this request**
 opens the log dock with the proxy, the service and those consumers, only that request's lines. The log dock sits under
 every screen: several logs interleaved by time, each with its colour, filtered by level, text or request, hidden to its
-bar when not needed. Its routes tab shows where each route goes now, like `pdms proxy routes`. A proxy
+bar when not needed; **All logs** follows every running service, the proxy, the local SNS and the frontend, only
+their new lines. While pdms ui runs, a log past 8 MB moves to `<log>.1` and starts again (its first lines stay), and
+logs of instances gone for 7 days are deleted; pdms's own check that a service answers (every few seconds,
+`/__pdms_health`) never reaches the service's code or its log. Its routes tab shows where each route goes now, like
+`pdms proxy routes`. A proxy
 started in a terminal shows there too, but its requests stay in that terminal. The events screen starts (like
 `pdms events up`, the broker included) and stops the local ElasticMQ, lists every queue with its waiting messages and
 consumer, shows a queue's messages without consuming them, purges them, and sends events (with the fields of the
