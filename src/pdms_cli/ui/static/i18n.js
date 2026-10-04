@@ -24,6 +24,8 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "Only new lines: waiting for the first one…": "Solo líneas nuevas: esperando la primera…",
+    "only new lines": "solo líneas nuevas",
     "All logs": "Todos los logs",
     "All logs · {n}": "Todos los logs · {n}",
     "Every running service, the proxy, the local SNS and the frontend, interleaved": "Todos los servicios en marcha, el proxy, el SNS local y el frontend, intercalados",

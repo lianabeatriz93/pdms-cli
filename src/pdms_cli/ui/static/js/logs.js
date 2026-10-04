@@ -15,9 +15,10 @@ const LEVELS = {
 
 // key / which: the log when there is just one (what other screens read); find: lines to mark (a request clicked in
 // Requests), seek: scroll to the last of them once it arrives; request: only the lines of that request.
+// live: only lines from now on (All logs: the tails of a whole stack at once would freeze the page).
 export const logs = {
   key: null, which: "current", sources: [], lines: [], find: null, seek: false, level: "all", text: "", request: "",
-  hidden: false,
+  hidden: false, live: false,
 };
 
 // The time a line starts with (15:42:07, 2026-10-03T15:42:07 or 2026-10-03 15:42:07,123), as seconds of the day.
@@ -74,17 +75,33 @@ function appendLog(source, lines, tail = false) {
     logs.lines = logs.lines.map((line, i) => [line, i])
       .sort(([a, i], [b, j]) => (a.at !== null && b.at !== null && a.at !== b.at ? a.at - b.at : i - j))
       .map(([line]) => line);
+    pending = []; // all of them are painted now
     pre.replaceChildren(render(logs.lines));
     pre.scrollTop = pre.scrollHeight;
     paintDockNote();
     return;
   }
+  pending.push(...fresh);
+  if (!painting) {
+    painting = true;
+    requestAnimationFrame(() => flush(follow));
+  }
+}
+
+// New lines are painted once a frame, however many batches came: a busy stack sends many.
+let pending = [];
+let painting = false;
+
+function flush(follow) {
+  painting = false;
+  const pre = $("logs-text");
   if (logs.lines.length > MAX_LOG_LINES * 1.2) {
     logs.lines = logs.lines.slice(-MAX_LOG_LINES);
     pre.replaceChildren(render(logs.lines));
   } else {
-    pre.append(render(fresh));
+    pre.append(render(pending));
   }
+  pending = [];
   paintDockNote();
   if (logs.seek && seekMark(pre)) return;
   if (follow) pre.scrollTop = pre.scrollHeight;
@@ -100,6 +117,7 @@ function seekMark(pre) {
 
 export function clearLog() {
   logs.lines = [];
+  pending = [];
   $("logs-text").textContent = "";
 }
 
@@ -163,7 +181,7 @@ function showDock() {
   syncSingle();
   $("logs").hidden = false;
   $("logs").classList.remove("folded");
-  connect(logs.find || logs.request ? 2000 : 200);
+  connect(logs.live ? 0 : logs.find || logs.request ? 2000 : 200);
   paintDock();
   if (state) paintServices();
 }
@@ -172,6 +190,7 @@ function showDock() {
 export function openLogs(key, which = "current", find = null, options = {}) {
   if (!options.add) stopAll();
   else if (logs.sources.some((source) => source.key === key)) return;
+  if (!options.add) logs.live = false;
   Object.assign(logs, { find, seek: Boolean(find), hidden: false });
   if (!options.keepRequest) logs.request = options.request || "";
   logs.sources.push({ key, which, colour: options.add ? freeColour() : 0, at: null });
@@ -181,7 +200,7 @@ export function openLogs(key, which = "current", find = null, options = {}) {
 // Several logs at once, e.g. what a request went through: the proxy, its service and the consumers of its events.
 export function openRequestLogs(keys, request) {
   stopAll();
-  Object.assign(logs, { find: null, seek: false, request, hidden: false });
+  Object.assign(logs, { find: null, seek: false, request, hidden: false, live: false });
   for (const key of keys) logs.sources.push({ key, which: "current", colour: freeColour(), at: null });
   showDock();
 }
@@ -191,7 +210,7 @@ export function addAllLogs() {
   const keys = addable();
   if (!keys.length) return;
   if ($("logs").hidden) stopAll();
-  Object.assign(logs, { find: null, seek: false, hidden: false });
+  Object.assign(logs, { find: null, seek: false, hidden: false, live: true });
   for (const key of keys) logs.sources.push({ key, which: "current", colour: freeColour(), at: null });
   showDock();
 }
@@ -238,7 +257,8 @@ function paintDockNote() {
   const job = logs.key && state && state.jobs[logs.key];
   $("logs-note").textContent = job && !job.error ? phaseLabel(job.phase)
     : logs.find ? t("marked: {request}", { request: logs.find.label })
-      : visible < total ? t("{shown} of {total} lines", { shown: visible, total }) : "";
+      : visible < total ? t("{shown} of {total} lines", { shown: visible, total })
+        : logs.live && !total ? t("Only new lines: waiting for the first one…") : logs.live ? t("only new lines") : "";
 }
 
 export function paintDock() {

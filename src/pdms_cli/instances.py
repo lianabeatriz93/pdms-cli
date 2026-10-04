@@ -12,9 +12,11 @@ import http.client
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -43,6 +45,80 @@ def log_path(key: str) -> Path:
 
 def previous_log_path(log: str | Path) -> Path:
     return Path(f"{log}.1")
+
+
+APPENDS = " · appends"  # in the first line of a log whose process appends to it: it can be cut while it runs
+LOG_LIMIT = 8 << 20  # a running process's log past this moves to <log>.1 and starts again
+OLD_LOGS_DAYS = 7  # logs of instances pdms no longer knows are deleted after this
+KEEP_HEAD = 4096  # the start of a log that is cut stays in it
+HEALTH_PATH = "/__pdms_health"  # services started by pdms answer it without logging (sqs_patch/pdms_trace.py)
+
+
+def keep_log_small(log: Path, limit: int = LOG_LIMIT) -> bool:
+    """When ``log`` passed ``limit``, move what it has to ``<log>.1`` and start it again; only for a log its process
+    appends to (the first line says so): one opened by an older pdms would get a hole of zeros. A few lines written
+    while it is copied may be lost. Whether it was cut."""
+    try:
+        if log.stat().st_size <= limit:
+            return False
+        with open(log, "rb") as fh:
+            if APPENDS.encode() not in fh.readline():
+                return False
+        with open(log, "rb") as fh:  # its start stays: what pdms reads there (a consumer's "Polling" line)
+            head = fh.read(KEEP_HEAD)
+        head = head[:head.rfind(b"\n") + 1]
+        shutil.copyfile(log, previous_log_path(log))
+        os.truncate(log, 0)
+        with open(log, "ab") as fh:
+            note = _("older lines are in {name} (this log passed {mb} MB)", name=previous_log_path(log).name,
+                     mb=limit >> 20)
+            fh.write(head + f"# pdms {datetime.now():%Y-%m-%d %H:%M:%S}{APPENDS} · {note}\n".encode())
+        return True
+    except OSError:  # gone, or Windows refusing to cut a file in use
+        return False
+
+
+def forget_old_logs(days: int = OLD_LOGS_DAYS) -> list[str]:
+    """Delete the logs (and previous runs, installs) of instances that are no longer registered and were not written
+    for ``days`` days. Only instance logs (``name@port``): the proxy's, the frontend's and others stay."""
+    known = set(load())
+    folder = state_dir() / "logs"
+    limit = time.time() - days * 86400
+    removed = []
+    for path in folder.glob("*@*.log*") if folder.is_dir() else []:
+        key = path.name.split(".log", 1)[0].removesuffix(".install")
+        try:
+            if key in known or path.stat().st_mtime > limit:
+                continue
+            path.unlink()
+            removed.append(path.name)
+        except OSError:
+            continue
+    return removed
+
+
+LOG_CHECK_EVERY = 60  # seconds between two looks at the logs' size (pdms ui)
+FORGET_LOGS_EVERY = 6 * 3600
+
+
+def watch_logs(stopped: threading.Event) -> None:
+    """What pdms ui does while it runs: logs kept small every minute, old instances' logs deleted now and then."""
+    forgot = 0.0
+    while not stopped.is_set():
+        try:
+            keep_logs_small()
+            if time.monotonic() - forgot > FORGET_LOGS_EVERY or not forgot:
+                forget_old_logs()
+                forgot = time.monotonic()
+        except Exception:  # noqa: BLE001 - a log that cannot be cut must not stop the watch
+            pass
+        stopped.wait(LOG_CHECK_EVERY)
+
+
+def keep_logs_small(limit: int = LOG_LIMIT) -> list[str]:
+    """Every log of the state folder that its process appends to, kept under ``limit`` (see :func:`keep_log_small`)."""
+    folder = state_dir() / "logs"
+    return [path.name for path in (folder.glob("*.log") if folder.is_dir() else []) if keep_log_small(path, limit)]
 
 
 def rotate_log(log: Path) -> None:
@@ -193,8 +269,9 @@ def spawn(cmd: list[str], cwd: Path, env: dict[str, str], log: Path) -> subproce
     """Start ``cmd`` detached, writing stdout+stderr to ``log`` (the previous run's log is kept as ``<log>.1``)."""
     log.parent.mkdir(parents=True, exist_ok=True)
     rotate_log(log)
-    with open(log, "w", encoding="utf-8", errors="replace") as fh:
-        fh.write(f"# pdms {datetime.now():%Y-%m-%d %H:%M:%S} · {' '.join(cmd)}\n")
+    # Appending (O_APPEND): its log can be cut while it runs (keep_logs_small) without leaving a hole in the file.
+    with open(log, "a", encoding="utf-8", errors="replace") as fh:
+        fh.write(f"# pdms {datetime.now():%Y-%m-%d %H:%M:%S}{APPENDS} · {' '.join(cmd)}\n")
         fh.flush()
         return subprocess.Popen(
             cmd,
@@ -241,10 +318,27 @@ def forget(key: str) -> None:
 
 
 def tail(path: str, lines: int = 20) -> str:
+    """The last ``lines`` lines, reading only the end of the file (a busy service's log has megabytes)."""
+    if lines <= 0:
+        return ""
     try:
-        return "".join(Path(path).read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)[-lines:])
+        with open(path, "rb") as fh:
+            size = fh.seek(0, os.SEEK_END)
+            block = max(64 * 1024, lines * 400)
+            while True:
+                start = max(0, size - block)
+                fh.seek(start)
+                data = fh.read(size - start)
+                if start == 0 or data.count(b"\n") > lines:
+                    break
+                block *= 4
     except FileNotFoundError:
         return ""
+    text = data.decode("utf-8", errors="replace")
+    found = text.splitlines(keepends=True)
+    if start > 0:
+        found = found[1:]  # the first one is cut
+    return "".join(found[-lines:])
 
 
 def contains(path: str, marker: str) -> bool:
@@ -443,12 +537,12 @@ class Health:
     detail: str = ""
 
 
-def responds(host: str, port: int, timeout: float = 1.5) -> bool:
+def responds(host: str, port: int, timeout: float = 1.5, path: str = "/") -> bool:
     """Any HTTP answer (even 404) means the app is serving; the reloader alone accepts TCP but never answers."""
     target = {"0.0.0.0": "127.0.0.1", "": "127.0.0.1", "::": "::1"}.get(host, host)
     conn = http.client.HTTPConnection(target, port, timeout=timeout)
     try:
-        conn.request("GET", "/")
+        conn.request("GET", path)
         conn.getresponse()
         return True
     except (OSError, http.client.HTTPException):
@@ -519,7 +613,7 @@ def health(instance: Instance) -> Health:
     if instance.is_consumer:  # no HTTP: ready once the poller listens on its queue
         # Written once at the top of the log (each run starts a new one), then buried by the service's own output.
         return Health("ok") if contains(instance.log, POLLER_READY) else Health("starting")
-    if responds(instance.host, instance.port):
+    if responds(instance.host, instance.port, path=HEALTH_PATH):  # every few seconds: not in its log
         return Health("ok")
     if serving(instance.log):  # e.g. a sync DB call inside an async endpoint blocks uvicorn's only event loop
         return Health("busy", _("not answering while it works on a request"))

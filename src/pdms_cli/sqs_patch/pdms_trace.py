@@ -8,6 +8,8 @@
   broker passes it on to the queue it routes to, and so on.
 * Each SQS send and SNS publish, and each consumer run (pdms_sqs_poller.py), is written with its exact time to
   ``PDMS_TRACE_LOG`` (one JSON line each), which pdms ui adds to the request's waterfall.
+* pdms checks every few seconds whether the service answers: ``GET /__pdms_health`` is answered here (204) and left
+  out of the access log, so those checks never reach the service's code or its log.
 """
 
 import contextvars
@@ -18,6 +20,7 @@ import os
 import time
 
 HEADER = b"x-request-id"
+HEALTH_PATH = "/__pdms_health"  # instances.HEALTH_PATH
 ATTRIBUTE = "pdms-request-id"
 LOG_LIMIT = 5 * 1024 * 1024  # then the file starts again, keeping the previous one as <file>.1
 MAX_ATTRIBUTES = 10  # SQS refuses more message attributes
@@ -141,6 +144,10 @@ def follow_requests():
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await original(self, scope, receive, send)
+        if scope.get("path") == HEALTH_PATH:  # pdms asking whether it serves: answered here, nothing logged
+            await send({"type": "http.response.start", "status": 204, "headers": []})
+            await send({"type": "http.response.body", "body": b""})
+            return None
         request = next((value.decode("latin-1") for key, value in scope.get("headers") or [] if key == HEADER), "")
         if not request or current.get():
             return await original(self, scope, receive, send)
@@ -154,7 +161,25 @@ def follow_requests():
     starlette.applications.Starlette.__call__ = __call__
 
 
+def quiet_health_checks():
+    """uvicorn's access log leaves out pdms's health checks (one every few seconds would fill the log)."""
+    access = logging.getLogger("uvicorn.access")
+    if getattr(access.filter, "_pdms_trace", False):
+        return
+    original = access.filter
+
+    def keep(record):
+        args = record.args if isinstance(record.args, tuple) else ()
+        if len(args) >= 3 and str(args[2]).split("?", 1)[0] == HEALTH_PATH:
+            return False
+        return original(record)
+
+    setattr(keep, "_pdms_trace", True)
+    access.filter = keep  # on the logger itself: uvicorn's logging config replaces handlers, not this
+
+
 def install():
+    quiet_health_checks()
     tag_log_records()
     try:
         follow_requests()

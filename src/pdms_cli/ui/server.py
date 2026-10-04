@@ -752,8 +752,8 @@ def make_handler(
             ``reset`` with ``{"key"}`` when one was replaced. ``which`` applies when there is a single key."""
             keys = [key for key in query.get("keys", [""])[0].split(",") if key][:MAX_LOG_SOURCES]
             which = query.get("which", ["current"])[0] if len(keys) == 1 else "current"
-            try:
-                lines = max(1, min(int(query.get("lines", [LOG_LINES])[0]), MAX_LOG_LINES))
+            try:  # 0: only what comes from now on (All logs)
+                lines = max(0, min(int(query.get("lines", [LOG_LINES])[0]), MAX_LOG_LINES))
             except ValueError:
                 lines = LOG_LINES
             found = [(key, path) for key in dict.fromkeys(keys) if (path := self.log_file(key, which)) is not None]
