@@ -39,6 +39,7 @@ const DEFAULTS = [
   ["query_stats", N_("Database time per request"), "check", N_("Each request of a service says how long it spent in the database and which queries it ran; Proxy shows them with the request. Applies when a service starts.")],
   ["warm_connections", N_("Connections opened at start"), "number", N_("Database connections each service opens as soon as it starts, so its first requests don't wait for them (0: when needed). Applies when a service starts.")],
   ["notify", N_("Desktop notifications"), "check", N_("When a service fails to load or stops by itself, while pdms ui runs (also from the tray).")],
+  ["email_to", N_("Send emails to"), "email", N_("Empty: the emails services send through SES never leave this computer, Events → Emails shows them. An address: they go to it only, whoever they were for (in the subject). Applies when a service starts.")],
   ["env", N_("Extra environment variables"), "env", N_("Injected on every run, after the profile's own.")],
 ];
 
@@ -406,6 +407,7 @@ function settingInput(key, kind, value) {
     rows.append(button(t("Add variable"), () => { rows.lastChild.before(envRow("", "")); defaultsChanged(); rows.lastChild.previousSibling.firstChild.focus(); }));
     return rows;
   }
+  if (kind === "email") return el("input", { type: "email", id, value, placeholder: t("nobody: only Events → Emails"), autocomplete: "email", spellcheck: "false" });
   return el("input", kind === "number" ? { type: "number", id, min: key === "warm_connections" ? "0" : "1", value: String(value) } : { id, value });
 }
 

@@ -340,14 +340,17 @@ function stepRows(capture, steps, scale) {
   const rows = [];
   for (const step of steps) {
     const from = Math.max(0, (step.at - capture.started_at) * 1000);
-    const failed = step.kind === "consumer" && step.failed > 0;
+    const failed = (step.kind === "consumer" && step.failed > 0) || (step.kind === "email" && step.status === "failed");
     const label = step.kind === "consumer" ? t("consumer {name}", { name: step.function || step.service })
-      : `${step.kind === "sns" ? "SNS" : "SQS"} → ${step.name}`;
+      : step.kind === "email" ? t("Email → {to}", { to: step.name })
+        : `${step.kind === "sns" ? "SNS" : "SQS"} → ${step.name}`;
     const title = step.kind === "consumer"
       ? t("{function} handled {n} message(s) from {queue}", { function: step.function || step.service, n: step.messages || 1, queue: step.name })
-      : t("{service} sent to {target}", { service: step.service, target: step.name });
+      : step.kind === "email" ? `${step.subject || ""} · ${step.status === "kept" ? t("not sent (Events → Emails)") : step.status === "failed" ? t("failed") : t("sent")}`
+        : t("{service} sent to {target}", { service: step.service, target: step.name });
     const text = failed ? t("{time} · failed", { time: duration(Math.round(step.ms)) }) : duration(Math.round(step.ms));
-    rows.push(...traceRow(label, title, step.kind === "consumer" ? (failed ? "cons bad" : "cons") : "ev", from, from + step.ms, text, scale));
+    const kind = step.kind === "consumer" ? (failed ? "cons bad" : "cons") : step.kind === "email" && failed ? "ev bad" : "ev";
+    rows.push(...traceRow(label, title, kind, from, from + step.ms, text, scale));
   }
   return rows;
 }

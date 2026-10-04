@@ -18,7 +18,7 @@ import {
 } from "./proxy.js";
 import {
   brokerQueue, closePeek, eventsView, eventsVisible, fillTemplate, loadQueues, openConsumerStart, openEventsUp,
-  openPeek, openSend, paintEvents, paintMap, paintQueues, paintSns, purge, sendTargetChanged, showEventsTab, stopEvents,
+  openPeek, openSend, paintEmails, paintEvents, paintMap, paintQueues, paintSns, purge, sendTargetChanged, showEventsTab, stopEvents,
   submitSend,
 } from "./events.js";
 import {
@@ -138,6 +138,8 @@ $("type-filter").addEventListener("input", paintMap);
 $("sns-topic").addEventListener("change", paintSns);
 $("sns-filter").addEventListener("input", paintSns);
 $("sns-clear").addEventListener("click", () => { eventsView.sns = []; paintSns(); });
+$("email-filter").addEventListener("input", paintEmails);
+$("email-clear").addEventListener("click", () => { eventsView.emails = []; paintEmails(); });
 $("send-form").addEventListener("submit", submitSend);
 $("send-cancel").addEventListener("click", () => $("send").close());
 $("send-template").addEventListener("click", fillTemplate);

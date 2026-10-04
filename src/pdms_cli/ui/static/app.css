@@ -303,6 +303,14 @@ td.wrap { white-space: normal; overflow-wrap: anywhere; min-width: 12rem; }
 .msg-body { position: relative; border-top: 1px solid var(--line); }
 .msg-body pre { border-top: 0; }
 .msg-body .copy { position: absolute; top: .4rem; right: 1rem; margin: 0; }
+.email-where { margin-bottom: .6rem; }
+.email-where p { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; font-size: .82rem; }
+.email-head { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .15rem .8rem; margin: 0; padding: .55rem .8rem; border-top: 1px solid var(--line); font-size: .8rem; }
+.email-head dt { color: var(--muted); }
+.email-head dd { margin: 0; overflow-wrap: anywhere; }
+.email-tabs { display: flex; gap: .3rem; padding: .3rem .8rem; border-top: 1px solid var(--line); }
+.email-tabs [aria-selected="true"] { color: var(--accent); font-weight: 600; }
+.email-html { display: block; width: 100%; height: 60vh; border: 0; border-radius: 0 0 8px 8px; background: #fff; }
 .kind { font-family: var(--mono); font-size: .75rem; font-weight: 600; padding: 0 .45rem; border-radius: 4px; background: var(--ok-soft); color: var(--ok); }
 .j-key { color: var(--accent); }
 .j-str { color: var(--ok); }
@@ -736,7 +744,7 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-top-color: var(--accent); } }
 .wf-bar.ev { background: color-mix(in srgb, var(--warn) 60%, var(--bad)); }
 .wf-bar.cons { background: var(--ok); }
-.wf-bar.cons.bad { background: var(--bad); }
+.wf-bar.cons.bad, .wf-bar.ev.bad { background: var(--bad); }
 
 /* The log dock: under every screen, one or more logs interleaved, each with its colour. */
 .dock { grid-row: 3; grid-column: 2; background: var(--surface); border-top: 1px solid var(--line); display: grid; min-width: 0; min-height: 0;
