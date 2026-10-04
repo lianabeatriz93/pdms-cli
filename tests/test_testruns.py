@@ -139,9 +139,9 @@ def test_results_are_kept_per_project_and_say_how_it_went(repo) -> None:
     kept = testruns.record(backend, "lead/lead-a", db="local", code=1, started=time.time(), seconds=1.23,
                            commit="abc", origin="cli")
     assert kept["outcome"] == "failed" and kept["seconds"] == 1.2 and kept["origin"] == "cli"
-    assert testruns.record(backend, "lead/lead-b", db="local", code=4, started=0, seconds=0, commit="",
+    assert testruns.record(backend, "lead/lead-b", db="local", code=4, started=time.time(), seconds=0, commit="",
                            origin="ui")["outcome"] == "broken"  # pytest itself failed: no report
-    assert testruns.record(backend, "common/core", db="local", code=testruns.NO_TESTS, started=0, seconds=0,
+    assert testruns.record(backend, "common/core", db="local", code=testruns.NO_TESTS, started=time.time(), seconds=0,
                            commit="", origin="ui")["outcome"] == "empty"
     assert set(testruns.results(backend)) == {"lead/lead-a", "lead/lead-b", "common/core"}
     other = repo.parent / "copy" / "backend"  # another checkout keeps its own
@@ -348,7 +348,7 @@ def test_development_mode_is_off_unless_asked_and_kept_with_the_result(repo, mon
     backend = repo / "backend"
     (backend / "lead" / "lead-a" / ".env").write_text("DEVELOPMENT_MODE=True\n")
     assert testruns.env_dev_mode(backend / "lead" / "lead-a") and not testruns.env_dev_mode(backend / "lead" / "lead-b")
-    kept = testruns.record(backend, "lead/lead-a", db="local", code=0, started=0, seconds=0, commit="", origin="ui",
+    kept = testruns.record(backend, "lead/lead-a", db="local", code=0, started=time.time(), seconds=0, commit="", origin="ui",
                            dev_mode=True)
     assert kept["dev_mode"] is True
     monkeypatch.setattr(Config, "load", classmethod(lambda cls: cfg))
