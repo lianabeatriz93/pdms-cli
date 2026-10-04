@@ -8,7 +8,7 @@ import { $, act, toast } from "./core.js";
 import { connect, paint, state } from "./state.js";
 import { adoptStrays, paintServices, pickAllShown, pickedItems, servicesView, stopPicked, tickUptimes } from "./services.js";
 import {
-  addLogSource, clearLog, clearRequestFilter, closeLogs, setLogFilter, showLogs, switchLogTab, toggleDock,
+  addAllLogs, addLogSource, clearLog, clearRequestFilter, closeLogs, setLogFilter, showLogs, switchLogTab, toggleDock,
 } from "./logs.js";
 import { filterRun, openRestartSet, openRun, resetConfirmation, setChange, setPick, submitLaunch } from "./launch.js";
 import { filterEditor, openEditor, paintStacks, saveEditor } from "./stacks.js";
@@ -48,6 +48,8 @@ document.addEventListener("keydown", (event) => { if (event.key === "Escape") $(
 $("logs-close").addEventListener("click", closeLogs);
 $("logs-clear").addEventListener("click", clearLog);
 $("logs-hide").addEventListener("click", toggleDock);
+$("logs-all").addEventListener("click", addAllLogs);
+$("svc-all-logs").addEventListener("click", addAllLogs);
 for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => switchLogTab(tab.dataset.which));
 $("logs-add").addEventListener("change", () => { addLogSource($("logs-add").value); $("logs-add").value = ""; });
 $("logs-level").addEventListener("change", setLogFilter);

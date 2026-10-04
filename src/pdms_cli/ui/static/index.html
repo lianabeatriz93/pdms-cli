@@ -118,6 +118,7 @@
   <div class="bar">
     <h1>Services</h1><span class="muted" id="summary"></span>
     <div class="bar-actions push">
+      <button class="btn" id="svc-all-logs" type="button" title="Every running service, the proxy, the local SNS and the frontend, interleaved">All logs</button>
       <button class="btn ghost" id="clean" type="button" hidden>Forget stopped</button>
       <button class="btn" id="adopt-all" type="button" hidden>Adopt all</button>
       <button class="btn" id="front-new" type="button" hidden>Start frontend</button>
@@ -491,6 +492,7 @@
   <div class="logs-bar">
     <span class="dock-sources" id="logs-sources"></span>
     <select id="logs-add" aria-label="Add a log"></select>
+    <button class="btn small" id="logs-all" type="button" title="Every running service, the proxy, the local SNS and the frontend, interleaved" hidden>All logs</button>
     <div class="tabs" id="logs-tabs" role="tablist">
       <button type="button" role="tab" data-which="current">Current</button>
       <button type="button" role="tab" data-which="previous">Previous run</button>
