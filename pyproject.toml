@@ -1,6 +1,6 @@
 [project]
 name = "pdms-cli"
-version = "0.4.0"
+version = "0.4.1"
 description = "Interactive CLI to run PDMS services locally."
 readme = "README.md"
 requires-python = ">=3.10"

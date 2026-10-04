@@ -1,3 +1,9 @@
+## v0.4.1 (2026-10-04)
+
+### Fix
+
+- **ui**: copy buttons work in the desktop window
+
 ## v0.4.0 (2026-10-04)
 
 ### Feat
