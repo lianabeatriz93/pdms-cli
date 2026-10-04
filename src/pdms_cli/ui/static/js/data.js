@@ -1,7 +1,7 @@
 // Data: the databases with their round trip and migrations, pdms's Postgres with the local copy (refresh, snapshots)
 // and the test databases. Reloaded when the screen opens and when one of its jobs ends.
 
-import { $, act, button, el, failedText, getJson, phaseLabel, post, toast } from "./core.js";
+import { $, act, button, el, failedText, getJson, phaseLabel, postNeedingImages, toast } from "./core.js";
 import { state } from "./state.js";
 import { openFlyway } from "./migrations.js";
 import { openLogs } from "./logs.js";
@@ -118,20 +118,14 @@ export function paintData() {
 }
 
 export function postgresUpDown(verb) {
-  act(`/api/data/${verb}`, {});
+  if (verb === "up") postNeedingImages("/api/data/up", {}, "postgres-up");
+  else act("/api/data/down", {});
 }
 
 export async function refreshCopy(confirmed = false) {
-  try {
-    const { status, data } = await post("/api/data/refresh", { confirmed });
-    if (status === 409) {
-      if (await confirmDialog(t("Replace the local copy?"), data.error, t("Replace it"))) refreshCopy(true);
-      return;
-    }
-    if (status >= 400) toast(data.error || t("pdms ui answered {status}", { status }));
-  } catch {
-    toast(t("pdms ui is not reachable: is it still running?"));
-  }
+  const { status, data } = await postNeedingImages("/api/data/refresh", { confirmed }, "refresh");
+  if (status === 409 && data.decision !== "images_missing"
+      && await confirmDialog(t("Replace the local copy?"), data.error, t("Replace it"))) refreshCopy(true);
 }
 
 export function copyLog() {

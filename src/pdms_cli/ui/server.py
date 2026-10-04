@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, events, frontend, health, i18n, instances, proxy, testruns
+from .. import actions, events, frontend, health, i18n, images, instances, proxy, testruns
 from ..config import Config
 from ..logview import LogFollower
 from . import instance as ui_instance
@@ -150,6 +150,10 @@ def decision_body(decision: actions.Decision) -> dict:
         return {"decision": "port_busy", "port": decision.port, "free": decision.free}
     if isinstance(decision, actions.PointFrontend):
         return {"decision": "point_frontend", "url": decision.url}
+    if isinstance(decision, images.Missing):
+        return {"decision": "images_missing", "error": str(decision),
+                "images": [{"name": image.name, "download_mb": image.download_mb, "use": image.use}
+                           for image in decision.images]}
     if isinstance(decision, ui_jobs.LeftRunning):
         switch = decision.switch
         return {"decision": "repo_switch", "old": switch.old, "proxy": switch.proxy,
@@ -524,6 +528,11 @@ def make_handler(
                 if control.pick_folder is None:
                     return 404, {"error": "only in the window"}
                 return 200, {"path": control.pick_folder(str(body.get("start") or ""))}
+            if path == "/api/images/pull":
+                names, then = body.get("names"), body.get("then", "")
+                if not isinstance(names, list) or not all(isinstance(n, str) for n in names) or not isinstance(then, str):
+                    raise actions.ActionError("names must be a list of image names and then a string")
+                return 202, {"job": jobs.pull_images(names, then, body).key}
             if path in ("/api/data/up", "/api/data/down"):
                 return 202, {"job": jobs.postgres(path.rsplit("/", 1)[-1]).key}
             if path == "/api/data/refresh":

@@ -24,6 +24,13 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "Download Docker images?": "¿Descargar imágenes de Docker?",
+    "Download {image}?": "¿Descargar {image}?",
+    "Downloading in the background; it goes on by itself when done.": "Descargando en segundo plano; sigue solo al terminar.",
+    "Downloading {image} in the background.": "Descargando {image} en segundo plano.",
+    "It runs in the background; the log shows its progress.": "Corre en segundo plano; el log muestra su progreso.",
+    "downloading {what}…": "descargando {what}…",
+    "downloading…": "descargando…",
     "Connections": "Conexiones",
     "Copied from": "Copiada de",
     "Data": "Datos",

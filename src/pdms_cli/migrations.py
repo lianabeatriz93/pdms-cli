@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-import time
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,27 +59,6 @@ def best_match(root: Path, candidates: list[Path]) -> Path | None:
 
 def is_local(db: Database) -> bool:
     return db.host.strip().lower() in LOCAL_HOSTS and not db.protected
-
-
-def image_present() -> bool:
-    try:
-        return subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True, timeout=30).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
-def pull_image(attempts: int = 3, wait: float = 10) -> tuple[bool, str]:
-    """Download the image (about 360 MB, once), retrying: public ECR throttles anonymous pulls."""
-    last = ""
-    for attempt in range(1, attempts + 1):
-        result = subprocess.run(["docker", "pull", IMAGE], capture_output=True, text=True)
-        if result.returncode == 0:
-            return True, ""
-        last = (result.stderr or result.stdout).strip().splitlines()[-1:] or [""]
-        last = last[0]
-        if attempt < attempts:
-            time.sleep(wait * attempt)
-    return False, last
 
 
 def docker_command(repo: Path, db: Database, command: str) -> list[str]:

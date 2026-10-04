@@ -86,7 +86,9 @@ def test_the_sibling_migrations_repo_is_found_and_remembered(cli, tmp_path, monk
     from pdms_cli.commands import testing
 
     monkeypatch.setattr(events, "docker_available", lambda: (True, "test"))
-    monkeypatch.setattr(migrations, "image_present", lambda: True)
+    from pdms_cli import images
+
+    monkeypatch.setattr(images, "present", lambda name: True)
     calls = []
     monkeypatch.setattr(testing.subprocess, "run", lambda cmd, env: calls.append((cmd, env)) or type("R", (), {"returncode": 0})())
     result = cli("migrate", "info", "-d", "web-dev")
@@ -97,14 +99,17 @@ def test_the_sibling_migrations_repo_is_found_and_remembered(cli, tmp_path, monk
 
 
 def test_pull_retries_and_reports_the_last_error(monkeypatch):
+    from pdms_cli import actions, images
+
     outcomes = iter([1, 1, 0])
-    monkeypatch.setattr(migrations.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"returncode": next(outcomes), "stderr": "toomanyrequests: Rate exceeded", "stdout": ""})())
-    monkeypatch.setattr(migrations.time, "sleep", lambda s: None)
-    assert migrations.pull_image() == (True, "")
-    monkeypatch.setattr(migrations.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"returncode": 1, "stderr": "error\ntoomanyrequests: Rate exceeded", "stdout": ""})())
-    assert migrations.pull_image(attempts=2) == (False, "toomanyrequests: Rate exceeded")
+    monkeypatch.setattr(images.subprocess, "run", lambda *a, **k: type(
+        "R", (), {"returncode": next(outcomes), "stdout": "toomanyrequests: Rate exceeded"})())
+    monkeypatch.setattr(images.time, "sleep", lambda s: None)
+    images.pull(images.FLYWAY)  # the third attempt works
+    monkeypatch.setattr(images.subprocess, "run", lambda *a, **k: type(
+        "R", (), {"returncode": 1, "stdout": "error\ntoomanyrequests: Rate exceeded"})())
+    with pytest.raises(actions.ActionError, match="toomanyrequests: Rate exceeded"):
+        images.pull(images.FLYWAY, attempts=2)
 
 
 # --------------------------------------------------------------------------- status without Docker

@@ -1,7 +1,7 @@
 // Tests: the projects the branch's changes touch (or all of them), their last result, and running them on the local
 // databases, one project at a time per database (services share tables). Never on a shared database.
 
-import { $, act, el, failedText, getJson, icon, iconButton, phaseLabel, repoPath, toast } from "./core.js";
+import { $, act, el, failedText, postNeedingImages, getJson, icon, iconButton, phaseLabel, repoPath, toast } from "./core.js";
 import { state } from "./state.js";
 import { openLogs } from "./logs.js";
 
@@ -285,7 +285,7 @@ export function showTests(show) {
 }
 
 export function startTestDb() {
-  act("/api/tests/start-db", {}, () => toast(t("Starting the test database…"), "info"));
+  postNeedingImages("/api/tests/start-db", {}, "test-dbs", () => toast(t("Starting the test database…"), "info"));
 }
 
 // Starting the test database finished: the screen loads the databases again.

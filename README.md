@@ -630,7 +630,9 @@ server of the `web-dev` alias — only read, with `pg_dump` from the Postgres im
 services — into its `pdms` database, builds the `configuration` schema from the repo's migrations (the dev user cannot
 read it), applies the repo's pending migrations and registers the alias `pdms-local`. Snapshots keep it and bring it
 back in about a second. Flyway's `migrate` from pdms holds a session lock (`postgresql.transactional.lock=false`): with
-a transaction lock, a migration with `CREATE INDEX CONCURRENTLY` waits for Flyway's own lock forever. Tests run
+a transaction lock, a migration with `CREATE INDEX CONCURRENTLY` waits for Flyway's own lock forever. pdms never
+downloads a Docker image without asking (`postgres:18.0`, ~155 MB; Flyway, ~360 MB): the CLI asks before it pulls one,
+pdms ui shows a dialog and downloads it in the background, and Doctor lists them with a Download button. Tests run
 with `DEVELOPMENT_MODE` off (a service's `.env` usually turns it on, and with it the token is not checked, so tests
 of unauthorized requests fail): when the `.env` turns it on, `pdms test` asks, `--dev-mode` / `--no-dev-mode`
 answer it, and the Tests screen has a Development mode checkbox; each result says how it ran. Each run keeps

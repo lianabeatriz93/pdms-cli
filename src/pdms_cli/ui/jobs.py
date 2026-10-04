@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import __version__, actions, events, frontend, i18n, instances, proxy, repos, routes, runner, transfer, update
-from .. import localcopy, localdb, migrations, testruns, userimport
+from .. import images, localcopy, localdb, migrations, testruns, userimport
 from ..config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from ..i18n import _
 from . import state as ui_state
@@ -30,6 +30,7 @@ EVENTS_KEY = "events:elasticmq"  # the job of pdms events up/down (not an instan
 HOME_KEY = "home"  # the job of Home's Start everything / Stop everything
 REPO_KEY = "repo"  # the job of switching the current repo (stopping or moving what ran from the old one)
 TESTS_DB_KEY = "tests:db"  # the job of starting pdms's Postgres and creating its test databases
+IMAGES_KEY = "images"  # the job of downloading Docker images (asked first: hundreds of MB)
 DATA_KEY = "data:postgres"  # the jobs of the Data screen on pdms's Postgres (start, stop, refresh the local copy)
 SWITCH_CHOICES = ("keep", "stop", "move")
 
@@ -142,6 +143,8 @@ class Jobs:
 
     def start_test_db(self) -> Job:
         """Start pdms's Postgres and create its test databases, like ``pdms db local up``."""
+        if not localdb.state()["exists"]:
+            images.require([localdb.IMAGE])
 
         def work(job: Job) -> None:
             self.phase(job, "starting")
@@ -151,10 +154,34 @@ class Jobs:
 
     # ------------------------------------------------------------------ data
 
+    def pull_images(self, names: list[str], then: str = "", body: dict | None = None) -> Job:
+        """Download the images the user agreed to (output in a log), then go on with what needed them: ``then`` is
+        "postgres-up", "refresh" or "test-dbs"."""
+        unknown = [name for name in names if name not in images.IMAGES]
+        if unknown or not names:
+            raise actions.ActionError(_("'{name}' is not an image pdms uses.", name=(unknown or [""])[0]))
+        follow = {"postgres-up": lambda: self.postgres("up"), "refresh": lambda: self.refresh_copy(body or {}),
+                  "test-dbs": self.start_test_db, "": lambda: None}
+        if then not in follow:
+            raise actions.ActionError(f"unknown follow-up {then}")
+
+        def work(job: Job) -> None:
+            log = install_log(IMAGES_KEY)
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with open(log, "w", encoding="utf-8", errors="replace") as output:
+                for name in names:
+                    self.phase(job, f"downloading {name}", installed=True, log_key=IMAGES_KEY)
+                    images.pull(name, output)
+            threading.Timer(0.1, follow[then]).start()  # after this job ends: the next one may use its key
+
+        return self.run(IMAGES_KEY, "download", "downloading", work)
+
     def postgres(self, verb: str) -> Job:
         """Start or stop pdms's Postgres (``pdms db local up/down``); starting also creates the test databases."""
         if verb not in ("up", "down"):
             raise actions.ActionError("verb must be up or down")
+        if verb == "up" and not localdb.state()["exists"]:
+            images.require([localdb.IMAGE])  # asked first (409), never downloaded by surprise
 
         def work(job: Job) -> None:
             if verb == "up":
@@ -181,6 +208,7 @@ class Jobs:
             repo = actions.current_migrations_repo(cfg) if body.get("migrate", True) else None
         except actions.ActionError:
             repo = None  # no migrations repo: copied as the source has it
+        images.require([localdb.IMAGE, *([migrations.IMAGE] if repo else [])])
 
         def work(job: Job) -> None:
             log = install_log(DATA_KEY)

@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO
 
-from . import actions, instances, localdb, migrations
+from . import actions, images, instances, localdb, migrations
 from .config import Config, Database
 from .i18n import _
 
@@ -149,6 +149,7 @@ def refresh(cfg: Config, output: IO[str], *, alias: str = SOURCE_ALIAS, database
     Flyway migrations (when ``migrations_repo`` is given) and register its alias. What it did, also kept for
     ``pdms db local status`` and the Data screen."""
     src = source(cfg, alias, database)
+    images.require([localdb.IMAGE, *([migrations.IMAGE] if migrations_repo else [])])
     localdb.up()
     started = datetime.now().astimezone()
     output.write(_("Copying {database} from {host} into {target}…", database=database, host=src.host,
