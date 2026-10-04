@@ -40,12 +40,12 @@ def running(monkeypatch, cfg: Config, *items: tuple[str, str, str], dead: tuple[
     root = backend_of(cfg)
     live = {}
     for at, (svc, user, db) in enumerate(items):
-        path = Path(svc) if svc.startswith("/") else root / svc
+        path = root / svc  # an absolute svc (another repo) stays as it is
         key = f"{path.name}@{8000 + at}"
         live[key] = Instance(key=key, pid=at + 1, service=str(path), host="0.0.0.0", port=8000 + at, user=user, db=db,
                              reload=True, log="x.log", started_at=f"2026-10-04T10:0{at}:00")
     monkeypatch.setattr(actions.instances, "load", lambda: live)
-    monkeypatch.setattr(Instance, "alive", lambda self: self.service.rsplit("/", 1)[-1] not in dead)
+    monkeypatch.setattr(Instance, "alive", lambda self: Path(self.service).name not in dead)
 
 
 def test_the_running_services_become_a_stack_with_the_user_and_db_most_use(cfg, monkeypatch) -> None:
