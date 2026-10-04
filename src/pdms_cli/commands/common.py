@@ -11,7 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .. import actions, instances, prompts, proxy, repos
+from .. import actions, images, instances, prompts, proxy, repos
 from ..config import Config, Database
 from ..i18n import _
 
@@ -242,3 +242,25 @@ def show_menu(title: str, options: dict[str, Callable[[], None]]) -> None:
         except typer.Exit:
             pass
         console.print()
+
+
+def with_images(work: Callable[[], T]) -> T:
+    """Run ``work``; when it needs Docker images that are not there yet, ask, download them (their progress on the
+    terminal) and run it again. Without a terminal to ask, say what to download and stop."""
+    while True:
+        try:
+            return work()
+        except images.Missing as needed:
+            commands = "  " + "\n  ".join(f"docker pull {image.name}" for image in needed.images)
+            if not interactive_terminal():
+                fail(str(needed) + "\n" + _("Download them first (or from pdms ui → Doctor):") + "\n" + commands)
+            for image in needed.images:
+                console.print(f"  [bold]{image.name}[/] · ~{image.download_mb} MB · {image.use}")
+            if not questionary.confirm(str(needed) + " " + _("Download now?"), default=True).unsafe_ask():
+                fail(_("Not downloaded. When you want:") + "\n" + commands)
+            for image in needed.images:
+                console.rule(f"docker pull {image.name}")
+                try:
+                    images.pull(image.name, sys.stdout)
+                except actions.ActionError as exc:
+                    fail(exc.message)

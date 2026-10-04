@@ -13,13 +13,13 @@ import re
 import subprocess
 import time
 
-from . import actions, events
+from . import actions, events, images
 from .config import Database
 from .i18n import _
 
 CONTAINER = "pdms-postgres"
 VOLUME = "pdms-postgres-data"
-IMAGE = "postgres:18.0"  # backend/docker-compose_dev.yml and docker-compose_tests.yml
+IMAGE = images.POSTGRES
 PORT = 5440  # 5434 is docker-compose_dev's, 5439 docker-compose_tests'
 USER = PASSWORD = "local"
 MAIN_DB = "pdms"
@@ -58,6 +58,7 @@ def up(port: int = PORT, wait: float = 60) -> dict:
     _require_docker()
     now = state()
     if not now["exists"]:
+        images.require([IMAGE])  # never downloaded without asking (images.Missing)
         code, out = _docker(
             "run", "-d", "--name", CONTAINER, "--label", "pdms=postgres", "--restart", "unless-stopped",
             "-p", f"127.0.0.1:{port}:5432", "-e", f"POSTGRES_USER={USER}", "-e", f"POSTGRES_PASSWORD={PASSWORD}",

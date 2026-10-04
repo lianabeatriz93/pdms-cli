@@ -47,6 +47,7 @@ function fixLabel(fix) {
   if (kind === "forget_stopped") return t("Forget stopped");
   if (kind === "adopt") return t("Adopt all");
   if (kind === "frontend_api") return t("Fix it");
+  if (kind === "pull_image") return t("Download");
   return t("Open Services");
 }
 
@@ -60,9 +61,17 @@ function runFix(fix) {
   else if (kind === "repos") openSetting("repos");
   else if (kind === "edit_repo") openSetting("repos", (data) => { const repo = data.repos.find((r) => r.name === name); if (repo) openRepo(repo); });
   else if (kind === "frontend_api") fixFrontendApi();
+  else if (kind === "pull_image") pullImage(name);
   else if (kind === "adopt") adoptStrays(null, () => act("/api/doctor/run", { databases: false }));
   else if (kind === "forget_stopped") act("/api/clean", {}, (data) => { toast(t("Forgot {n} stopped.", { n: data.forgotten.length }), "info"); act("/api/doctor/run", { databases: false }); });
   else location.hash = "#services";
+}
+
+// Asked first: images are hundreds of MB. Doctor runs again once it is downloaded (the job's end repaints).
+async function pullImage(name) {
+  const { confirmDialog } = await import("./stacks.js");
+  if (!await confirmDialog(t("Download {image}?", { image: name }), t("It runs in the background; the log shows its progress."), t("Download"))) return;
+  act("/api/images/pull", { names: [name] }, () => toast(t("Downloading {image} in the background.", { image: name }), "info"));
 }
 
 export function fixButton(check) {

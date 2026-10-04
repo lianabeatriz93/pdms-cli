@@ -12,10 +12,10 @@ import questionary
 import typer
 from rich.table import Table
 
-from .. import actions, completion, events, localdb, migrations, repos, runner, testruns
+from .. import actions, completion, events, images, localdb, migrations, repos, runner, testruns
 from ..config import Config
 from ..i18n import _
-from .common import PASSTHROUGH, app, console, fail, interactive_terminal, pick
+from .common import PASSTHROUGH, app, console, fail, interactive_terminal, pick, with_images
 from .run import ensure_installed
 from .services import resolve_service
 
@@ -57,11 +57,14 @@ def test_db(db: Optional[str]) -> str:
               "(Docker, port {port}) and create {n} of them?", port=localdb.PORT, n=localdb.TEST_COUNT), default=True,
         ).unsafe_ask():
             fail(testruns.no_test_db_hint())
-        with console.status(_("Starting pdms's Postgres and creating the test databases...")):
-            try:
-                names = testruns.prepare_test_dbs()
-            except actions.ActionError as exc:
-                fail(exc.message)
+        def start() -> list[str]:
+            with console.status(_("Starting pdms's Postgres and creating the test databases...")):
+                try:
+                    return testruns.prepare_test_dbs()
+                except actions.ActionError as exc:
+                    fail(exc.message)
+
+        names = with_images(start)
     if db:
         try:
             testruns.require_test_db(db)
@@ -213,12 +216,7 @@ def migrate(
     summary.add_row("[bold]DB[/]", f"{db_name} → {database.url(mask=True)}")
     summary.add_row("[bold]Flyway[/]", f"{command} · {migrations.IMAGE.rsplit('/', 1)[-1]}")
     console.print(summary)
-    if not migrations.image_present():
-        with console.status(_("Downloading the Flyway image (about 360 MB, only the first time)...")):
-            pulled, error = migrations.pull_image()
-        if not pulled:
-            fail(_("Could not download {image}: {error}. Check the connection (public ECR also limits anonymous "
-                   "downloads; try again in a few minutes).", image=migrations.IMAGE, error=error))
+    with_images(lambda: images.require([migrations.IMAGE]))  # asked first: about 360 MB
     console.rule(f"flyway {command}")
     try:
         result = subprocess.run(migrations.docker_command(repo, database, command),

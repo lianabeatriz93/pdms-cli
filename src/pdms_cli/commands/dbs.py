@@ -11,7 +11,7 @@ from rich.table import Table
 from .. import actions, completion, localcopy, localdb, prompts, testruns
 from ..config import Config
 from ..i18n import _
-from .common import add_db, check_db, console, db_app, pick, print_dbs, print_removed, settle, show_menu
+from .common import add_db, check_db, console, db_app, pick, print_dbs, print_removed, settle, show_menu, with_images
 
 
 @db_app.callback()
@@ -94,8 +94,11 @@ def _settle_local(work):
 def local_up(
     tests: int = typer.Option(localdb.TEST_COUNT, "--tests", min=0, max=20, help=_("Test databases to have.")),
 ) -> None:
-    with console.status(_("Starting pdms's Postgres and creating the test databases...")):
-        names = _settle_local(lambda: testruns.prepare_test_dbs(tests))
+    def start() -> list[str]:
+        with console.status(_("Starting pdms's Postgres and creating the test databases...")):
+            return _settle_local(lambda: testruns.prepare_test_dbs(tests))
+
+    names = with_images(start)
     state = localdb.state()
     console.print("[green]✓[/] " + _("{name} runs on localhost:{port} (user {user}, password {password}).",
                                       name=localdb.CONTAINER, port=state["port"], user=localdb.USER,
@@ -137,7 +140,7 @@ def local_tests(
         _settle_local(lambda: localdb.recreate_test_database(recreate))
         console.print("[green]✓[/] " + _("{name} recreated, empty.", name=recreate))
     if count is not None:
-        names = _settle_local(lambda: testruns.prepare_test_dbs(count))
+        names = with_images(lambda: _settle_local(lambda: testruns.prepare_test_dbs(count)))
         for extra in names[count:]:
             _settle_local(lambda name=extra: localdb.remove_test_database(name))
         names = names[:count]
@@ -176,8 +179,8 @@ def local_refresh(
     repo = _migrations_repo(cfg) if migrate else None
     if migrate and not repo:
         console.print(_("[dim]No pdms-db-migrations repo found: the copy stays as the source has it.[/]"))
-    result = _settle_local(lambda: localcopy.refresh(cfg, sys.stdout, alias=source_alias, database=database,
-                                                     migrations_repo=repo))
+    result = with_images(lambda: _settle_local(lambda: localcopy.refresh(
+        cfg, sys.stdout, alias=source_alias, database=database, migrations_repo=repo)))
     console.print("[green]✓[/] " + _("Local copy ready in {seconds} s: alias {alias}, {size:.1f} MB.",
                                       seconds=result["seconds"], alias=result["alias"],
                                       size=result["size"] / 1048576))

@@ -44,6 +44,7 @@ export function phaseLabel(phase) {
   if (verb === "building") return what ? t("building {what}…", { what }) : t("building…");
   if (verb === "restarting") return t("restarting…");
   if (verb === "copying") return t("copying… (pg_dump, migrations)");
+  if (verb === "downloading") return what ? t("downloading {what}…", { what }) : t("downloading…");
   if (verb === "waiting") return t("waiting for its turn…");
   return text;
 }
@@ -153,4 +154,26 @@ export async function getJson(path) {
 
 export function copyText(text, done) {
   navigator.clipboard.writeText(text).then(() => toast(done, "info"), () => toast(t("The browser did not allow copying.")));
+}
+
+// An action that needs Docker images pdms does not have yet: say which and how big, and download them only if the
+// user agrees; the server goes on with the action (``then``) once they are there.
+export async function postNeedingImages(path, body, then, done) {
+  try {
+    const { status, data } = await post(path, body);
+    if (status === 409 && data.decision === "images_missing") {
+      const { confirmDialog } = await import("./stacks.js");
+      const list = data.images.map((image) => `${image.name} (~${image.download_mb} MB): ${image.use}`).join("\n");
+      if (!await confirmDialog(t("Download Docker images?"), `${data.error}\n\n${list}`, t("Download"))) return { status, data };
+      act("/api/images/pull", { names: data.images.map((image) => image.name), then, ...body },
+        () => toast(t("Downloading in the background; it goes on by itself when done."), "info"));
+      return { status, data };
+    }
+    if (status >= 400) toast(data.error || t("pdms ui answered {status}", { status }));
+    else if (done) done(data);
+    return { status, data };
+  } catch {
+    toast(t("pdms ui is not reachable: is it still running?"));
+    return { status: 0, data: {} };
+  }
 }

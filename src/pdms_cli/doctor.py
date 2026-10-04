@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import __version__, actions, events, frontend, health, instances, installer, migrations, proxy, repos, routes, runner, update
+from . import __version__, actions, events, frontend, health, images, instances, installer, migrations, proxy, repos, routes, runner, update
 from .config import Config, config_path
 from .i18n import _
 
@@ -130,12 +130,28 @@ def check_tools() -> list[Check]:
     docker_ok, docker_detail = events.docker_available()
     checks.append(Check(section, "Docker", OK if docker_ok else FAIL, docker_detail or _("not available"),
                         "" if docker_ok else _("Install Docker and start it: https://docs.docker.com/get-docker/")))
+    if docker_ok:
+        checks.extend(check_images())
     pythons = python_versions_available()
     checks.append(Check(
         section, _("Python for the services"), OK if pythons else WARN,
         ", ".join(pythons) if pythons else _("no Python 3.10 / 3.11 found"),
         "" if pythons else _("Services need Python 3.10 or 3.11, e.g.: uv python install 3.11"),
     ))
+    return checks
+
+
+def check_images() -> list[Check]:
+    """The Docker images pdms needs: pdms never downloads one without asking, so Doctor says which are missing."""
+    section = _("Docker images")
+    checks = []
+    for image in images.IMAGES.values():
+        if images.present(image.name):
+            checks.append(Check(section, image.name, OK, image.use))
+        else:
+            checks.append(Check(section, image.name, WARN,
+                                _("not downloaded (~{mb} MB) · needed for {use}", mb=image.download_mb, use=image.use),
+                                f"docker pull {image.name}", fix=f"pull_image:{image.name}"))
     return checks
 
 
