@@ -152,3 +152,16 @@ def available(timeout: float = 15) -> bool:
                                               timeout=timeout)[0] == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def containers_by_port() -> dict[int, str]:
+    """Host port → name of the running container that publishes it (``docker ps``), for the Data screen."""
+    code, out = _docker("ps", "--format", "{{.Names}}|{{.Ports}}", timeout=15)
+    found: dict[int, str] = {}
+    if code != 0:
+        return found
+    for line in out.splitlines():
+        name, _sep, ports = line.partition("|")
+        for port in re.findall(r":(\d+)->", ports):
+            found.setdefault(int(port), name)
+    return found

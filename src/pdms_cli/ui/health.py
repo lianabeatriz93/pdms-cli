@@ -1,12 +1,14 @@
 """The databases in use, measured while pdms ui runs: one round trip each minute, an hour of history for the page.
 
 In use means the current database (the last one used) and those of the services running now. Each one keeps an
-open connection (see :class:`pdms_cli.health.Meter`), closed when the database is no longer in use.
+open connection (see :class:`pdms_cli.health.Meter`), closed when the database is no longer in use. While the Data
+screen is open (it asks again each time, and with Test now) every database is measured, for :data:`ALL_FOR` seconds.
 """
 
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from collections.abc import Callable
 from datetime import datetime
@@ -16,6 +18,7 @@ from ..config import Config, Database
 
 EVERY = 60
 HISTORY = 60  # an hour of samples
+ALL_FOR = 600  # seconds every database is measured after the Data screen asked
 
 
 def in_use(cfg: Config) -> dict[str, Database]:
@@ -34,10 +37,14 @@ class Health:
         self._running = False
         self._history: dict[str, deque] = {}
         self._latest: dict[str, dict] = {}
+        self._all_until = 0.0
 
-    def run(self) -> bool:
-        """Measure now, in the background; False when a measure is already going."""
+    def run(self, every_database: bool = False) -> bool:
+        """Measure now, in the background; False when a measure is already going. ``every_database``: not only the
+        ones in use, for the next :data:`ALL_FOR` seconds (the Data screen)."""
         with self._lock:
+            if every_database:
+                self._all_until = time.monotonic() + ALL_FOR
             if self._running:
                 return False
             self._running = True
@@ -47,7 +54,9 @@ class Health:
     def measure(self) -> None:
         """Measure every database in use (here, in this thread)."""
         cfg = Config.load()
-        targets = in_use(cfg)
+        with self._lock:
+            every = time.monotonic() < self._all_until
+        targets = dict(cfg.dbs) if every else in_use(cfg)
         self.meter.forget(set(targets))
         for name, db in targets.items():
             ms, error = self.meter.measure(name, db, cfg.defaults.db_timeout)

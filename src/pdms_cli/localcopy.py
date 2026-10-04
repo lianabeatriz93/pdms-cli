@@ -127,6 +127,13 @@ def using_copy(cfg: Config) -> list[str]:
     return [inst.key for inst in instances.load().values() if inst.db in aliases and inst.alive()]
 
 
+def alias(cfg: Config, port: int = 0) -> str:
+    """The alias of the local copy, or "" when there is none yet (``port``: known already, no docker call)."""
+    port = port or localdb.state()["port"] or localdb.PORT
+    return next((name for name, db in cfg.dbs.items()
+                 if migrations.is_local(db) and (db.port, db.database) == (port, localdb.MAIN_DB)), "")
+
+
 def register_alias(cfg: Config) -> str:
     """The alias of the local copy (``pdms-local``, created the first time)."""
     copy = localdb.database(localdb.MAIN_DB, localdb.state()["port"] or localdb.PORT)

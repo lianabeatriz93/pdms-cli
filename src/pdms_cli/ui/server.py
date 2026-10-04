@@ -35,6 +35,7 @@ from ..config import Config
 from ..logview import LogFollower
 from . import instance as ui_instance
 from . import recent as ui_recent
+from . import state as ui_state
 from . import jobs as ui_jobs
 from . import updates as ui_updates
 from .control import Control
@@ -159,6 +160,13 @@ def decision_body(decision: actions.Decision) -> dict:
         return {"decision": "repo_switch", "old": switch.old, "proxy": switch.proxy,
                 "running": [{"key": inst.key, "movable": target is not None} for inst, target in switch.running]}
     return {"decision": type(decision).__name__, "error": str(decision)}
+
+
+def _body_text(body: dict, key: str) -> str:
+    value = body.get(key)
+    if not isinstance(value, str) or not value:
+        raise actions.ActionError(f"{key} must be a name")
+    return value
 
 
 def launch_options(body: dict) -> dict:
@@ -520,10 +528,16 @@ def make_handler(
                     raise actions.ActionError("databases must be true or false")
                 return (202, {}) if jobs.doctor.run(databases=databases) else (409, {"error": "Doctor is running."})
             if path == "/api/health/run":
-                return (202, {}) if jobs.health.run() else (409, {"error": "Already measuring."})
+                every = body.get("all", False) is True
+                return (202, {}) if jobs.health.run(every) else (409, {"error": "Already measuring."})
             if path == "/api/health/line":
                 ms = health.line()
                 return 200, {"ms": None if ms is None else round(ms), "host": health.LINE_HOST[0]}
+            if path == "/api/ui/seen":
+                try:
+                    return 200, {"new_views": ui_state.mark_seen(_body_text(body, "view"))}
+                except ValueError as exc:
+                    raise actions.ActionError(str(exc)) from exc
             if path == "/api/ui/pick-folder":
                 if control.pick_folder is None:
                     return 404, {"error": "only in the window"}
@@ -535,6 +549,12 @@ def make_handler(
                 return 202, {"job": jobs.pull_images(names, then, body).key}
             if path in ("/api/data/up", "/api/data/down"):
                 return 202, {"job": jobs.postgres(path.rsplit("/", 1)[-1]).key}
+            if path == "/api/data/migrate":
+                return 202, {"job": jobs.migrate_db(_body_text(body, "db")).key}
+            if path == "/api/data/restore":
+                return 202, {"job": jobs.restore_snapshot(_body_text(body, "name")).key}
+            if path == "/api/data/use-copy":
+                return 200, jobs.use_copy(_body_text(body, "instead_of"))
             if path == "/api/data/refresh":
                 return 202, {"job": jobs.refresh_copy(body).key}
             if path.startswith("/api/data/") and path.count("/") == 3:

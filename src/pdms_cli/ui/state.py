@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
+
 import threading
 import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from .. import __version__, actions, events, frontend, i18n, instances, proxy, repos
+from .. import __version__, actions, events, frontend, i18n, instances, localcopy, localdb, proxy, repos
 from ..config import Config
 from . import updates
 
@@ -148,6 +150,37 @@ def profiles(cfg: Config) -> dict[str, dict]:
     }
 
 
+NEW_VIEWS = ("data", "tests")  # screens with a "new" tag in the sidebar until they are opened once
+
+
+def seen_path() -> Path:
+    return instances.state_dir() / "ui-seen.json"
+
+
+def seen_views() -> set[str]:
+    try:
+        data = json.loads(seen_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    return {view for view in data if isinstance(view, str)} if isinstance(data, list) else set()
+
+
+def mark_seen(view: str) -> list[str]:
+    """Remember that ``view`` was opened: its "new" tag goes. The views still new."""
+    if view not in NEW_VIEWS:
+        raise ValueError(f"{view} has no new tag")
+    seen = seen_views() | {view}
+    seen_path().parent.mkdir(parents=True, exist_ok=True)
+    seen_path().write_text(json.dumps(sorted(seen)), encoding="utf-8")
+    return [name for name in NEW_VIEWS if name not in seen]
+
+
+def copy_state(cfg: Config) -> dict:
+    """The local copy for Home's slow database notice: its alias and when it was refreshed (no docker call)."""
+    refresh = localcopy.load_state().get("refresh") or {}
+    return {"alias": localcopy.alias(cfg, port=localdb.PORT), "at": refresh.get("at", "")}
+
+
 def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, doctor: dict | None = None,
                 health: dict | None = None, changes: dict | None = None, tests: dict | None = None) -> dict:
     """Everything the page shows: repo, users and DBs (names only), instances, proxy, local events and jobs."""
@@ -188,5 +221,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, 
         "health": health or {"dbs": [], "running": False, "slow_ms": 0},
         "changes": changes or {"stale": [], "pending": [], "commits": [], "head": "", "at": ""},
         "tests": tests or {"running": [], "queued": [], "failing": 0, "version": 0, "error": ""},
+        "copy": copy_state(cfg),
+        "new_views": [name for name in NEW_VIEWS if name not in seen_views()],
         "jobs": jobs or {},
     }

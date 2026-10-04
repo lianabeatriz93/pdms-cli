@@ -52,6 +52,9 @@ def _(text: str, /, **kwargs: object) -> str:
 
 
 ES: dict[str, str] = {
+    "{name} has no Flyway history: its tables were made another way, and Flyway would run every migration over them. pdms only applies migrations to a database Flyway already manages.": "{name} no tiene historial de Flyway: sus tablas se crearon de otra forma, y Flyway ejecutaría todas las migraciones encima. pdms solo aplica migraciones a una base de datos que Flyway ya gestiona.",
+    "Flyway migrate failed on {name} (exit code {code}); the log says why.": "Flyway migrate falló en {name} (código de salida {code}); el log dice por qué.",
+    "There is no local copy yet: make it in Data first.": "Aún no hay copia local: hazla primero en Datos.",
     "'{name}' is not an image pdms uses.": "'{name}' no es una imagen que use pdms.",
     "Could not download {image}: {error}. Check the connection and try again.": "No se pudo descargar {image}: {error}. Revisa la conexión e inténtalo de nuevo.",
     "Docker images": "Imágenes de Docker",
