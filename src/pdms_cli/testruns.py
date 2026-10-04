@@ -354,18 +354,8 @@ def changed_files(root: Path) -> tuple[str, list[str]]:
     return branch, sorted(f for f in changed if f)
 
 
-_deps_cache: dict[Path, tuple[float, list[Path]]] = {}
-
-
 def dependencies(project: Path) -> list[Path]:
     """Every local path dependency of ``project``, transitive ones included (develop or installed as a copy)."""
-    try:
-        stamp = (project / "pyproject.toml").stat().st_mtime
-    except OSError:
-        return []
-    cached = _deps_cache.get(project)
-    if cached and cached[0] == stamp:
-        return cached[1]
     found: list[Path] = []
     pending = installer.path_dependencies(project)
     while pending:
@@ -374,7 +364,6 @@ def dependencies(project: Path) -> list[Path]:
             continue
         found.append(directory)
         pending.extend(installer.path_dependencies(directory))
-    _deps_cache[project] = (stamp, found)
     return found
 
 
@@ -384,15 +373,20 @@ def affected(backend: Path) -> dict:
     backend = backend.resolve()
     root = backend.parent
     branch, changed = changed_files(root)
-    paths = [(root / f).resolve() for f in changed]
-    paths = [p for p in paths if p.is_relative_to(backend)]
+    # Every folder that holds a changed file: a project or package is touched when its own folder is one of them
+    # (a set lookup each, instead of comparing every file with every folder).
+    touched: set[Path] = set()
+    for name in changed:
+        path = (root / name).resolve()
+        if path.is_relative_to(backend):
+            touched.update(path.parents)
     items = []
-    if paths:
+    if touched:
         for project in projects(backend):
             folder = (backend / project).resolve()
-            why = ["own"] if any(p.is_relative_to(folder) for p in paths) else []
+            why = ["own"] if folder in touched else []
             for dep in dependencies(folder):
-                if dep.is_relative_to(backend) and any(p.is_relative_to(dep) for p in paths):
+                if dep in touched and dep.is_relative_to(backend):
                     why.append(dep.relative_to(backend).as_posix())
             if why:
                 items.append({"project": project, "why": why})
