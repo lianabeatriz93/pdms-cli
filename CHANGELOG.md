@@ -1,3 +1,46 @@
+## v0.4.0 (2026-10-04)
+
+### Feat
+
+- **aws**: services use the chosen AWS profile and the buckets pdms reads from that account's Lambdas
+- **ui**: Data shows how each database travels, its last hour and its migrations, and Home offers the local copy
+- **data**: every database measured while Data is open, migrations applied on local ones, restore around the services
+- **db**: pdms asks before downloading a Docker image, and Doctor lists the ones it needs
+- **ui**: a Data screen with the connections, the local copy, its snapshots and the test databases
+- **db**: a local copy of pdm_template_dev in pdms's Postgres, with snapshots
+- **ui**: All logs in one click, every log of the dock on one connection
+- **ui**: a log dock under every screen, and a request's events in its trace
+- **trace**: a request is followed through the services, their logs and their events
+- **proxy**: a request shows in Requests as soon as it arrives, with its time counting
+- **ui**: SNS publishes show their date as well as their time
+- **ui**: a Changed directly tab in Tests, apart from what a changed package drags in
+- **test**: choose development mode for a test run, asked when the service's .env turns it on
+- **ui**: a Tests screen with what your changes touch, failures linked to the line, and Re-run failed
+- **test**: tests only on a local database, results kept per project, and what the branch touches
+- **ui**: setups with a name on Home, switching between them in one click
+- **ui**: Home says which running services run old code, and reinstalls and restarts them
+- **ui**: pick several services to restart or stop, and restart part of a stack as another user
+- **restart**: several services at once, and part of a stack with another user it can remember
+- **proxy**: a request's trace says how long it waited for the service and the way back
+- **ui**: a status bar with the round trip to the database, and the tunnels and the line in Doctor
+- **proxy**: Requests shows the database time and the queries of each request
+- **run**: each request says how long it spent in the database and on which queries
+
+### Fix
+
+- **test**: tests run only on pdms's own test databases, never on one that keeps data
+- **logs**: the mark of an appended log is plain ASCII, and Windows does not cut logs in use
+- **logs**: logs stay small, pdms's health checks stay out of them, and All logs shows only new lines
+- **test**: tests run with development mode off, whatever the service's .env says
+- **ui**: Tests loads when the page opens on it, and finds what changed in a fraction of a second
+- **ui**: only the content scrolls, so the sidebar and the title bar never scroll away
+- **ui**: say how to fix a page that cannot load its scripts
+
+### Refactor
+
+- **ui**: the page's script as one ES module per screen
+- **cli**: one module per command group in pdms_cli.commands
+
 ## v0.3.4 (2026-10-03)
 
 ### Feat
