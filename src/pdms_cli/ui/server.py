@@ -530,6 +530,16 @@ def make_handler(
             if path == "/api/health/run":
                 every = body.get("all", False) is True
                 return (202, {}) if jobs.health.run(every) else (409, {"error": "Already measuring."})
+            if path == "/api/aws/profile":
+                jobs.aws.choose(ui_jobs._text(body, "profile", ""))
+                return 200, {}
+            if path == "/api/aws/read":
+                return (202, {}) if jobs.aws.read() else (409, {"error": "Already reading."})
+            if path == "/api/aws/login":
+                return (202, {}) if jobs.aws.login() else (409, {"error": "Already logging in."})
+            if path == "/api/aws/check":
+                threading.Thread(target=jobs.aws.check, kwargs={"read_if_due": False}, daemon=True).start()
+                return 202, {}
             if path == "/api/health/line":
                 ms = health.line()
                 return 200, {"ms": None if ms is None else round(ms), "host": health.LINE_HOST[0]}
@@ -854,7 +864,7 @@ def make_app() -> tuple[Hub, ui_jobs.Jobs]:
 
     def build() -> dict:
         state = build_state(jobs=jobs.snapshot(), doctor=jobs.doctor.summary(), health=jobs.health.summary(),
-                            changes=jobs.changes.summary(), tests=jobs.tests.summary())
+                            changes=jobs.changes.summary(), tests=jobs.tests.summary(), aws=jobs.aws.summary())
         i18n.set_language(state["language"])  # the server's own messages follow a change made in the CLI too
         notify["on"] = state["notify"]
         recent.observe(state, notify=state["notify"])

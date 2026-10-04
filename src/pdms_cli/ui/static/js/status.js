@@ -3,6 +3,7 @@
 
 import { $, act, el, icon, post, toast } from "./core.js";
 import { state } from "./state.js";
+import { awsLevel } from "./aws.js";
 
 const WARN_MS = 100; // as health.SLOW_MS: every query is noticeably slower from here on
 
@@ -54,6 +55,13 @@ export function paintStatus() {
     if (current && current.route.kind === "tunnel") {
       items.push(item([t("tunnel")], { level: current.route.up ? "ok" : "bad", title: routeText(current.route), cls: "opt" }));
     }
+  }
+  if (state.aws && state.aws.profile) {
+    const session = state.aws.session || {};
+    const title = session.state === "ok" ? t("AWS profile {profile} · account {account}", { profile: state.aws.profile, account: session.account })
+      : session.state === "expired" ? t("AWS session of {profile} is over: log in from Data", { profile: state.aws.profile })
+      : session.detail || state.aws.profile;
+    items.push(item([t("aws"), el("b", {}, state.aws.profile)], { level: awsLevel(state.aws) || "off", title, onclick: () => { location.hash = "#data"; }, cls: "opt" }));
   }
   items.push(item([t("proxy"), el("b", {}, state.proxy ? `:${state.proxy.port}` : t("off"))], { level: state.proxy ? "ok" : "off", cls: "opt" }));
   items.push(item([t("events"), el("b", {}, state.events.up ? `:${state.events.port}` : t("off"))], { level: state.events.up ? "ok" : "off", cls: "opt" }));

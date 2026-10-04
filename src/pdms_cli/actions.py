@@ -24,7 +24,7 @@ from typing import IO
 from urllib.parse import unquote, urlsplit
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
-from . import captures, health, trace, vscode
+from . import awsenv, captures, health, trace, vscode
 from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -351,6 +351,7 @@ def service_env(cfg: Config, launch: ServiceLaunch) -> dict[str, str]:
     extra = dict(launch.events.env)
     if launch.events.kind == "local" and (found := repo_event_map(cfg, launch.service)):
         extra.update(events.topic_env(*found))  # its own topics; the rest of the setup may be a whole stack's
+    extra.update(awsenv.env_for(cfg, launch.service))  # AWS_PROFILE and its Lambda's buckets, when a profile is chosen
     query_stats = cfg.defaults.query_stats and not launch.is_consumer
     # Always: its sitecustomize.py follows the proxy's requests through logs and events (pdms_trace.py) and loads
     # pdms_parallel.py and pdms_queries.py when asked.
@@ -1453,3 +1454,28 @@ def set_language(cfg: Config, lang: str) -> None:
         raise ActionError(_("Unknown language '{lang}'. Available: {codes}", lang=lang, codes=", ".join(LANGUAGES)))
     cfg.defaults.language = lang
     cfg.save()
+
+
+# --------------------------------------------------------------------------- AWS (awsenv.py)
+
+
+def set_aws_profile(cfg: Config, profile: str) -> None:
+    """Use ``profile`` (one of the AWS config's; "" = none: pdms leaves AWS as the terminal has it)."""
+    if profile and profile not in (known := awsenv.profiles()):
+        raise ActionError(_("Unknown AWS profile '{name}'. In {path}: {names}", name=profile, path=awsenv.config_file(),
+                            names=", ".join(known) or "-"))
+    cfg.defaults.aws_profile = profile
+    cfg.save()
+
+
+def read_aws(cfg: Config) -> list[awsenv.Change]:
+    """Read the Lambdas' buckets with the chosen profile now (see :func:`awsenv.refresh`)."""
+    if not cfg.defaults.aws_profile:
+        raise ActionError(_("Choose an AWS profile first (pdms aws profile)."))
+    try:
+        return awsenv.refresh(cfg.defaults.aws_profile)
+    except awsenv.AwsError as exc:
+        if exc.expired:
+            raise ActionError(_("The AWS session of {profile} is over: log in again (pdms aws login).",
+                                profile=cfg.defaults.aws_profile)) from exc
+        raise ActionError(exc.message) from exc

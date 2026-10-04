@@ -1284,4 +1284,124 @@ ES: dict[str, str] = {
         "{url} · el proxy corre en :{port}",
     "{url} · the proxy that wrote it is not running":
         "{url} · el proxy que lo escribió no está corriendo",
+    '(none)':
+        '(ninguna)',
+    'A profile of your AWS config.':
+        'Un perfil de tu configuración de AWS.',
+    'AWS':
+        'AWS',
+    'AWS answered something that is not JSON.':
+        'AWS respondió algo que no es JSON.',
+    'AWS did not answer in {seconds} s.':
+        'AWS no respondió en {seconds} s.',
+    'AWS profile for the services:':
+        'Perfil de AWS para los servicios:',
+    'AWS:':
+        'AWS:',
+    'Asking AWS who {profile} is...':
+        'Preguntando a AWS quién es {profile}...',
+    'Buckets':
+        'Buckets',
+    'Changed buckets':
+        'Buckets cambiados',
+    'Changed on {when}:':
+        'Cambiaron el {when}:',
+    'Changed since the last read:':
+        'Cambiado desde la última lectura:',
+    'Choose an AWS profile first (pdms aws profile).':
+        'Elige primero un perfil de AWS (pdms aws profile).',
+    'Choose the AWS profile the services use (empty = ask; --none = no profile).':
+        'Elige el perfil de AWS que usan los servicios (vacío = preguntar; --none = ningún perfil).',
+    'Choose the profile':
+        'Elegir el perfil',
+    'Install the AWS CLI v2.':
+        'Instala la AWS CLI v2.',
+    'Its Lambdas were not read yet: pdms aws read.':
+        'Sus Lambdas aún no se han leído: pdms aws read.',
+    'Keys in the environment win over the profile: unset them before starting pdms.':
+        'Las claves del entorno ganan al perfil: quítalas antes de arrancar pdms.',
+    'Lambdas read {when}: {functions}; {services} of {total} services get buckets.':
+        'Lambdas leídas el {when}: {functions}; {services} de {total} servicios reciben buckets.',
+    'Later with pdms aws read.':
+        'Más tarde con pdms aws read.',
+    'Log in (aws sso login)':
+        'Iniciar sesión (aws sso login)',
+    "Log in to the profile's SSO session (aws sso login opens the browser).":
+        'Inicia la sesión SSO del perfil (aws sso login abre el navegador).',
+    'No AWS profile chosen: services use AWS as the terminal has it. pdms aws profile chooses one.':
+        'No hay perfil de AWS elegido: los servicios usan AWS como lo tenga la terminal. pdms aws profile elige uno.',
+    'No AWS profile: services use AWS as the terminal has it.':
+        'Sin perfil de AWS: los servicios usan AWS como lo tenga la terminal.',
+    'No AWS profiles on this computer: services use AWS as the terminal has it.':
+        'No hay perfiles de AWS en este equipo: los servicios usan AWS como lo tenga la terminal.',
+    'No profile: leave AWS as the terminal has it.':
+        'Sin perfil: deja AWS como lo tenga la terminal.',
+    'No profiles in {path}: set one up with aws configure sso.':
+        'No hay perfiles en {path}: crea uno con aws configure sso.',
+    'None: leave AWS as the terminal has it':
+        'Ninguno: dejar AWS como lo tenga la terminal',
+    'Profile':
+        'Perfil',
+    "Read the Lambdas' buckets now":
+        'Leer ahora los buckets de las Lambdas',
+    'Read the buckets of its Lambdas now?':
+        '¿Leer ahora los buckets de sus Lambdas?',
+    'Read the buckets of the Lambdas now (read-only; only bucket variables are kept).':
+        'Lee ahora los buckets de las Lambdas (solo lectura; solo se guardan las variables de buckets).',
+    'Reading the Lambdas of {profile}...':
+        'Leyendo las Lambdas de {profile}...',
+    'Restart to use them: {keys}':
+        'Reinicia para usarlos: {keys}',
+    'Services that use S3 need a profile, and the buckets pdms reads from its Lambdas.':
+        'Los servicios que usan S3 necesitan un perfil y los buckets que pdms lee de sus Lambdas.',
+    'Services that use S3 need one: pdms aws profile':
+        'Los servicios que usan S3 necesitan uno: pdms aws profile',
+    'Services use the AWS profile {profile}.':
+        'Los servicios usan el perfil de AWS {profile}.',
+    'The AWS CLI (aws) is not installed.':
+        'La AWS CLI (aws) no está instalada.',
+    "The AWS profile the services use, and the buckets pdms reads from that account's Lambdas.":
+        'El perfil de AWS que usan los servicios y los buckets que pdms lee de las Lambdas de esa cuenta.',
+    'The AWS session of {profile} is over. Log in now (opens the browser)?':
+        'La sesión de AWS de {profile} ha caducado. ¿Iniciar sesión ahora (abre el navegador)?',
+    'The AWS session of {profile} is over: log in again (pdms aws login).':
+        'La sesión de AWS de {profile} ha caducado: vuelve a iniciar sesión (pdms aws login).',
+    'The profile, its session, and what was read from its Lambdas.':
+        'El perfil, su sesión y lo que se leyó de sus Lambdas.',
+    'They changed in AWS after these started: restart them.':
+        'Cambiaron en AWS después de que estos arrancaran: reinícialos.',
+    "Unknown AWS profile '{name}'. In {path}: {names}":
+        "Perfil de AWS '{name}' desconocido. En {path}: {names}",
+    'account {account}':
+        'cuenta {account}',
+    'aws exited with code {code}':
+        'aws terminó con el código {code}',
+    'none on this computer; services use AWS as the terminal has it':
+        'ninguno en este equipo; los servicios usan AWS como lo tenga la terminal',
+    'not chosen; services use AWS as the terminal has it':
+        'sin elegir; los servicios usan AWS como lo tenga la terminal',
+    'profile {profile}':
+        'perfil {profile}',
+    'session over: pdms aws login':
+        'sesión caducada: pdms aws login',
+    'set in this terminal':
+        'definida en esta terminal',
+    'the Lambdas were not read yet':
+        'las Lambdas aún no se han leído',
+    '{functions} Lambdas read; {services} services of the repo get their buckets.':
+        '{functions} Lambdas leídas; {services} servicios del repo reciben sus buckets.',
+    '{profile} is not in {path}':
+        '{profile} no está en {path}',
+    '{profile} · account {account}':
+        '{profile} · cuenta {account}',
+    '{profile} · session over':
+        '{profile} · sesión caducada',
+    '{profile} · the AWS CLI (aws) is not installed':
+        '{profile} · la AWS CLI (aws) no está instalada',
+    '{services} services get them · read {when}':
+        '{services} servicios los reciben · leídos el {when}',
+    '{service} is the Lambda {function} (dev Terraform)':
+        '{service} es la Lambda {function} (Terraform de dev)',
+    '☁  AWS (profile and buckets)':
+        '☁  AWS (perfil y buckets)',
 }

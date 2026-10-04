@@ -378,6 +378,26 @@
       <tbody id="data-tests"></tbody>
     </table><p class="empty" id="data-tests-empty" hidden>None yet: start pdms's Postgres.</p></div>
   </section>
+  <section class="card data-card" aria-labelledby="data-aws-title">
+    <div class="panel-head"><h2 id="data-aws-title">AWS</h2><span class="st" id="data-aws-status"></span>
+      <label class="inline push">Profile <select id="data-aws-profile" aria-label="AWS profile for the services"></select></label></div>
+    <p class="muted note">The profile services use (<code>AWS_PROFILE</code>), and the buckets each one needs, read from that account's Lambdas: only the bucket variables are kept, never the rest of a Lambda's environment. A variable the service's own <code>.env</code> sets keeps its value.</p>
+    <p class="warn" id="data-aws-changed" hidden></p>
+    <dl class="data-facts" id="data-aws-facts">
+      <dt>Account</dt><dd class="mono" id="data-aws-account"></dd>
+      <dt>Lambdas read</dt><dd id="data-aws-read"></dd>
+      <dt>Services with buckets</dt><dd id="data-aws-services"></dd>
+      <dt>Buckets</dt><dd class="mono data-aws-buckets" id="data-aws-buckets"></dd>
+    </dl>
+    <details class="data-aws-named" id="data-aws-named" hidden><summary></summary><ul id="data-aws-named-list"></ul></details>
+    <p class="muted" id="data-aws-login" hidden></p>
+    <div class="bar-actions">
+      <button class="btn primary" id="data-aws-login-btn" type="button" hidden>Log in (aws sso login)</button>
+      <button class="btn" id="data-aws-read-btn" type="button">Read the Lambdas now</button>
+      <button class="btn ghost" id="data-aws-check" type="button">Check the session</button>
+    </div>
+    <p class="error" id="data-aws-error" hidden></p>
+  </section>
 </section>
 
 <section class="view" id="view-tests" hidden>

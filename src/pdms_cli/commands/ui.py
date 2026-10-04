@@ -102,6 +102,7 @@ def ui_cmd(
     threading.Thread(target=jobs.doctor.watch, args=(stopped,), name="pdms-ui-doctor-watch", daemon=True).start()
     threading.Thread(target=jobs.health.watch, args=(stopped,), name="pdms-ui-health-watch", daemon=True).start()
     threading.Thread(target=jobs.changes.watch, args=(stopped,), name="pdms-ui-changes-watch", daemon=True).start()
+    threading.Thread(target=jobs.aws.watch, args=(stopped,), name="pdms-ui-aws-watch", daemon=True).start()
     threading.Thread(target=instances.watch_logs, args=(stopped,), name="pdms-ui-logs-watch", daemon=True).start()
     threading.Thread(target=jobs.tests.count_failing, args=(repos.active_backend(Config.load()),),
                      name="pdms-ui-tests-count", daemon=True).start()

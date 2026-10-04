@@ -114,6 +114,9 @@ class Defaults:
     # Each request of a service says how long it spent in the database and which queries it ran (pdms proxy keeps
     # them for pdms ui; the service's log warns about the same query run many times). See sqs_patch/pdms_queries.py.
     query_stats: bool = True
+    # Profile of the user's AWS config the services use (AWS_PROFILE), with the buckets pdms reads from that
+    # account's Lambdas (see awsenv.py). Empty: pdms leaves AWS as the terminal has it.
+    aws_profile: str = ""
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 
