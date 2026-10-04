@@ -103,22 +103,41 @@ export function clearLog() {
   $("logs-text").textContent = "";
 }
 
-function follow(source, lines) {
-  const query = new URLSearchParams({ key: source.key, which: source.which, lines });
-  const stream = source.stream = new EventSource(`/api/logs/stream?${query}`);
-  let first = true;
-  let tail = true; // the first batch after (re)connecting is the tail of the file
-  stream.onopen = () => { // a reconnect starts again with the tail: drop what this source had
-    if (!first) logs.lines = logs.lines.filter((line) => line.source !== source.key);
-    first = false;
-    tail = true;
-    repaintLog();
+// One connection for every log of the dock (a browser keeps only about six open per server): reopened, with each
+// log's tail again, when the logs change.
+let stream = null;
+
+function connect(lines) {
+  if (stream) stream.close();
+  stream = null;
+  if (!logs.sources.length) return;
+  const single = logs.sources.length === 1 ? logs.sources[0] : null;
+  const query = new URLSearchParams({
+    keys: logs.sources.map((source) => source.key).join(","), which: single ? single.which : "current", lines,
+  });
+  const current = stream = new EventSource(`/api/logs/streams?${query}`);
+  const tails = new Set(); // the logs whose tail came on this connection: their first batch is placed by time
+  const sourceOf = (key) => logs.sources.find((source) => source.key === key);
+  current.onopen = () => { // (re)connected: every tail comes again
+    tails.clear();
+    clearLog();
+    for (const source of logs.sources) source.at = null;
     logs.seek = Boolean(logs.find);
+    paintDockNote();
   };
-  stream.addEventListener("lines", (event) => { appendLog(source, JSON.parse(event.data), tail); tail = false; });
-  stream.addEventListener("reset", () => appendLog(source, ["", t("──── restarted ────"), ""]));
-  stream.onerror = () => {
-    if (stream.readyState === EventSource.CLOSED) appendLog(source, [t("(no log here)")]);
+  current.addEventListener("lines", (event) => {
+    const { key, lines: batch } = JSON.parse(event.data);
+    const source = sourceOf(key);
+    if (!source) return;
+    appendLog(source, batch, !tails.has(key));
+    tails.add(key);
+  });
+  current.addEventListener("reset", (event) => {
+    const source = sourceOf(JSON.parse(event.data).key);
+    if (source) appendLog(source, ["", t("──── restarted ────"), ""]);
+  });
+  current.onerror = () => {
+    if (current.readyState === EventSource.CLOSED && logs.sources.length) appendLog(logs.sources[0], [t("(no log here)")]);
   };
 }
 
@@ -129,7 +148,8 @@ function freeColour() {
 }
 
 function stopAll() {
-  for (const source of logs.sources) if (source.stream) source.stream.close();
+  if (stream) stream.close();
+  stream = null;
   logs.sources = [];
 }
 
@@ -139,51 +159,48 @@ function syncSingle() {
   logs.which = only ? only.which : "current";
 }
 
+function showDock() {
+  syncSingle();
+  $("logs").hidden = false;
+  $("logs").classList.remove("folded");
+  connect(logs.find || logs.request ? 2000 : 200);
+  paintDock();
+  if (state) paintServices();
+}
+
 // Opens the dock with one log (what every Logs button does), or with ``options.add`` adds it to the ones it shows.
 export function openLogs(key, which = "current", find = null, options = {}) {
   if (!options.add) stopAll();
   else if (logs.sources.some((source) => source.key === key)) return;
   Object.assign(logs, { find, seek: Boolean(find), hidden: false });
   if (!options.keepRequest) logs.request = options.request || "";
-  if (!options.add) clearLog();
-  const source = { key, which, colour: options.add ? freeColour() : 0, stream: null };
-  logs.sources.push(source);
-  syncSingle();
-  $("logs").hidden = false;
-  $("logs").classList.remove("folded");
-  follow(source, find || logs.request ? 2000 : 200);
-  paintDock();
-  if (state) paintServices();
+  logs.sources.push({ key, which, colour: options.add ? freeColour() : 0, at: null });
+  showDock();
 }
 
 // Several logs at once, e.g. what a request went through: the proxy, its service and the consumers of its events.
 export function openRequestLogs(keys, request) {
   stopAll();
-  clearLog();
   Object.assign(logs, { find: null, seek: false, request, hidden: false });
-  for (const key of keys) {
-    const source = { key, which: "current", colour: freeColour(), stream: null };
-    logs.sources.push(source);
-    follow(source, 2000);
-  }
-  syncSingle();
-  $("logs").hidden = false;
-  $("logs").classList.remove("folded");
-  paintDock();
-  if (state) paintServices();
+  for (const key of keys) logs.sources.push({ key, which: "current", colour: freeColour(), at: null });
+  showDock();
+}
+
+// Every log that can be followed now, added to the ones the dock shows (or the dock opens with all of them).
+export function addAllLogs() {
+  const keys = addable();
+  if (!keys.length) return;
+  if ($("logs").hidden) stopAll();
+  Object.assign(logs, { find: null, seek: false, hidden: false });
+  for (const key of keys) logs.sources.push({ key, which: "current", colour: freeColour(), at: null });
+  showDock();
 }
 
 export function removeLogSource(key) {
-  const source = logs.sources.find((item) => item.key === key);
-  if (!source) return;
-  if (source.stream) source.stream.close();
-  logs.sources = logs.sources.filter((item) => item !== source);
-  logs.lines = logs.lines.filter((line) => line.source !== key);
+  if (!logs.sources.some((item) => item.key === key)) return;
+  logs.sources = logs.sources.filter((item) => item.key !== key);
   if (!logs.sources.length) { closeLogs(); return; }
-  syncSingle();
-  repaintLog();
-  paintDock();
-  if (state) paintServices();
+  showDock();
 }
 
 export function closeLogs() {
@@ -236,6 +253,8 @@ export function paintDock() {
   const options = addable();
   add.replaceChildren(el("option", { value: "" }, t("+ Add a log")), ...options.map((key) => el("option", { value: key }, key)));
   add.hidden = !options.length;
+  $("logs-all").hidden = options.length < 2;
+  $("logs-all").textContent = t("All logs · {n}", { n: options.length });
   const testRun = Boolean(single && single.key.startsWith("test:")); // a test run has one log, its install included
   const noInstall = single && (single.key.startsWith("proxy") || ["sns", "ui", "update"].includes(single.key));
   $("logs-tabs").hidden = !single;

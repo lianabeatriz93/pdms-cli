@@ -59,6 +59,7 @@ MAX_BODY = 1024 * 1024  # an imported configuration travels in the body
 LOG_LINES = 200
 MAX_LOG_LINES = 20000  # the local SNS log: a publish takes a line per line of its JSON
 LOG_POLL = 0.25
+MAX_LOG_SOURCES = 40  # logs on one stream of the log dock
 PEEK_LIMIT = 50
 
 
@@ -351,6 +352,8 @@ def make_handler(
                     self.reply_json(400, {"error": plain(exc.message)})
             elif url.path in ("/api/logs", "/api/logs/stream"):
                 self.logs(parse_qs(url.query), live=url.path.endswith("/stream"))
+            elif url.path == "/api/logs/streams":
+                self.follow_many(parse_qs(url.query))
             else:
                 self.reply_json(404, {"detail": "not found"})
 
@@ -734,6 +737,46 @@ def make_handler(
                         self.event("reset", [])
                     if new:
                         self.event("lines", new)
+                        idle = 0.0
+                    elif (idle := idle + LOG_POLL) >= ping:
+                        self.wfile.write(b": ping\n\n")
+                        self.wfile.flush()
+                        idle = 0.0
+                    hub.sleep(LOG_POLL)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        def follow_many(self, query: dict[str, list[str]]) -> None:
+            """Several logs on one connection (the log dock: a browser keeps only about six open per server).
+            Server-sent events ``lines`` with ``{"key", "lines"}`` (first each log's tail, then its new lines) and
+            ``reset`` with ``{"key"}`` when one was replaced. ``which`` applies when there is a single key."""
+            keys = [key for key in query.get("keys", [""])[0].split(",") if key][:MAX_LOG_SOURCES]
+            which = query.get("which", ["current"])[0] if len(keys) == 1 else "current"
+            try:
+                lines = max(1, min(int(query.get("lines", [LOG_LINES])[0]), MAX_LOG_LINES))
+            except ValueError:
+                lines = LOG_LINES
+            found = [(key, path) for key in dict.fromkeys(keys) if (path := self.log_file(key, which)) is not None]
+            if not found:
+                self.reply_json(404, {"error": "no log for those keys"})
+                return
+            self.send_events_headers()
+            followers = [(key, LogFollower(str(path))) for key, path in found]
+            idle = 0.0
+            try:
+                for key, follower in followers:
+                    self.event("lines", {"key": key, "lines": follower.skip_to_tail(lines)})
+                while not hub.stopped:
+                    sent = False
+                    for key, follower in followers:
+                        inode = follower.inode
+                        new = follower.read_new()
+                        if inode is not None and follower.inode != inode:
+                            self.event("reset", {"key": key})
+                        if new:
+                            self.event("lines", {"key": key, "lines": new})
+                            sent = True
+                    if sent:
                         idle = 0.0
                     elif (idle := idle + LOG_POLL) >= ping:
                         self.wfile.write(b": ping\n\n")

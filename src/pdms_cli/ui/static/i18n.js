@@ -24,6 +24,9 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "All logs": "Todos los logs",
+    "All logs · {n}": "Todos los logs · {n}",
+    "Every running service, the proxy, the local SNS and the frontend, interleaved": "Todos los servicios en marcha, el proxy, el SNS local y el frontend, intercalados",
     "Logs of this request": "Logs de esta petición",
     "The proxy, the service and the consumers of its events, only the lines of this request": "El proxy, el servicio y los consumidores de sus eventos, solo las líneas de esta petición",
     "+ Add a log": "+ Añadir un log",

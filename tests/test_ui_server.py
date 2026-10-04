@@ -335,6 +335,25 @@ def test_the_log_stream_follows_the_file_across_a_restart(ui, machine) -> None:
     conn.close()
 
 
+def test_several_logs_follow_on_one_stream(ui, machine) -> None:
+    """The log dock: one connection for all its logs (a browser keeps only about six open per server)."""
+    port, _hub, _states, _jobs = ui
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("GET", "/api/logs/streams?keys=svc@8081,nope@1,old@8082,svc@8081&lines=1",
+                 headers={"Host": f"127.0.0.1:{port}", **cookie(port)})
+    response = conn.getresponse()
+    assert response.status == 200 and response.getheader("Content-Type") == "text/event-stream"
+    stream = events_of(response)
+    assert next(stream) == ("lines", {"key": "svc@8081", "lines": ["svc@8081 line 5"]})  # unknown and repeated: once
+    assert next(stream) == ("lines", {"key": "old@8082", "lines": ["old@8082 line 5"]})
+    with open(instances.log_path("old@8082"), "a", encoding="utf-8") as fh:
+        fh.write("later\n")
+    assert next(stream) == ("lines", {"key": "old@8082", "lines": ["later"]})
+    conn.close()
+    assert request(port, "/api/logs/streams?keys=nope@1", cookie(port))[0].status == 404
+    assert request(port, "/api/logs/streams?keys=svc@8081", {})[0].status == 401
+
+
 def test_the_state_lists_users_and_databases_without_secrets(machine, monkeypatch) -> None:
     monkeypatch.setattr(ui_state.instances, "health_all", lambda items: {i.key: Health("ok") for i in items})
     monkeypatch.setattr(ui_state.events, "is_up", lambda port: False)

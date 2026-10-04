@@ -3,7 +3,7 @@
 import { $, act, el, icon } from "./core.js";
 import { state } from "./state.js";
 import { adoptStrays, debugInstance } from "./services.js";
-import { showLogs } from "./logs.js";
+import { addAllLogs, showLogs } from "./logs.js";
 import { openRestart, openRun, openUp } from "./launch.js";
 import { stackPath } from "./stacks.js";
 import { openProxyStart, showProxyTab } from "./proxy.js";
@@ -66,6 +66,7 @@ function paletteCommands() {
   for (const repo of state.repos) {
     if (!state.repo || repo.name !== state.repo.alias) commands.push(["stacks", t("Use repo {name}", { name: repo.name }), t("Repo"), () => useRepo(repo.name)]);
   }
+  commands.push(["logs", t("All logs"), t("Logs"), () => addAllLogs()]);
   commands.push(["doctor", t("Run Doctor"), t("Doctor"), () => { location.hash = "#doctor"; runDoctor(); }]);
   return commands;
 }
