@@ -8,7 +8,7 @@ import { openDb } from "./settings.js";
 import { openSetting } from "./repos.js";
 
 export const testsView = {
-  data: null, version: null, show: "affected", selected: new Set(), dbs: null, loading: false,
+  data: null, version: null, show: "affected", selected: new Set(), dbs: null, loading: false, failed: false,
 };
 
 const START_DB_JOB = "tests:db";
@@ -25,10 +25,16 @@ export function paintTestsBadge() {
 export async function loadTests() {
   if (testsView.loading) return;
   testsView.loading = true;
+  if (!testsView.data) {
+    $("tests-empty").hidden = false;
+    $("tests-empty").textContent = t("Loading…");
+  }
   const { data, error } = await getJson("/api/tests");
   testsView.loading = false;
   testsView.version = state ? state.tests.version : null;
+  testsView.failed = Boolean(error);
   if (error) {
+    $("tests-empty").hidden = true;
     $("tests-error").hidden = false;
     $("tests-error").textContent = error;
     return;
@@ -45,7 +51,9 @@ export async function loadTests() {
 // The state moved: a run finished (reload the results) or something started or queued (repaint).
 export function syncTests() {
   paintTestsBadge();
-  if (!testsView.data || document.getElementById("view-tests").hidden) return;
+  if (document.getElementById("view-tests").hidden) return;
+  // The page opened on Tests before the state came: load now (once; after an error, opening the screen retries).
+  if (!testsView.data) { if (!testsView.failed) loadTests(); return; }
   if (state.tests.version !== testsView.version) loadTests();
   else paintTests();
 }

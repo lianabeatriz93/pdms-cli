@@ -16,6 +16,11 @@ import tomlkit
 
 from .instances import state_dir
 
+try:
+    import tomllib  # Python 3.11+: several times faster than tomlkit, which only reading does not need
+except ImportError:  # pragma: no cover - Python 3.10
+    tomllib = None
+
 SKIP_DIRS = {
     ".venv", "venv", "__pycache__", ".git", "node_modules", ".pytest_cache", ".mypy_cache", ".ruff_cache",
     "dist", "build", "tests",
@@ -34,10 +39,28 @@ def _poetry_dependency_tables(data: dict) -> list[dict]:
     return [t for t in tables if isinstance(t, dict)]
 
 
+_deps_cache: dict[Path, tuple[tuple[int, int], list[tuple[Path, bool]]]] = {}
+
+
+def _read_toml(path: Path) -> dict:
+    text = path.read_text(encoding="utf-8")
+    return tomllib.loads(text) if tomllib else tomlkit.parse(text).unwrap()
+
+
 def path_dependencies(project: Path) -> list[tuple[Path, bool]]:
-    """``(directory, develop)`` of the local path dependencies declared in ``project/pyproject.toml``."""
+    """``(directory, develop)`` of the local path dependencies declared in ``project/pyproject.toml``. Kept while the
+    file does not change: a repo's 250 services read the same shared packages' files again and again."""
+    pyproject = project / "pyproject.toml"
     try:
-        data = tomlkit.parse((project / "pyproject.toml").read_text(encoding="utf-8")).unwrap()
+        stat = pyproject.stat()
+    except OSError:
+        return []
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    cached = _deps_cache.get(pyproject)
+    if cached and cached[0] == stamp:
+        return list(cached[1])
+    try:
+        data = _read_toml(pyproject)
     except Exception:  # noqa: BLE001 - unreadable pyproject: no known dependencies
         return []
     found = []
@@ -47,7 +70,8 @@ def path_dependencies(project: Path) -> list[tuple[Path, bool]]:
             for item in specs:
                 if isinstance(item, dict) and "path" in item:
                     found.append(((project / item["path"]).resolve(), bool(item.get("develop", False))))
-    return found
+    _deps_cache[pyproject] = (stamp, found)
+    return list(found)
 
 
 def copied_dependencies(project: Path) -> list[Path]:
