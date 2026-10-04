@@ -204,9 +204,28 @@ dialog legend { font-size: .82rem; color: var(--muted); padding: 0 .3rem; }
   box-shadow: 0 8px 30px rgb(0 0 0 / .2); visibility: hidden; animation: boot-fail 0s 4s forwards;
 }
 @keyframes boot-fail { to { visibility: visible; } }
-.toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: .4rem; max-width: min(28rem, calc(100vw - 32px)); }
-.toast { padding: .5rem .8rem; border-radius: 8px; font-size: .85rem; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 4px 14px rgb(0 0 0 / .15); }
-.toast.error { color: var(--bad); border-color: var(--bad); }
+/* Toasts: above the status bar (sticky, z-index 3) and anything else on the page, below the open dialogs. */
+.toasts {
+  position: fixed; right: 16px; bottom: calc(2.4rem + 12px); z-index: 60; display: grid; gap: .45rem; justify-items: end;
+  width: min(26rem, calc(100vw - 32px)); pointer-events: none;
+}
+.toast {
+  pointer-events: auto; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .55rem;
+  width: 100%; padding: .55rem .5rem .55rem .7rem; border-radius: 10px; font-size: .86rem; line-height: 1.35;
+  color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--ok);
+  box-shadow: 0 10px 28px rgb(0 0 0 / .22); animation: toast-in .18s ease-out;
+}
+.toast.error { border-left-color: var(--bad); }
+.toast-icon { display: inline-grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: 50%; color: var(--ok); background: var(--ok-soft); }
+.toast.error .toast-icon { color: var(--bad); background: var(--bad-soft); }
+.toast-icon .i { width: 14px; height: 14px; stroke-width: 2.4; }
+.toast-text { overflow-wrap: anywhere; }
+.toast-close { border: 0; background: none; color: var(--muted); font: inherit; font-size: .8rem; padding: .15rem .35rem; border-radius: 6px; cursor: pointer; }
+.toast-close:hover { color: var(--ink); background: var(--code); }
+.toast-close:focus-visible { outline: 2px solid var(--accent); }
+.toast.leaving { opacity: 0; transform: translateY(6px); transition: opacity .18s, transform .18s; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } .toast.leaving { transition: none; } }
 
 .view { display: grid; gap: .8rem; align-content: start; min-width: 0; }
 .btn.bad-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
