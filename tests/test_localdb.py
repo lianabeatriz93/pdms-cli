@@ -48,6 +48,7 @@ def docker(monkeypatch) -> FakeDocker:
     fake = FakeDocker()
     monkeypatch.setattr(localdb, "_docker", fake)
     monkeypatch.setattr(localdb.events, "docker_available", lambda: (True, "27"))
+    monkeypatch.setattr(localdb.images, "present", lambda name: True)  # not this machine's Docker
     return fake
 
 
