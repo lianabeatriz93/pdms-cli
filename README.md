@@ -595,6 +595,7 @@ pdms test lead-tp-create                 # poetry run pytest in the service (sma
 pdms test lead-tp-create -- -k create -x # extra arguments go to pytest
 pdms test core -d tests -u supervisor    # a package too; pick the local DB, and inject a user's DEV_*
 pdms test lead-tp-create --start-db      # start backend/docker-compose_tests.yml (:5439) and use it
+pdms test lead-tp-create --dev-mode      # DEVELOPMENT_MODE on (no token check); off by default, as deployed
 pdms migrate -d web-dev                  # flyway info: applied and pending migrations (read-only)
 pdms migrate validate -d web-dev         # flyway validate, like the pipeline (pending ones are not errors)
 pdms migrate migrate -d local            # apply them — only against a local database
@@ -602,7 +603,10 @@ pdms migrate migrate -d local            # apply them — only against a local d
 
 Tests only ever run against a **local** database (localhost, not protected): pdms always sets
 `DB_PG_CONNECTION_STR`, so a service's `.env` pointing to web-dev is never used, and a shared database is refused.
-Without a local one, `pdms test` offers to start the database of `backend/docker-compose_tests.yml`. Each run keeps
+Without a local one, `pdms test` offers to start the database of `backend/docker-compose_tests.yml`. Tests run
+with `DEVELOPMENT_MODE` off (a service's `.env` usually turns it on, and with it the token is not checked, so tests
+of unauthorized requests fail): when the `.env` turns it on, `pdms test` asks, `--dev-mode` / `--no-dev-mode`
+answer it, and the Tests screen has a Development mode checkbox; each result says how it ran. Each run keeps
 its JUnit report and result for **pdms ui → Tests**, which lists the services and packages your branch touches
 (its diff against main plus uncommitted files, including changes to local packages such as `common/core`), runs
 them with Re-run failed, and links each failure to its line in VS Code. Services share tables, so each local

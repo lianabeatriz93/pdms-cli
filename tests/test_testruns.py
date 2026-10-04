@@ -180,8 +180,11 @@ def test_affected_are_the_projects_the_branch_and_uncommitted_files_touch(repo) 
 def fake_runs(monkeypatch, seconds: float = 0.2):
     """run_tests without poetry: records which database ran which project, and when."""
     seen: list[tuple[str, str, float, float]] = []
+    modes: dict[str, bool] = {}
 
-    def run_tests(cfg, backend, project, db, *, install=None, started=lambda proc: None, cancelled=lambda: False):
+    def run_tests(cfg, backend, project, db, *, install=None, dev_mode=False, started=lambda proc: None,
+                  cancelled=lambda: False):
+        modes[project] = dev_mode
         begin = time.monotonic()
         while time.monotonic() - begin < seconds and not cancelled():
             time.sleep(0.01)
@@ -189,6 +192,7 @@ def fake_runs(monkeypatch, seconds: float = 0.2):
         return {}
 
     monkeypatch.setattr(testruns, "run_tests", run_tests)
+    fake_runs.modes = modes  # project → dev_mode it ran with
     return seen
 
 
@@ -336,3 +340,40 @@ def test_runs_wait_for_their_turn_without_threads_left_behind(repo, monkeypatch)
         assert time.monotonic() < deadline
         time.sleep(0.02)
     assert tests.summary()["version"] == 2
+
+
+def test_development_mode_is_off_unless_asked_and_kept_with_the_result(repo, monkeypatch) -> None:
+    cfg = Config(dbs={"local": LOCAL})
+    assert testruns.test_env(cfg, LOCAL, dev_mode=True)["DEVELOPMENT_MODE"] == "true"
+    backend = repo / "backend"
+    (backend / "lead" / "lead-a" / ".env").write_text("DEVELOPMENT_MODE=True\n")
+    assert testruns.env_dev_mode(backend / "lead" / "lead-a") and not testruns.env_dev_mode(backend / "lead" / "lead-b")
+    kept = testruns.record(backend, "lead/lead-a", db="local", code=0, started=0, seconds=0, commit="", origin="ui",
+                           dev_mode=True)
+    assert kept["dev_mode"] is True
+    monkeypatch.setattr(Config, "load", classmethod(lambda cls: cfg))
+    fake_runs(monkeypatch, seconds=0.05)
+    tests = Runner()
+    tests.run(cfg, backend, ["lead/lead-a"], ["local"], dev_mode=True)
+    deadline = time.monotonic() + 5
+    while tests.summary()["running"] or tests.summary()["queued"] or "lead/lead-a" not in fake_runs.modes:
+        assert time.monotonic() < deadline
+        time.sleep(0.02)
+    assert fake_runs.modes == {"lead/lead-a": True}
+
+
+def test_pdms_test_asks_about_development_mode_only_when_the_env_turns_it_on(repo, monkeypatch) -> None:
+    from pdms_cli.commands import testing
+
+    service = repo / "backend" / "lead" / "lead-a"
+    assert testing.ask_dev_mode(service, None) is False  # no .env
+    assert testing.ask_dev_mode(service, True) is True
+    (service / ".env").write_text("DEVELOPMENT_MODE=true\n")
+    monkeypatch.setattr(testing, "interactive_terminal", lambda: False)
+    assert testing.ask_dev_mode(service, None) is False  # no terminal to ask: off, as deployed
+    asked = []
+    monkeypatch.setattr(testing, "interactive_terminal", lambda: True)
+    monkeypatch.setattr(testing.questionary, "confirm",
+                        lambda text, default: asked.append(default) or type("Q", (), {"unsafe_ask": lambda self: True})())
+    assert testing.ask_dev_mode(service, None) is True and asked == [False]
+    assert testing.ask_dev_mode(service, False) is False and len(asked) == 1  # the flag answers it

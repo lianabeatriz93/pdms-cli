@@ -726,3 +726,6 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
   #view-tests .bar-actions { margin-left: 0; }
   #tests-filter { flex: 1 1 12rem; min-width: 0; }
 }
+.tag.dev { color: var(--warn); }
+.tests-dev { display: inline-flex; align-items: center; gap: .3rem; font-size: .84rem; margin-left: .6rem; cursor: pointer; }
+.tests-dev input { accent-color: var(--warn); }

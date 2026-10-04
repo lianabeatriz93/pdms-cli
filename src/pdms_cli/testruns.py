@@ -168,22 +168,30 @@ def pytest_command(xml: Path, extra: list[str] | None = None) -> list[str]:
     return [runner.poetry(), "run", "pytest", *report, *extra]
 
 
-# Development mode makes restapi_fastapi skip the token check (an unauthorized request answers 200), and services
-# turn it on in their own .env, which python-decouple reads. A variable wins over .env, so tests get it empty: off
-# for decouple, and for simple_settings' OVERRIDE_BY_ENV too, which copies raw strings ("false" would be on).
-TEST_OVERRIDES = {"DEVELOPMENT_MODE": ""}
+# Development mode makes restapi_fastapi skip the token check and act as the DEV_* user (an unauthorized request
+# answers 200), and services turn it on in their own .env, which python-decouple reads. A variable wins over .env, so
+# tests get it off unless asked: empty, which is off for decouple and for simple_settings' OVERRIDE_BY_ENV, which
+# copies raw strings ("false" would be on).
+DEV_MODE = "DEVELOPMENT_MODE"
+TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
-def test_env(cfg: Config, db: Database, user: DevUser | None = None) -> dict[str, str]:
-    """The environment of a test run: this one with development mode off, the local database and a user's DEV_*
-    when asked. Not the variables pdms gives running services (defaults.env, LOGGING_LEVEL)."""
+def env_dev_mode(project: Path) -> bool:
+    """Whether the project's own .env turns development mode on (tests then ask whether to keep it)."""
+    return repos._read_env_file(project / ".env").get(DEV_MODE, "").lower() in TRUE_VALUES
+
+
+def test_env(cfg: Config, db: Database, user: DevUser | None = None, dev_mode: bool = False) -> dict[str, str]:
+    """The environment of a test run: this one with development mode off (on when ``dev_mode``), the local database
+    and a user's DEV_* when asked. Not the variables pdms gives running services (defaults.env, LOGGING_LEVEL)."""
     if not migrations.is_local(db):  # the callers checked; this is the last line of defence
         raise actions.ActionError(_("Tests only run against a local database."))
-    return {**runner.poetry_environ(), **(user.env() if user else {}), **TEST_OVERRIDES,
+    return {**runner.poetry_environ(), **(user.env() if user else {}), DEV_MODE: "true" if dev_mode else "",
             "DB_PG_CONNECTION_STR": db.url()}
 
 
 def run_tests(cfg: Config, backend: Path, project: str, db_name: str, *, install: bool | None = None,
+              dev_mode: bool = False,
               started: Callable[[subprocess.Popen], None] = lambda proc: None,
               cancelled: Callable[[], bool] = lambda: False) -> dict | None:
     """Run one project's tests on ``db_name`` with the output in its log, and keep the result (see :func:`record`).
@@ -204,9 +212,9 @@ def run_tests(cfg: Config, backend: Path, project: str, db_name: str, *, install
             log.write(_("Stopped from pdms ui.") + "\n")
             return None
         cmd = pytest_command(paths["xml"])
-        log.write(f"$ {' '.join(cmd[1:])}   # DB {db_name}\n")
+        log.write(f"$ {' '.join(cmd[1:])}   # DB {db_name}, {DEV_MODE}={'true' if dev_mode else ''}\n")
         log.flush()
-        proc = subprocess.Popen(cmd, cwd=path, env=test_env(cfg, db), stdout=log, stderr=subprocess.STDOUT,
+        proc = subprocess.Popen(cmd, cwd=path, env=test_env(cfg, db, dev_mode=dev_mode), stdout=log, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL, **instances.detach_options())
         started(proc)
         code = proc.wait()
@@ -214,7 +222,7 @@ def run_tests(cfg: Config, backend: Path, project: str, db_name: str, *, install
             log.write("\n" + _("Stopped from pdms ui.") + "\n")
             return None
     return record(backend, project, db=db_name, code=code, started=begin, seconds=time.time() - begin,
-                  commit=repos.git_commit(backend.parent), origin="ui")
+                  commit=repos.git_commit(backend.parent), origin="ui", dev_mode=dev_mode)
 
 
 # ---------------------------------------------------------------------------------------------- results
@@ -286,7 +294,7 @@ def parse(xml: Path, project: Path) -> dict | None:
 
 
 def record(backend: Path, project: str, *, db: str, code: int, started: float, seconds: float, commit: str,
-           origin: str) -> dict:
+           origin: str, dev_mode: bool = False) -> dict:
     """Read the run's report and keep its summary next to it: the Tests screen shows it, from the CLI too."""
     paths = files(backend, project)
     report = parse(paths["xml"], backend / project)
@@ -299,6 +307,7 @@ def record(backend: Path, project: str, *, db: str, code: int, started: float, s
         outcome = "failed" if report["failed"] or report["errors"] or code != 0 else "passed"
     result = {
         "project": project, "outcome": outcome, "code": code, "db": db, "commit": commit[:12], "origin": origin,
+        "dev_mode": dev_mode,
         "at": datetime.fromtimestamp(started).astimezone().isoformat(timespec="seconds"),
         "seconds": round(seconds, 1), **report,
     }

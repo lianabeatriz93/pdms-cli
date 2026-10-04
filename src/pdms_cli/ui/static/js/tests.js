@@ -140,6 +140,8 @@ function row(item, why, live, queued) {
   });
   const name = el("td", { class: "name" }, item.project);
   if (item.kind === "package") name.append(" ", el("span", { class: "tag" }, t("package")));
+  const devMode = live ? live.dev_mode : result && !queued && result.dev_mode;
+  if (devMode) name.append(" ", el("span", { class: "tag dev", title: t("Ran with DEVELOPMENT_MODE on") }, t("dev mode")));
   const ran = result && !live ? ranText(result) : "–";
   const actions = el("td", { class: "row-actions" },
     iconButton("logs", t("Log of the last run"), () => openLogs(`test:${item.project}`), result || live ? {} : { disabled: "" }),
@@ -203,6 +205,9 @@ export function paintTests() {
   paintNoDb();
 
   const items = shownProjects();
+  const withEnv = items.filter((item) => item.env_dev_mode).length;
+  $("tests-dev-note").textContent = !withEnv ? "" : $("tests-dev-mode").checked
+    ? t("on for every project run now") : t("{n} of these turn it on in their .env; they run with it off", { n: withEnv });
   const rows = [];
   for (const item of items) {
     const now = live.get(item.project);
@@ -249,7 +254,7 @@ export function runProjects(projects) {
   const dbs = [...testsView.dbs];
   if (!dbs.length) { toast(t("Pick at least one local database.")); return; }
   if (projects.length > ASK_ABOVE && !confirm(t("Run the tests of {n} projects? With {dbs} databases it can take a while.", { n: projects.length, dbs: dbs.length }))) return;
-  act("/api/tests/run", { projects, dbs }, () => { testsView.selected.clear(); });
+  act("/api/tests/run", { projects, dbs, dev_mode: $("tests-dev-mode").checked }, () => { testsView.selected.clear(); });
 }
 
 export function runShown() {

@@ -24,6 +24,12 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "Development mode": "Modo desarrollo",
+    "DEVELOPMENT_MODE=true: no token check, requests act as the DEV_* user. Off by default, as deployed, whatever the service's .env says.": "DEVELOPMENT_MODE=true: sin validar el token, las peticiones actúan como el usuario DEV_*. Apagado por defecto, como en el despliegue, diga lo que diga el .env del servicio.",
+    "Ran with DEVELOPMENT_MODE on": "Se ejecutó con DEVELOPMENT_MODE encendido",
+    "dev mode": "modo desarrollo",
+    "on for every project run now": "encendido para todo lo que se ejecute ahora",
+    "{n} of these turn it on in their .env; they run with it off": "{n} de estos lo encienden en su .env; se ejecutan con él apagado",
     "Duration": "Duración",
     "See the output": "Ver la salida",
     "1 file changed since the branch left {base}": "1 archivo cambió desde que la rama salió de {base}",

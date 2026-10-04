@@ -52,6 +52,11 @@ def _(text: str, /, **kwargs: object) -> str:
 
 
 ES: dict[str, str] = {
+    "DEVELOPMENT_MODE on (no token check, the DEV_* user) or off. Off by default; asked when the service's .env turns it on.": "DEVELOPMENT_MODE encendido (sin validar el token, el usuario DEV_*) o apagado. Apagado por defecto; se pregunta si el .env del servicio lo enciende.",
+    "[dim]{name}'s .env turns DEVELOPMENT_MODE on; the tests run with it off (--dev-mode to keep it).[/]": "[dim]El .env de {name} enciende DEVELOPMENT_MODE; los tests se ejecutan con él apagado (--dev-mode para mantenerlo).[/]",
+    "{name}'s .env turns DEVELOPMENT_MODE on: no token check, requests act as the DEV_* user. Run the tests with it on? (By default off, as deployed.)": "El .env de {name} enciende DEVELOPMENT_MODE: sin validar el token, las peticiones actúan como el usuario DEV_*. ¿Ejecutar los tests con él encendido? (Por defecto apagado, como en el despliegue.)",
+    "development mode on": "modo desarrollo encendido",
+    "development mode off": "modo desarrollo apagado",
     "'{name}' is not a project of {path}.": "'{name}' no es un proyecto de {path}.",
     "Database: {db} ({url})": "Base de datos: {db} ({url})",
     "Local database for DB_PG_CONNECTION_STR (only local ones are allowed).": "Base de datos local para DB_PG_CONNECTION_STR (solo se permiten locales).",

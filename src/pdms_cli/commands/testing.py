@@ -88,6 +88,22 @@ def start_compose_db(cfg: Config, backend: Optional[Path]) -> str:
     return name
 
 
+def ask_dev_mode(target: Path, given: Optional[bool]) -> bool:
+    """--dev-mode / --no-dev-mode, else off; when the service's .env turns it on, ask (some tests may expect it)."""
+    if given is not None:
+        return given
+    if not testruns.env_dev_mode(target):
+        return False
+    if not interactive_terminal():
+        console.print(_("[dim]{name}'s .env turns DEVELOPMENT_MODE on; the tests run with it off "
+                        "(--dev-mode to keep it).[/]", name=target.name))
+        return False
+    return questionary.confirm(
+        _("{name}'s .env turns DEVELOPMENT_MODE on: no token check, requests act as the DEV_* user. Run the tests "
+          "with it on? (By default off, as deployed.)", name=target.name), default=False,
+    ).unsafe_ask()
+
+
 @app.command(context_settings=PASSTHROUGH, help=_(
     "Run the tests of a service or package (poetry run pytest) against a local database, never a shared one. "
     "Extra arguments go to pytest, e.g. pdms test -- -k name -x. The result shows in pdms ui → Tests."
@@ -112,15 +128,22 @@ def test(
         None, "--install/--no-install", "-i/-n",
         help=_("Force (-i) or skip (-n) the install; by default only if something changed."),
     ),
+    dev_mode: Optional[bool] = typer.Option(
+        None, "--dev-mode/--no-dev-mode",
+        help=_("DEVELOPMENT_MODE on (no token check, the DEV_* user) or off. Off by default; asked when the "
+               "service's .env turns it on."),
+    ),
     path: Optional[Path] = typer.Option(None, "--path", "-C", help=_("Service folder (defaults to the current one).")),
 ) -> None:
     cfg = Config.load()
     target = resolve_project(cfg, service, path)
     db_name = test_db(cfg, db, start_db)
     dev_user = cfg.users[pick(cfg.users, _("user"), user)] if user else None
-    env = testruns.test_env(cfg, cfg.dbs[db_name], dev_user)
+    dev_mode = ask_dev_mode(target, dev_mode)
+    env = testruns.test_env(cfg, cfg.dbs[db_name], dev_user, dev_mode)
     console.print(_("Database: {db} ({url})", db=db_name, url=cfg.dbs[db_name].url(mask=True))
-                  + (" · " + _("user {user}", user=user) if user else ""))
+                  + (" · " + _("user {user}", user=user) if user else "")
+                  + " · " + (_("development mode on") if dev_mode else _("development mode off")))
     ensure_installed(cfg, target, install)
     backend = repos.active_backend(cfg)
     project = target.resolve().relative_to(backend.resolve()).as_posix() \
@@ -134,7 +157,7 @@ def test(
     code = run_in_service(target, testruns.pytest_command(paths["xml"], ctx.args), env)
     if not any(a.startswith(("--junitxml", "--junit-xml")) for a in ctx.args):
         testruns.record(backend, project, db=db_name, code=code, started=began, seconds=time.time() - began,
-                        commit=repos.git_commit(backend.parent), origin="cli")
+                        commit=repos.git_commit(backend.parent), origin="cli", dev_mode=dev_mode)
     raise typer.Exit(code)
 
 

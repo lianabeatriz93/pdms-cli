@@ -134,7 +134,10 @@ class Jobs:
         projects, dbs = body.get("projects"), body.get("dbs")
         if not _strings(projects) or not projects or not _strings(dbs):
             raise actions.ActionError("projects and dbs must be lists of names")
-        return self.tests.run(cfg, backend(cfg), projects, dbs)
+        dev_mode = body.get("dev_mode", False)
+        if not isinstance(dev_mode, bool):
+            raise actions.ActionError("dev_mode must be true or false")
+        return self.tests.run(cfg, backend(cfg), projects, dbs, dev_mode)
 
     def start_test_db(self) -> Job:
         """Start the database of docker-compose_tests.yml and register it, like ``pdms test --start-db``."""
@@ -983,7 +986,8 @@ def tests_info(cfg: Config, tests: Tests) -> dict:
     found = testruns.results(root)
     tests.count_failing(root)
     return {
-        "projects": [{"project": p, "kind": testruns.kind(root / p), "result": found.get(p)}
+        "projects": [{"project": p, "kind": testruns.kind(root / p), "result": found.get(p),
+                      "env_dev_mode": testruns.env_dev_mode(root / p)}
                      for p in testruns.projects(root)],
         "affected": testruns.affected(root),
         "dbs": [{"name": name, "where": f"{cfg.dbs[name].host}:{cfg.dbs[name].port}/{cfg.dbs[name].database}"}
