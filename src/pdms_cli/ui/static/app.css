@@ -32,8 +32,10 @@
 html { height: 100%; }
 body {
   margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  display: grid; grid-template: auto 1fr auto / 196px minmax(0, 1fr);
+  display: grid; grid-template: auto minmax(0, 1fr) auto auto / 196px minmax(0, 1fr);
 }
+.side { grid-row: 2 / 4; }
+.main { grid-row: 2; grid-column: 2; }
 code { font-family: var(--mono); font-size: .9em; background: var(--code); padding: .05em .3em; border-radius: 4px; }
 .muted { color: var(--muted); }
 
@@ -125,7 +127,7 @@ td.row-actions .btn + .btn { margin-left: .3rem; }
 td.row-actions .ibtn + .ibtn, td.row-actions .btn + .ibtn, td.row-actions .ibtn + .btn { margin-left: 2px; }
 /* Only the content scrolls: the title bar, the sidebar and the status bar stay in place (not on a phone, where the
    sidebar is a bar at the bottom and the page scrolls as a whole). On Services the table scrolls inside its card,
-   under its column names, and the logs pane gets the rest of the height. */
+   under its column names. The log dock sits under the content, on every screen. */
 @media (min-width: 641px) {
   body { height: 100vh; overflow: hidden; }
   .main { overflow: auto; min-height: 0; }
@@ -135,8 +137,6 @@ td.row-actions .ibtn + .ibtn, td.row-actions .btn + .ibtn, td.row-actions .ibtn 
   #view-services > * { flex: none; }
   #view-services > .tbl { overflow: auto; min-height: 8rem; flex: 1 1 0; }
   #view-services > .tbl thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); box-shadow: inset 0 -1px 0 var(--line); }
-  #view-services > .logs { min-height: 12rem; flex: 1 1 0; overflow: hidden; grid-template-rows: auto minmax(0, 1fr); }
-  #view-services > .logs .logs-text { height: auto; min-height: 0; resize: none; }
 }
 /* Picking several services: a checkbox column and the bar of what is picked. */
 .tbl th.pick, .tbl td.pick { width: 2rem; padding-right: 0; }
@@ -519,11 +519,12 @@ button.st-item:focus-visible { outline: 2px solid var(--accent); outline-offset:
   .setting { grid-template-columns: 1fr; }
   .row2, #user-dialog .row2 { grid-template-columns: 1fr; }
   /* A phone-sized window: the sidebar becomes a bar at the bottom. */
-  body { grid-template: auto 1fr auto auto / minmax(0, 1fr); }
-  .main { grid-row: 2; }
-  .statusbar { grid-row: 3; position: static; }
+  body { grid-template: auto 1fr auto auto auto / minmax(0, 1fr); }
+  .main { grid-row: 2; grid-column: 1; }
+  .dock { grid-row: 3; grid-column: 1; }
+  .statusbar { grid-row: 4; position: static; }
   .statusbar .opt { display: none; }
-  .side { grid-row: 4; position: sticky; bottom: 0; display: flex; justify-content: space-around; padding: .3rem; border-top: 1px solid var(--line); z-index: 4; }
+  .side { grid-row: 5; position: sticky; bottom: 0; display: flex; justify-content: space-around; padding: .3rem; border-top: 1px solid var(--line); z-index: 4; }
   .side a { flex: 1; }
   .side a .sdot, .side a .badge { right: calc(50% - 18px); }
   .steps, .tiles { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
@@ -733,3 +734,27 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-top-color: var(--accent); } }
+.wf-bar.ev { background: color-mix(in srgb, var(--warn) 60%, var(--bad)); }
+.wf-bar.cons { background: var(--ok); }
+.wf-bar.cons.bad { background: var(--bad); }
+
+/* The log dock: under every screen, one or more logs interleaved, each with its colour. */
+.dock { grid-row: 3; grid-column: 2; background: var(--surface); border-top: 1px solid var(--line); display: grid; min-width: 0; min-height: 0;
+  box-shadow: 0 -6px 16px -12px rgb(0 0 0 / .3); }
+.dock .logs-bar { padding: .35rem .8rem; gap: .5rem; }
+.dock .logs-text { height: 32vh; min-height: 6rem; max-height: 70vh; border-radius: 0; resize: vertical; }
+.dock.folded .logs-text { display: none; }
+.dock.folded .logs-bar { border-bottom: 0; }
+.dock select { width: auto; max-width: 14rem; }
+#logs-add { max-width: 9.5rem; }
+.dock select, .dock input[type="search"] { font: inherit; font-size: .78rem; padding: .15rem .35rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+.dock input[type="search"] { width: 9rem; min-width: 0; }
+.dock-sources { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
+.dock-src { display: inline-flex; align-items: center; gap: .35rem; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--line); font: .76rem var(--mono); }
+.dock-src i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.dock-x { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 .1rem; font-size: .75rem; }
+.dock-x:hover { color: var(--bad); }
+.dock-request { font-size: .76rem; }
+.c0 { color: var(--accent); } .c1 { color: var(--db); } .c2 { color: var(--warn); } .c3 { color: var(--ok); } .c4 { color: var(--bad); } .c5 { color: var(--muted); }
+.logs-text .src { font-weight: 600; }
+@media (max-width: 640px) { .dock .logs-text { height: 40vh; } .dock input[type="search"] { width: 100%; } }

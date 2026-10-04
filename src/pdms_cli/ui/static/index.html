@@ -148,21 +148,6 @@
     <p class="empty" id="svc-none" hidden>No service matches the filter.</p>
   </div>
 
-  <section class="logs" id="logs" hidden>
-    <div class="logs-bar">
-      <b class="mono" id="logs-key"></b>
-      <div class="tabs" id="logs-tabs" role="tablist">
-        <button type="button" role="tab" data-which="current">Current</button>
-        <button type="button" role="tab" data-which="previous">Previous run</button>
-        <button type="button" role="tab" data-which="install">Install</button>
-        <button type="button" role="tab" data-which="build">Build</button>
-      </div>
-      <span class="muted" id="logs-note"></span>
-      <button class="btn ghost push" id="logs-clear" type="button">Clear</button>
-      <button class="btn ghost" id="logs-close" type="button" aria-label="Close the logs">✕</button>
-    </div>
-    <pre class="logs-text" id="logs-text" tabindex="0"></pre>
-  </section>
 </section>
 
 <section class="view" id="view-stacks" hidden>
@@ -219,7 +204,8 @@
       <section class="card req-detail" id="req-detail" aria-labelledby="req-detail-title" hidden>
         <div class="panel-head">
           <h2 id="req-detail-title"><span class="method" id="req-d-method"></span> <span class="mono" id="req-d-path"></span></h2>
-          <button class="ibtn push" id="req-d-close" type="button" title="Close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-forget"/></svg></button>
+          <button class="btn small push" id="req-d-logs" type="button" title="The proxy, the service and the consumers of its events, only the lines of this request"><svg class="i" aria-hidden="true"><use href="#i-logs"/></svg> Logs of this request</button>
+          <button class="ibtn" id="req-d-close" type="button" title="Close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-forget"/></svg></button>
         </div>
         <div class="tabs req-tabs" id="req-d-tabs" role="tablist">
           <button type="button" role="tab" data-tab="trace">Trace</button>
@@ -501,6 +487,30 @@
   </div>
 </section>
 </main>
+<section class="dock" id="logs" aria-label="Logs" hidden>
+  <div class="logs-bar">
+    <span class="dock-sources" id="logs-sources"></span>
+    <select id="logs-add" aria-label="Add a log"></select>
+    <div class="tabs" id="logs-tabs" role="tablist">
+      <button type="button" role="tab" data-which="current">Current</button>
+      <button type="button" role="tab" data-which="previous">Previous run</button>
+      <button type="button" role="tab" data-which="install">Install</button>
+      <button type="button" role="tab" data-which="build">Build</button>
+    </div>
+    <span class="chip dock-request" id="logs-request" hidden>request <b class="mono" id="logs-request-id"></b> <button type="button" class="dock-x" id="logs-request-clear" aria-label="Show every line, not only this request's">✕</button></span>
+    <select id="logs-level" aria-label="Level">
+      <option value="all">All levels</option>
+      <option value="warn">Warnings and errors</option>
+      <option value="error">Errors</option>
+    </select>
+    <input type="search" id="logs-filter" placeholder="Filter lines" aria-label="Filter lines" autocomplete="off">
+    <span class="muted" id="logs-note"></span>
+    <button class="btn ghost push" id="logs-clear" type="button">Clear</button>
+    <button class="btn ghost" id="logs-hide" type="button">Hide</button>
+    <button class="btn ghost" id="logs-close" type="button" aria-label="Close the logs">✕</button>
+  </div>
+  <pre class="logs-text" id="logs-text" tabindex="0"></pre>
+</section>
 <footer class="statusbar" id="statusbar" aria-label="Status"></footer>
 <div class="status-pop" id="db-pop" role="dialog" aria-label="Databases" hidden>
   <div class="panel-head"><h2>Databases in use</h2>

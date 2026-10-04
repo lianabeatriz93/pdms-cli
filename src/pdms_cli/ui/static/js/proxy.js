@@ -2,7 +2,7 @@
 
 import { $, act, button, copyText, el, failedText, phaseLabel, post, repoPath, toast, uptime } from "./core.js";
 import { state } from "./state.js";
-import { nearBottom, showLogs } from "./logs.js";
+import { nearBottom, openRequestLogs, showLogs } from "./logs.js";
 import { options } from "./launch.js";
 import { currentView } from "./router.js";
 
@@ -257,6 +257,25 @@ function addRequests(lines) {
   if (follow) box.scrollTop = box.scrollHeight;
 }
 
+// The logs a request went through, only its lines: the proxy, the service that answered and, from its trace, the
+// services that sent its events and the consumers that handled them (the ones still running).
+export function requestLogs() {
+  const picked = proxyView.detail;
+  if (!picked) return;
+  const { req, data } = picked;
+  const running = state.instances.filter((inst) => inst.status !== "stopped");
+  const keys = ["proxy"];
+  const add = (key) => { if (key && !keys.includes(key)) keys.push(key); };
+  if (running.some((inst) => inst.key === req.target)) add(req.target);
+  for (const step of data.steps || []) {
+    for (const name of [step.service, step.function]) {
+      const inst = running.find((item) => item.name === name);
+      if (inst) add(inst.key);
+    }
+  }
+  openRequestLogs(keys, req.id);
+}
+
 // ---- one request: what the proxy kept of it (secret headers hidden by the server)
 
 async function pickRequest(req) {
@@ -287,7 +306,7 @@ export function showDetailTab(tab) {
   for (const node of $("req-d-tabs").children) node.setAttribute("aria-selected", String(node.dataset.tab === tab));
   if (!proxyView.detail) return;
   const { req, data } = proxyView.detail;
-  if (tab === "trace") paintTrace(data.request);
+  if (tab === "trace") paintTrace(data.request, data.steps || []);
   else if (tab === "queries") paintQueries(data.request);
   else paintRequestDetail(req, data);
 }
@@ -315,13 +334,36 @@ function traceRow(label, title, kind, from, to, text, scale) {
 // The request on a time line: the whole of it through the proxy, then its parts: until the service took it (the
 // proxy's own work and the service's queue), the service until it answered, new connections and each statement
 // (when it ran first and last), and the way back. Requests kept before services said when they got them start at 0.
-function paintTrace(capture) {
+// What the request set off, from the trace the services write (sqs_patch/pdms_trace.py): each SQS send and SNS publish
+// and each consumer run, placed from when the request reached the proxy.
+function stepRows(capture, steps, scale) {
+  const rows = [];
+  for (const step of steps) {
+    const from = Math.max(0, (step.at - capture.started_at) * 1000);
+    const failed = step.kind === "consumer" && step.failed > 0;
+    const label = step.kind === "consumer" ? t("consumer {name}", { name: step.function || step.service })
+      : `${step.kind === "sns" ? "SNS" : "SQS"} → ${step.name}`;
+    const title = step.kind === "consumer"
+      ? t("{function} handled {n} message(s) from {queue}", { function: step.function || step.service, n: step.messages || 1, queue: step.name })
+      : t("{service} sent to {target}", { service: step.service, target: step.name });
+    const text = failed ? t("{time} · failed", { time: duration(Math.round(step.ms)) }) : duration(Math.round(step.ms));
+    rows.push(...traceRow(label, title, step.kind === "consumer" ? (failed ? "cons bad" : "cons") : "ev", from, from + step.ms, text, scale));
+  }
+  return rows;
+}
+
+function stepsEnd(capture, steps) {
+  return capture.started_at ? Math.max(0, ...steps.map((step) => (step.at - capture.started_at) * 1000 + step.ms)) : 0;
+}
+
+function paintTrace(capture, steps = []) {
   const db = capture.db;
   const nodes = [];
   if (!db) nodes.push(el("p", { class: "muted" }, t(NO_DB)));
+  const placed = capture.started_at ? steps : [];
   const at = db && Number.isFinite(db.service_at_ms) ? db.service_at_ms : 0;
   const statements = db ? [...db.statements].sort((a, b) => a.first_ms - b.first_ms).slice(0, 12) : [];
-  const end = Math.max(capture.ms, db ? at + db.answered_ms : 0, ...statements.map((s) => at + s.last_ms), 1);
+  const end = Math.max(capture.ms, db ? at + db.answered_ms : 0, ...statements.map((s) => at + s.last_ms), stepsEnd(capture, placed), 1);
   const step = tickStep(end);
   const scale = Math.ceil(end / step) * step;
   const rows = [...traceRow(`→ ${capture.target}`, t("Through the proxy, until the answer came back"), "px", 0, capture.ms, duration(capture.ms), scale)];
@@ -346,13 +388,19 @@ function paintTrace(capture) {
       rows.push(...traceRow(t("back"), t("The answer on its way back through the proxy"), "wait", back, Math.max(back, capture.ms), duration(Math.max(0, capture.ms - back)), scale));
     }
   }
+  rows.push(...stepRows(capture, placed, scale));
   const ticks = [];
   for (let tick = 0; tick <= scale; tick += step) ticks.push(el("span", {}, duration(tick)));
   rows.push(el("div"), el("div", { class: "wf-axis" }, ...ticks));
   nodes.push(el("div", { class: "wf" }, el("div", { class: "wf-grid" }, ...rows)));
   nodes.push(el("div", { class: "wf-legend" },
-    ...[["px", t("proxy")], ["wait", t("waiting")], ["srv", t("service")], ["conn", t("connecting")], ["db", t("database")], ["db n1", t("same query again and again")]]
+    ...[["px", t("proxy")], ["wait", t("waiting")], ["srv", t("service")], ["conn", t("connecting")], ["db", t("database")], ["db n1", t("same query again and again")],
+      ...(placed.length ? [["ev", t("SQS / SNS")], ["cons", t("consumer")]] : [])]
       .map(([kind, label]) => el("span", {}, el("i", { class: `wf-bar ${kind}` }), label))));
+  if (!placed.length) {
+    nodes.push(el("p", { class: "muted" }, steps.length ? t("This request was kept by an older proxy: its events cannot be placed in time.")
+      : t("No events: it sent no SQS message or SNS publish, or its service was started before pdms followed requests (restart it).")));
+  }
   if (db && db.more) nodes.push(el("p", { class: "muted" }, t("{n} quicker statements are not shown.", { n: db.more })));
   $("req-d-body").replaceChildren(...nodes);
 }
