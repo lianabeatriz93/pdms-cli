@@ -9,16 +9,18 @@ import sys
 import time
 from datetime import datetime
 
+import pytest
+
 from pdms_cli import events, instances
 
 
 def test_tail_reads_only_the_end(tmp_path) -> None:
     log = tmp_path / "big.log"
-    log.write_text("".join(f"line {n}\n" for n in range(200_000)))  # ~2.5 MB
+    log.write_bytes("".join(f"line {n}\n" for n in range(200_000)).encode())  # ~2.5 MB
     assert instances.tail(str(log), 3) == "line 199997\nline 199998\nline 199999\n"
     assert instances.tail(str(log), 0) == ""  # not the whole file
     small = tmp_path / "small.log"
-    small.write_text("a\nb\n")
+    small.write_bytes(b"a\nb\n")
     assert instances.tail(str(small), 10) == "a\nb\n"
     assert instances.tail(str(tmp_path / "missing.log"), 5) == ""
 
@@ -27,10 +29,11 @@ def test_a_process_appends_to_its_log_and_the_log_says_so(tmp_path) -> None:
     log = tmp_path / "svc@1.log"
     proc = instances.spawn([sys.executable, "-c", "print('hello')"], tmp_path, dict(os.environ), log)
     proc.wait(10)
-    first, rest = log.read_text().split("\n", 1)
+    first, rest = log.read_text(encoding="utf-8").split("\n", 1)
     assert instances.APPENDS in first and "hello" in rest
 
 
+@pytest.mark.skipif(instances.WINDOWS, reason="not cut on Windows: a child does not inherit append mode there")
 def test_a_big_log_moves_to_its_previous_and_starts_again_keeping_its_start(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(instances, "KEEP_HEAD", 200)
     log = tmp_path / "broker@sqs.log"
@@ -48,6 +51,7 @@ def test_a_big_log_moves_to_its_previous_and_starts_again_keeping_its_start(tmp_
     assert instances.keep_log_small(old, limit=1000) is False and old.stat().st_size > 2000
 
 
+@pytest.mark.skipif(instances.WINDOWS, reason="not cut on Windows: a child does not inherit append mode there")
 def test_a_running_process_keeps_writing_after_its_log_is_cut(tmp_path) -> None:
     log = tmp_path / "svc@2.log"
     script = "import time\nprint('x' * 3000, flush=True)\ntime.sleep(1.5)\nprint('after the cut', flush=True)\n"
@@ -132,3 +136,10 @@ def test_instances_are_checked_on_the_quiet_path(monkeypatch) -> None:
     inst = instances.Instance(key="svc@1", pid=os.getpid(), service="/x", host="", port=1, user="u", db="d",
                               reload=False, log="", started_at="", created=instances.creation_time(os.getpid()))
     assert instances.health(inst).state == "ok" and asked == [instances.HEALTH_PATH]
+
+
+def test_windows_never_cuts_a_log_in_use(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(instances, "WINDOWS", True)
+    log = tmp_path / "svc@3.log"
+    log.write_bytes(f"# pdms 2026-10-03 10:00:00{instances.APPENDS} - uvicorn\n".encode() + b"x" * 2000)
+    assert instances.keep_log_small(log, limit=1000) is False and log.stat().st_size > 2000

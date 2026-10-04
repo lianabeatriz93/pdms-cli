@@ -47,7 +47,8 @@ def previous_log_path(log: str | Path) -> Path:
     return Path(f"{log}.1")
 
 
-APPENDS = " · appends"  # in the first line of a log whose process appends to it: it can be cut while it runs
+APPENDS = " - appends"  # in the first line of a log whose process appends to it: it can be cut while it runs (ASCII:
+# Windows reads files as cp1252 by default)
 LOG_LIMIT = 8 << 20  # a running process's log past this moves to <log>.1 and starts again
 OLD_LOGS_DAYS = 7  # logs of instances pdms no longer knows are deleted after this
 KEEP_HEAD = 4096  # the start of a log that is cut stays in it
@@ -57,7 +58,10 @@ HEALTH_PATH = "/__pdms_health"  # services started by pdms answer it without log
 def keep_log_small(log: Path, limit: int = LOG_LIMIT) -> bool:
     """When ``log`` passed ``limit``, move what it has to ``<log>.1`` and start it again; only for a log its process
     appends to (the first line says so): one opened by an older pdms would get a hole of zeros. A few lines written
-    while it is copied may be lost. Whether it was cut."""
+    while it is copied may be lost. Not on Windows: a child process does not inherit append mode there (Python only
+    emulates it), so it would keep writing where it was. Whether it was cut."""
+    if WINDOWS:
+        return False
     try:
         if log.stat().st_size <= limit:
             return False
