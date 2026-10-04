@@ -7,6 +7,8 @@ an answer (a protected database, the local ElasticMQ) is checked before the job 
 
 from __future__ import annotations
 
+import os
+import subprocess
 import threading
 import time
 from collections.abc import Callable
@@ -162,6 +164,8 @@ class Jobs:
             raise actions.ActionError(_("'{name}' is not an image pdms uses.", name=(unknown or [""])[0]))
         follow = {"postgres-up": lambda: self.postgres("up"), "refresh": lambda: self.refresh_copy(body or {}),
                   "test-dbs": self.start_test_db, "": lambda: None}
+        if then.startswith("migrate:"):
+            follow[then] = lambda: self.migrate_db(then.split(":", 1)[1])
         if then not in follow:
             raise actions.ActionError(f"unknown follow-up {then}")
 
@@ -193,6 +197,85 @@ class Jobs:
 
         return self.run(DATA_KEY, "start" if verb == "up" else "stop", "starting" if verb == "up" else "stopping",
                         work)
+
+    def migrate_db(self, name: str) -> Job:
+        """Flyway migrate on a local database (``pdms migrate migrate``); shared ones only show their state."""
+        cfg = Config.load()
+        actions.require(cfg.dbs, _("database"), name)
+        database = cfg.dbs[name]
+        if not migrations.is_local(database):
+            raise actions.ActionError(_("migrate only runs against a local database (localhost, not protected). "
+                                        "'{name}' ({host}) is shared: it is migrated by the pdms-db-migrations "
+                                        "pipeline.", name=name, host=database.host))
+        repo = actions.current_migrations_repo(cfg)
+        try:
+            known = migrations.status(repo, database, cfg.defaults.db_timeout)
+        except Exception as exc:  # noqa: BLE001 - the driver's errors: nothing to migrate without reading it first
+            raise actions.ActionError(_("Could not query {name}: {error}", name=name, error=str(exc).strip()[:200])) from exc
+        if not known["flyway"]:
+            raise actions.ActionError(_("{name} has no Flyway history: its tables were made another way, and Flyway "
+                                        "would run every migration over them. pdms only applies migrations to a "
+                                        "database Flyway already manages.", name=name))
+        images.require([migrations.IMAGE])
+        key = f"migrate:{name}"
+
+        def work(job: Job) -> None:
+            log = install_log(key)
+            log.parent.mkdir(parents=True, exist_ok=True)
+            self.phase(job, f"migrating {name}", installed=True, log_key=key)
+            with open(log, "w", encoding="utf-8", errors="replace") as output:
+                code = subprocess.run(migrations.docker_command(repo, database, "migrate"), stdout=output,
+                                      stderr=subprocess.STDOUT, timeout=3600,
+                                      env={**os.environ, "DB_PASSWORD": database.password}).returncode
+            if code != 0:
+                raise actions.ActionError(_("Flyway migrate failed on {name} (exit code {code}); the log says why.",
+                                            name=name, code=code))
+
+        return self.run(key, "migrate", f"migrating {name}", work)
+
+    def restore_snapshot(self, name: str) -> Job:
+        """Stop the running services that use the local copy, restore the snapshot, start them again as they were."""
+        cfg = Config.load()
+        if name not in {snap["name"] for snap in localcopy.snapshots()}:
+            raise actions.ActionError(_("There is no snapshot '{name}'.", name=name))
+        using = [find(key) for key in localcopy.using_copy(cfg)]
+
+        def work(job: Job) -> None:
+            for inst in using:
+                self.phase(job, f"stopping {inst.key}")
+                actions.stop_service(inst)
+            self.phase(job, f"restoring {name}")
+            localcopy.restore_snapshot(name)
+            for inst in using:
+                self.phase(job, f"starting {inst.key}")
+                actions.start_service(cfg, actions.plan_service(
+                    cfg, Path(inst.service), user_name=inst.user, db_name=inst.db, port=inst.port or None,
+                    host=inst.host, reload=inst.reload, events_mode="local" if inst.events == "local" else None))
+
+        return self.run(DATA_KEY, "restore", "stopping", work)
+
+    def use_copy(self, instead_of: str) -> dict:
+        """Home's "Use the local copy": the setup's stack moves from ``instead_of`` to the local copy, and the running
+        services on ``instead_of`` restart on the copy with their own user."""
+        cfg = Config.load()
+        actions.require(cfg.dbs, _("database"), instead_of)
+        copy = localcopy.alias(cfg)
+        if not copy:
+            raise actions.ActionError(_("There is no local copy yet: make it in Data first."))
+        stack_name = cfg.setup.stack
+        stack = cfg.stacks.get(stack_name)
+        moved = False
+        if stack:
+            if stack.db == instead_of:
+                stack.db, moved = copy, True
+            for own in stack.overrides.values():
+                if own.get("db") == instead_of:
+                    own["db"], moved = copy, True
+            if moved:
+                actions.save_stack(cfg, stack_name, stack)
+        keys = [inst.key for inst in instances.load().values() if inst.db == instead_of and inst.alive()]
+        started = self.restart_many(keys, db=copy, confirmed=True) if keys else []
+        return {"copy": copy, "stack": stack_name if moved else "", "restarting": [job.key for job in started]}
 
     def refresh_copy(self, body: dict) -> Job:
         """``pdms db local refresh`` in a job, its output in the install log of the Data screen's key."""
@@ -1078,9 +1161,11 @@ def data_info(cfg: Config) -> dict:
         snapshots = localcopy.snapshots() if pg["running"] else []
     except actions.ActionError:
         snapshots = []
+    containers = localdb.containers_by_port()
     return {
         "dbs": [{"name": name, "host": db.host, "port": db.port, "database": db.database, "protected": db.protected,
-                 "local": migrations.is_local(db), "copy": name == copy_alias}
+                 "local": migrations.is_local(db), "copy": name == copy_alias,
+                 "container": containers.get(db.port, "") if migrations.is_local(db) else ""}
                 for name, db in cfg.dbs.items()],
         "postgres": {**pg, "container": localdb.CONTAINER, "volume": localdb.VOLUME, "image": localdb.IMAGE,
                      "user": localdb.USER, "default_port": localdb.PORT},
