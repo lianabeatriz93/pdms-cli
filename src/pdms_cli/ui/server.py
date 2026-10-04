@@ -32,6 +32,7 @@ from rich.text import Text
 
 from .. import actions, emails, events, frontend, health, i18n, images, instances, proxy, testruns
 from ..config import Config
+from ..i18n import _
 from ..logview import LogFollower
 from . import instance as ui_instance
 from . import recent as ui_recent
@@ -352,6 +353,11 @@ def make_handler(
                 self.services()
             elif url.path == "/api/emails/html":
                 self.email_html(parse_qs(url.query).get("id", [""])[0])
+            elif url.path == "/api/stacks/from-running":
+                try:
+                    self.reply_json(200, ui_jobs.stack_from_running())
+                except actions.ActionError as exc:
+                    self.reply_json(400, {"error": plain(exc.message)})
             elif url.path == "/api/config":
                 self.reply_json(200, {**ui_jobs.settings(Config.load()), "pick_folder": control.pick_folder is not None})
             elif url.path == "/api/doctor":
@@ -708,9 +714,15 @@ def make_handler(
                         and all(k in ("user", "db") and isinstance(v, str) for k, v in own.items())
                         for svc, own in overrides.items())):
                     raise actions.ActionError("overrides must map service paths to {user, db}")
-                ui_jobs.save_stack(name, services, str(body.get("user") or ""), str(body.get("db") or ""),
-                                   new=body.get("new") is True, overrides=overrides)
-                return 200, {}
+                rename = body.get("rename") or ""
+                if not isinstance(rename, str):
+                    raise actions.ActionError("rename must be the stack's new name")
+                if rename.strip() and rename.strip() != name and jobs.busy(ui_jobs.stack_key(name)):
+                    raise actions.ActionError(_("The stack {name} is starting or stopping: rename it afterwards.",
+                                                name=name))
+                saved = ui_jobs.save_stack(name, services, str(body.get("user") or ""), str(body.get("db") or ""),
+                                           new=body.get("new") is True, overrides=overrides, rename=rename)
+                return 200, {"name": saved}
             if verb == "remove":
                 ui_jobs.remove_stack(name)
                 return 200, {}

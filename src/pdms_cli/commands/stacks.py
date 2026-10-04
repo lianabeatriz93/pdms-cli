@@ -98,13 +98,54 @@ def stack_list() -> None:
     print_stacks(Config.load())
 
 
-@stack_app.command("add", help=_("Create a stack (wizard)."))
-def stack_add() -> None:
+@stack_app.command("add", help=_("Create a stack (wizard), or one with the services running now (--running)."))
+def stack_add(
+    name: Optional[str] = typer.Argument(None, help=_("Name of the new stack. Empty = ask.")),
+    running: bool = typer.Option(
+        False, "--running", "-r",
+        help=_("The services of the current repo running now, with the user and database most of them use."),
+    ),
+) -> None:
     cfg = Config.load()
-    prompts.require_tty()
-    name = prompts.ask_name(_("stack"), cfg.stacks)
-    settle(lambda: actions.save_stack(cfg, name, ask_stack(cfg)))
+    if running:
+        root = backend_root(cfg)
+        stack = settle(lambda: actions.stack_from_running(cfg, root))
+        print_running_stack(stack)
+    else:
+        prompts.require_tty()
+        stack = None
+    if name is None:
+        prompts.require_tty()
+        name = prompts.ask_name(_("stack"), cfg.stacks)
+    else:
+        name = settle(lambda: actions.check_alias(name, cfg.stacks))
+    stack = stack or ask_stack(cfg)
+    settle(lambda: actions.save_stack(cfg, name, stack))
     console.print("[green]✓[/] " + _("Stack '{name}' saved. Start it with [bold]pdms up {name}[/].", name=name))
+
+
+def print_running_stack(stack: Stack) -> None:
+    ask = _("(ask when starting)")
+    console.print(_("Running now ({count}):", count=len(stack.services)))
+    for svc in stack.services:
+        own = stack.overrides.get(svc, {})
+        extra = " @ ".join(filter(None, (own.get("user"), own.get("db"))))
+        console.print(f"  {svc}" + (f"  [dim]({extra})[/]" if extra else ""), highlight=False)
+    console.print(_("User: {user} · database: {db}", user=stack.user or ask, db=stack.db or ask), highlight=False)
+
+
+@stack_app.command("rename", help=_("Give a stack another name."))
+def stack_rename(
+    name: Optional[str] = typer.Argument(None, autocompletion=completion.stacks),
+    new_name: Optional[str] = typer.Argument(None, help=_("Its new name. Empty = ask.")),
+) -> None:
+    cfg = Config.load()
+    name = pick(cfg.stacks, _("stack"), name)
+    if new_name is None:
+        prompts.require_tty()
+        new_name = prompts.ask_name(_("stack"), cfg.stacks)
+    renamed = settle(lambda: actions.rename_stack(cfg, name, new_name))
+    console.print("[green]✓[/] " + _("Stack '{name}' is now '{new}'.", name=name, new=renamed))
 
 
 @stack_app.command("edit", help=_("Edit a stack."))
@@ -208,7 +249,9 @@ def stack_menu() -> None:
         _("Start stack"): lambda: up(None, None, None, None, False, None, None),
         _("Stop stack"): lambda: down(None),
         _("List"): stack_list,
-        _("Create"): stack_add,
+        _("Create"): lambda: stack_add(None, False),
+        _("Create with the running services"): lambda: stack_add(None, True),
         _("Edit"): lambda: stack_edit(None),
+        _("Rename"): lambda: stack_rename(None, None),
         _("Delete"): lambda: stack_remove(None),
     })

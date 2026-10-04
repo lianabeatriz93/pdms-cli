@@ -519,10 +519,10 @@ def test_save_and_remove_stacks(ui, repo, machine) -> None:
     assert save("me", [])[0] == 400
     assert save("me", "user/user-me")[0] == 400
     assert save("me", ["user/user-me"], user="ghost")[0] == 400
-    assert save("me", ["user/user-me", "lead/lead-get"], user="boss", db="shared") == (200, {})
+    assert save("me", ["user/user-me", "lead/lead-get"], user="boss", db="shared") == (200, {"name": "me"})
     assert machine.stacks["me"] == Stack(["user/user-me", "lead/lead-get"], user="boss", db="shared")
 
-    assert save("leads", ["lead/lead-list"], new=False) == (200, {})
+    assert save("leads", ["lead/lead-list"], new=False) == (200, {"name": "leads"})
     assert machine.stacks["leads"] == Stack(["lead/lead-list"])
     assert save("ghosts", ["lead/lead-list"], new=False)[0] == 400
 

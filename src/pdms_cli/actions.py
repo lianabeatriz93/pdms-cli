@@ -15,6 +15,7 @@ import subprocess
 import re
 import shutil
 import time
+from collections import Counter
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -724,6 +725,53 @@ def save_stack(cfg: Config, name: str, stack: Stack) -> None:
         require(cfg.dbs, _("database"), stack.db)
     cfg.stacks[name] = stack
     cfg.save()
+
+
+def rename_stack(cfg: Config, name: str, new_name: str) -> str:
+    """Give the stack another name, in the same place of the list; the setups that start it follow. The new name."""
+    stack_name = require(cfg.stacks, _("stack"), name)
+    new_name = new_name.strip()
+    if new_name == stack_name:
+        return stack_name
+    new_name = check_alias(new_name, cfg.stacks)
+    cfg.stacks = {(new_name if key == stack_name else key): stack for key, stack in cfg.stacks.items()}
+    for setup in (cfg.setup, *cfg.setups.values()):
+        if setup.stack == stack_name:
+            setup.stack = new_name
+    cfg.save()
+    return new_name
+
+
+def _most_used(values: Iterable[str]) -> str:
+    """The value most of them have ("" when none has one); a tie goes to the first in alphabetical order."""
+    counts = Counter(value for value in values if value)
+    return max(sorted(counts), key=lambda value: counts[value]) if counts else ""
+
+
+def stack_from_running(cfg: Config, root: Path) -> Stack:
+    """A stack of the services pdms runs from ``root`` (the current repo's backend folder), as they run: with the user
+    and database most of them use, and the others' own as exceptions. A service running twice counts as it started
+    first; a user or database no longer in the configuration is left for the stack to ask."""
+    found: dict[str, tuple[str, str]] = {}
+    for inst in sorted(instances.load().values(), key=lambda item: item.started_at):
+        if not inst.alive():
+            continue
+        try:
+            path = _relative(Path(inst.service), root)
+        except ActionError:
+            continue
+        found.setdefault(path, (inst.user if inst.user in cfg.users else "", inst.db if inst.db in cfg.dbs else ""))
+    if not found:
+        raise ActionError(_("No service of the current repo is running."))
+    user = _most_used(own[0] for own in found.values())
+    db = _most_used(own[1] for own in found.values())
+    overrides = {}
+    for path, (own_user, own_db) in found.items():
+        own = {key: value for key, value, common in (("user", own_user, user), ("db", own_db, db))
+               if value and value != common}
+        if own:
+            overrides[path] = own
+    return Stack(services=sorted(found), user=user, db=db, overrides=overrides)
 
 
 def remove_stack(cfg: Config, name: str) -> None:

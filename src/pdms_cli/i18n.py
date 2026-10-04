@@ -52,6 +52,18 @@ def _(text: str, /, **kwargs: object) -> str:
 
 
 ES: dict[str, str] = {
+    "Create a stack (wizard), or one with the services running now (--running).": "Crear un stack (asistente), o uno con los servicios que corren ahora (--running).",
+    "Create with the running services": "Crear con los servicios en marcha",
+    "Give a stack another name.": "Cambiar el nombre de un stack.",
+    "Its new name. Empty = ask.": "Su nuevo nombre. Vacío = preguntar.",
+    "Name of the new stack. Empty = ask.": "Nombre del nuevo stack. Vacío = preguntar.",
+    "No service of the current repo is running.": "No corre ningún servicio del repo actual.",
+    "Rename": "Renombrar",
+    "Running now ({count}):": "Corriendo ahora ({count}):",
+    "Stack '{name}' is now '{new}'.": "El stack '{name}' ahora se llama '{new}'.",
+    "The services of the current repo running now, with the user and database most of them use.": "Los servicios del repo actual que corren ahora, con el usuario y la base de datos que usan la mayoría.",
+    "User: {user} · database: {db}": "Usuario: {user} · base de datos: {db}",
+    "The stack {name} is starting or stopping: rename it afterwards.": "El stack {name} está arrancando o parando: renómbralo después.",
     "'{value}' is not an email address": "'{value}' no es una dirección de email",
     "Send the emails of the services to this address only (empty = to nobody: pdms ui shows them):": "Enviar los emails de los servicios solo a esta dirección (vacío = a nadie: pdms ui los muestra):",
     "Where the emails services send go: an address (only there) or none (only to pdms ui).": "Adónde van los emails que envían los servicios: una dirección (solo allí) o ninguna (solo a pdms ui).",
@@ -421,7 +433,6 @@ ES: dict[str, str] = {
     "Stack user:": "Usuario del stack:",
     "Stack database:": "Base de datos del stack:",
     "List stacks.": "Lista los stacks.",
-    "Create a stack (wizard).": "Crea un stack (asistente).",
     "Stack '{name}' saved. Start it with [bold]pdms up {name}[/].":
         "Stack '{name}' guardado. Levántalo con [bold]pdms up {name}[/].",
     "Edit a stack.": "Edita un stack.",
