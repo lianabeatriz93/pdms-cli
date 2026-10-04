@@ -52,6 +52,7 @@ def _(text: str, /, **kwargs: object) -> str:
 
 
 ES: dict[str, str] = {
+    "{n} running services use the local copy ({keys}): their connections end while it is replaced.": "{n} servicios en marcha usan la copia local ({keys}): sus conexiones se cortan mientras se reemplaza.",
     "'{name}' is not a database name.": "'{name}' no es un nombre de base de datos.",
     "A snapshot name has lowercase letters, digits and _ (up to 40): '{name}' is not one.": "El nombre de un snapshot lleva minúsculas, dígitos y _ (hasta 40): '{name}' no lo es.",
     "Alias of the server to copy from.": "Alias del servidor del que copiar.",

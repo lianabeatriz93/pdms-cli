@@ -76,3 +76,26 @@ def test_refresh_needs_the_source_alias(tmp_path) -> None:
     with pytest.raises(actions.ActionError):
         localcopy.refresh(Config(), open(tmp_path / "log", "w"), alias="web-dev")
     assert not Path(tmp_path / "local-copy.json").exists()
+
+
+def test_the_data_screen_shows_the_copy_and_only_touches_test_databases(monkeypatch, tmp_path) -> None:
+    from pdms_cli.ui import jobs as ui_jobs
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setattr(localdb, "state", lambda: {"exists": True, "running": True, "port": localdb.PORT})
+    monkeypatch.setattr(localdb, "databases", lambda: {"pdms": 14 << 20, "pdms_test_1": 7 << 20, "pdms_snap_fresh": 13 << 20,
+                                                       "postgres": 7 << 20})
+    cfg = Config(dbs={"web-dev": WEB, "pdms-local": localdb.database("pdms")})
+    info = ui_jobs.data_info(cfg)
+    assert info["copy"]["alias"] == "pdms-local" and info["copy"]["size"] == 14 << 20
+    assert [s["name"] for s in info["snapshots"]] == ["fresh"]
+    assert info["tests"] == [{"name": "pdms_test_1", "size": 7 << 20}]
+    assert [d["name"] for d in info["dbs"] if d["copy"]] == ["pdms-local"]
+    dropped = []
+    monkeypatch.setattr(localdb, "psql", lambda sql, db="postgres", timeout=120: dropped.append(sql) or "")
+    for name in ("pdms", "postgres", "pdms_snap_fresh"):
+        with pytest.raises(actions.ActionError):
+            ui_jobs.data_action("tests-recreate", {"name": name})
+    assert not dropped
+    with pytest.raises(actions.ActionError):
+        ui_jobs.data_action("tests-count", {"count": 99})

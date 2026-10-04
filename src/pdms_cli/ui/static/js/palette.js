@@ -35,6 +35,7 @@ function paletteCommands() {
     ["proxy", t("Go to Requests"), t("Go to"), () => { location.hash = "#proxy"; showProxyTab("requests"); }],
     ["proxy", t("Go to Requests → Routes"), t("Go to"), () => { location.hash = "#proxy"; showProxyTab("routes"); }],
     ["events", t("Go to Events"), t("Go to"), go("events")],
+    ["db", t("Go to Data"), t("Go to"), go("data")],
     ["flask", t("Go to Tests"), t("Go to"), go("tests")],
     ["doctor", t("Go to Doctor"), t("Go to"), go("doctor")],
     ["settings", t("Go to Settings"), t("Go to"), go("settings")],
