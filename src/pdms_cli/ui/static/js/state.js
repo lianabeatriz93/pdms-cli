@@ -89,6 +89,7 @@ export function paint(next) {
   syncTests();
   watchStartDb();
   syncData();
+  paintNewTags();
   if (wasUp !== undefined && wasUp !== eventsView.up && currentView() === "events") showEventsTab(eventsView.tab);
   if (logs.sources.length) paintDock();
   syncSettings();
@@ -107,6 +108,14 @@ function repaintTexts() {
     paintSettings();
     paintDefaults();
   }
+}
+
+// "new" on a screen until it is opened once (kept by pdms ui: the window may not keep the browser's storage). Tests
+// shows its failures badge instead when there are any.
+function paintNewTags() {
+  const fresh = new Set(state.new_views || []);
+  $("new-data").hidden = !fresh.has("data");
+  $("new-tests").hidden = !fresh.has("tests") || !$("tests-badge").hidden;
 }
 
 export function connect() {

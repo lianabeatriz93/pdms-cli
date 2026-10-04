@@ -5,7 +5,6 @@ import { setThemePreview, state, useTheme } from "./state.js";
 import { dbLabel, options } from "./launch.js";
 import { confirmDialog } from "./stacks.js";
 import { paintRepos } from "./repos.js";
-import { openFlyway } from "./migrations.js";
 import { currentView } from "./router.js";
 
 const REVEAL_FOR = 30000; // a shown password hides again by itself
@@ -128,7 +127,7 @@ function dbRow(db) {
   if (db.protected) name.append(el("span", { class: "tag protected" }, t("protected")));
   const actionsCell = el("td", { class: "row-actions" },
     button(t("Test"), () => testDb(db.name), test && test.busy ? { disabled: "" } : {}),
-    button(t("Migrations"), () => openFlyway(db.name)),
+
     button(t("Edit"), () => openDb(db)),
     button(t("Delete"), () => removeSetting("dbs", db.name, db.stacks), { class: "btn small bad" }),
   );

@@ -48,8 +48,8 @@
   <a href="#stacks" data-view="stacks" title="Stacks"><svg class="i" aria-hidden="true"><use href="#i-stacks"/></svg><span class="lbl">Stacks</span><span class="cnt" id="stack-count"></span></a>
   <a href="#proxy" data-view="proxy" title="Requests"><svg class="i" aria-hidden="true"><use href="#i-proxy"/></svg><span class="lbl">Requests</span><span class="sdot" id="proxy-on"></span></a>
   <a href="#events" data-view="events" title="Events"><svg class="i" aria-hidden="true"><use href="#i-events"/></svg><span class="lbl">Events</span><span class="sdot" id="events-on"></span></a>
-  <a href="#data" data-view="data" title="Data"><svg class="i" aria-hidden="true"><use href="#i-db"/></svg><span class="lbl">Data</span></a>
-  <a href="#tests" data-view="tests" title="Tests"><svg class="i" aria-hidden="true"><use href="#i-flask"/></svg><span class="lbl">Tests</span><span class="badge bad" id="tests-badge" hidden></span></a>
+  <a href="#data" data-view="data" title="Data"><svg class="i" aria-hidden="true"><use href="#i-db"/></svg><span class="lbl">Data</span><span class="new" id="new-data" hidden>new</span></a>
+  <a href="#tests" data-view="tests" title="Tests"><svg class="i" aria-hidden="true"><use href="#i-flask"/></svg><span class="lbl">Tests</span><span class="new" id="new-tests" hidden>new</span><span class="badge bad" id="tests-badge" hidden></span></a>
   <a href="#doctor" data-view="doctor" class="side-end" title="Doctor"><svg class="i" aria-hidden="true"><use href="#i-doctor"/></svg><span class="lbl">Doctor</span><span class="badge" id="doctor-badge" hidden></span></a>
   <a href="#settings" data-view="settings" title="Settings"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg><span class="lbl">Settings</span></a>
 </nav>
@@ -328,15 +328,17 @@
     <span class="muted">Your databases, pdms's own Postgres with a local copy, its snapshots and the test databases.</span>
   </div>
   <section class="card data-card" aria-labelledby="data-dbs-title">
-    <div class="panel-head"><h2 id="data-dbs-title">Connections</h2><span class="muted">round trip measured every minute (status bar)</span></div>
+    <div class="panel-head"><h2 id="data-dbs-title">Connections</h2><span class="muted">measured every minute while this screen is open</span>
+      <button class="btn small push" id="data-test-now" type="button"><svg class="i" aria-hidden="true"><use href="#i-restart"/></svg> Test now</button></div>
     <div class="tbl"><table>
-      <thead><tr><th>Name</th><th>Where</th><th class="num">Round trip</th><th></th></tr></thead>
+      <thead><tr><th>Database</th><th>Through</th><th class="num">Round trip</th><th>Last hour</th><th>Migrations</th><th></th></tr></thead>
       <tbody id="data-dbs"></tbody>
     </table></div>
   </section>
   <div class="data-grid">
     <section class="card data-card" aria-labelledby="data-copy-title">
       <div class="panel-head"><h2 id="data-copy-title">Local copy</h2><span class="st" id="data-pg-status"></span></div>
+      <div class="data-flow" id="data-flow" aria-label="What the refresh does"></div>
       <dl class="data-facts">
         <dt>pdms's Postgres</dt><dd class="mono" id="data-pg-where"></dd>
         <dt>Alias</dt><dd class="mono" id="data-copy-alias"></dd>
@@ -344,7 +346,6 @@
         <dt>Last refresh</dt><dd id="data-copy-when"></dd>
         <dt>Size</dt><dd id="data-copy-size"></dd>
       </dl>
-      <p class="muted note">The refresh reads the source with <code>pg_dump</code> (nothing is written there), builds the <code>configuration</code> schema from the migrations repo, applies its pending migrations and replaces the copy.</p>
       <div class="bar-actions">
         <button class="btn primary" id="data-refresh" type="button">Refresh the copy</button>
         <button class="btn" id="data-copy-migrations" type="button">Migrations</button>

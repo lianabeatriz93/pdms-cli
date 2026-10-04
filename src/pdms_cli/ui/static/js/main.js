@@ -34,7 +34,7 @@ import { flywayView, openFlyway, paintFlyway } from "./migrations.js";
 import { doctorReport, paintDoctor, runDoctor } from "./doctor.js";
 import { openPalette, paintPalette, palette, runPalette, typing, viewFilter } from "./palette.js";
 import { route } from "./router.js";
-import { copyLog, dataView, postgresUpDown, refreshCopy, saveSnapshot, setTestCount } from "./data.js";
+import { copyLog, dataView, postgresUpDown, refreshCopy, saveSnapshot, setTestCount, testNow } from "./data.js";
 import {
   paintTests, pickAllTests, rerunFailed, runShown, showTests, startTestDb, stopTests, testsView,
 } from "./tests.js";
@@ -65,6 +65,7 @@ $("set-change").addEventListener("change", setChange);
 $("set-all").addEventListener("click", () => setPick(true));
 $("set-none").addEventListener("click", () => setPick(false));
 $("data-up").addEventListener("click", () => postgresUpDown("up"));
+$("data-test-now").addEventListener("click", testNow);
 $("data-down").addEventListener("click", () => postgresUpDown("down"));
 $("data-refresh").addEventListener("click", () => refreshCopy());
 $("data-job-log").addEventListener("click", copyLog);

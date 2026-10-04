@@ -1,5 +1,6 @@
 // Which screen shows (the #hash of the page), and what a screen loads when it opens.
 
+import { $, post } from "./core.js";
 import { state } from "./state.js";
 import { paintProxy } from "./proxy.js";
 import { eventsView, paintEvents, showEventsTab } from "./events.js";
@@ -20,6 +21,11 @@ export function route() {
   for (const section of document.querySelectorAll(".view")) section.hidden = section.id !== `view-${view}`;
   for (const link of document.querySelectorAll(".side a[data-view]")) link.classList.toggle("on", link.dataset.view === view);
   if (!state) return;
+  if ((state.new_views || []).includes(view)) {
+    state.new_views = state.new_views.filter((name) => name !== view);
+    $(`new-${view}`).hidden = true;
+    post("/api/ui/seen", { view }).catch(() => {}); // the next state says it too
+  }
   paintProxy();
   paintEvents();
   if (view === "events") showEventsTab(eventsView.tab);
