@@ -24,6 +24,11 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "A new stack with the services of the repo running now, as they run": "Un stack nuevo con los servicios del repo que corren ahora, tal como corren",
+    "From running services": "Desde los servicios en marcha",
+    "New stack with the running services": "Nuevo stack con los servicios en marcha",
+    "Save as stack": "Guardar como stack",
+    "Stack '{name}' saved as '{new}'.": "Stack '{name}' guardado como '{new}'.",
     "(no subject)": "(sin asunto)",
     "(no text)": "(sin texto)",
     "Bcc": "CCO",
