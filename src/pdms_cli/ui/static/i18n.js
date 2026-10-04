@@ -24,6 +24,9 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "no answer": "sin respuesta",
+    "In progress: waiting for {target}": "En curso: esperando a {target}",
+    "in progress": "en curso",
     "Changed directly": "Cambiados directamente",
     "Projects whose own files your branch changes, leaving out the ones affected only through a package they install": "Proyectos cuyos propios archivos cambia tu rama, sin los afectados solo por un paquete que instalan",
     "Your branch changes no project with tests directly; packages it changes show in Affected by my changes.": "Tu rama no cambia directamente ningún proyecto con tests; los paquetes que cambia aparecen en Afectados por mis cambios.",

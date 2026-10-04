@@ -12,6 +12,9 @@ const MAX_REQUESTS = 2000;
 // A local service that measures its queries adds its database time, queries and most repeated one: … 14ms db 9ms 3q ×5
 // A background proxy that keeps its requests ends the line with the id of the capture: … #1a2b3c4d
 const REQUEST = /^(\d\d:\d\d:\d\d) (\S+) +(\S+) (\d{3}) → (\S+) +(\d+)ms(?: db (\d+)ms (\d+)q(?: ×(\d+))?)?(?: #([0-9a-f]{8}))?$/;
+// A request that just arrived (proxy.format_start): 15:42:07 GET    /api/v1/lead/tp … → lead-tp-list@8081 #1a2b3c4d.
+// It shows in progress until the line with its answer (same id) replaces it.
+const START = /^(\d\d:\d\d:\d\d) (\S+) +(\S+) … → (\S+) #([0-9a-f]{8})$/;
 const SLOW_MS = 1000;
 const REPEATED = 5; // the same query this many times in one request (as captures.REPEATED)
 
@@ -94,7 +97,21 @@ function syncRequests() {
   }
 }
 
+// When a request that arrived at hh:mm:ss started, today (or yesterday, for a time still ahead of now).
+function startedAt(time) {
+  const [h, m, sec] = time.split(":").map(Number);
+  const when = new Date();
+  when.setHours(h, m, sec, 0);
+  if (when.getTime() > Date.now() + 60000) when.setDate(when.getDate() - 1);
+  return when.getTime();
+}
+
 function parseRequest(line) {
+  const start = START.exec(line);
+  if (start) {
+    const [, time, method, path, target, id] = start;
+    return { pending: true, time, method, path, target, id, started: startedAt(time), status: 0, ms: 0, db: null, queries: 0, repeated: 0 };
+  }
   const match = REQUEST.exec(line);
   if (!match) return null;
   const [, time, method, path, status, target, ms, db, queries, repeated, id] = match;
@@ -106,15 +123,51 @@ function parseRequest(line) {
 
 const REQUEST_FILTERS = {
   all: () => true,
-  slow: (req) => req.ms >= SLOW_MS,
+  slow: (req) => (req.pending ? Date.now() - req.started >= SLOW_MS : req.ms >= SLOW_MS),
   repeated: (req) => req.repeated >= REPEATED,
   errors: (req) => req.status >= 400,
 };
 
+// A request still waiting longer than the proxy waits for an answer lost it (the proxy stopped, or its line was cut).
+function lost(req) {
+  const timeout = ((state && state.proxy && state.proxy.timeout) || 300) * 1000;
+  return Date.now() - req.started > timeout + 5000;
+}
+
+function elapsed(req) {
+  return lost(req) ? t("no answer") : duration(Math.max(0, Date.now() - req.started));
+}
+
+// Still waiting: who it went to, and a time that keeps counting (see tickPending).
+function pendingRow(req) {
+  const local = !NOT_LOCAL.has(req.target);
+  return el("tr", { class: "pending", "data-id": req.id, title: t("In progress: waiting for {target}", { target: req.target }) },
+    el("td", { class: "mono muted" }, req.time),
+    el("td", { class: "req-path" },
+      el("span", { class: "method" }, req.method), " ", el("span", { class: "mono" }, ...slashBreaks(req.path)),
+      el("span", { class: `hint ${local ? "mono" : `target-${req.target === "other-repo" ? "other" : req.target}`}` }, req.target)),
+    el("td", { class: "num" }, el("span", { class: "spinner", "aria-label": t("in progress") })),
+    el("td", { class: "num live-ms muted" }, elapsed(req)),
+    el("td", {}, ""),
+    el("td", {}, ""),
+  );
+}
+
+function tickPending() {
+  for (const row of document.querySelectorAll("#req-rows tr.pending")) {
+    const req = proxyView.requests.find((item) => item.pending && item.id === row.dataset.id);
+    if (!req) continue;
+    const cell = row.querySelector(".live-ms");
+    cell.textContent = elapsed(req);
+    cell.classList.toggle("slow", !lost(req) && Date.now() - req.started >= SLOW_MS);
+  }
+}
+setInterval(tickPending, 1000);
+
 function requestShown(req) {
   const text = $("req-filter").value.trim().toLowerCase();
   if (!REQUEST_FILTERS[proxyView.show](req)) return false;
-  return !text || `${req.method} ${req.path} ${req.status} ${req.target}`.toLowerCase().includes(text);
+  return !text || `${req.method} ${req.path} ${req.pending ? "" : req.status} ${req.target}`.toLowerCase().includes(text);
 }
 
 // 840 ms, 3.62 s
@@ -148,6 +201,7 @@ function requestLog(req) {
 }
 
 function requestRow(req) {
+  if (req.pending) return pendingRow(req);
   const local = !NOT_LOCAL.has(req.target);
   // Kept by the proxy: the row opens its detail. Older lines (no id) still jump to the service's log.
   const open = req.id ? () => pickRequest(req) : local ? () => requestLog(req) : null;
@@ -174,8 +228,22 @@ function requestRow(req) {
 }
 
 function addRequests(lines) {
-  const fresh = lines.map(parseRequest).filter(Boolean);
-  if (!fresh.length) return;
+  const parsed = lines.map(parseRequest).filter(Boolean);
+  if (!parsed.length) return;
+  // An answer replaces its request in progress, where it is (in the list and on screen).
+  const fresh = [];
+  for (const req of parsed) {
+    const inBatch = req.pending || !req.id ? -1 : fresh.findIndex((item) => item.pending && item.id === req.id);
+    // The answer keeps the time the request arrived: the list is in the order requests came in.
+    if (inBatch >= 0) { fresh[inBatch] = { ...req, time: fresh[inBatch].time }; continue; } // arrived and answered in the same batch
+    const at = req.pending || !req.id ? -1 : proxyView.requests.findIndex((item) => item.pending && item.id === req.id);
+    if (at < 0) { fresh.push(req); continue; }
+    req.time = proxyView.requests[at].time;
+    proxyView.requests[at] = req;
+    const row = $("req-rows").querySelector(`tr.pending[data-id="${req.id}"]`);
+    if (row) row.replaceWith(...(requestShown(req) ? [requestRow(req)] : []));
+  }
+  if (!fresh.length) { paintRequestsNote(); return; }
   proxyView.requests.push(...fresh);
   if (proxyView.requests.length > MAX_REQUESTS * 1.2) {
     proxyView.requests = proxyView.requests.slice(-MAX_REQUESTS);

@@ -149,6 +149,9 @@ class Gateway:
     timeout: float = 300  # seconds to wait for the answer of a service or the remote API
     log: Callable[..., None] = lambda *args: None  # (method, path, status, target, seconds, capture id, db detail)
     recorder: captures.Recorder | None = None  # the background proxy keeps each request for pdms ui
+    # The background proxy also says when a request arrives (method, path, target, capture id), so pdms ui shows it
+    # in progress; its line when answered carries the same id.
+    log_start: Callable[..., None] = lambda *args: None
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     # ------------------------------------------------------------------ targets
@@ -294,7 +297,7 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
             """Log the request (and keep it, in the background proxy) once it was answered."""
             seconds, ident = time.monotonic() - started, ""
             if gateway.recorder:
-                ident = captures.new_id()
+                ident = self.capture_id or captures.new_id()
                 headers = [(k, v) for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP]
                 try:
                     gateway.recorder.record(captures.entry(ident, self.command, path, status, target, seconds,
@@ -303,8 +306,11 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                     ident = ""  # a full disk must not break the proxy
             gateway.log(self.command, path.split("?", 1)[0], status, target, seconds, ident, db)
 
+        capture_id = ""  # given when the request arrives (background proxy): its start and end lines share it
+
         def forward(self) -> None:
             started, started_at = time.monotonic(), time.time()  # the wall clock places the service's part in time
+            self.capture_id = ""
             path = normalize(self.path)
             bare = path.split("?", 1)[0]
             if bare in ("/", "/docs"):
@@ -330,6 +336,9 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                 self.done(started, path, 503 if route else 404, label, body, [("Content-Type", "application/json")], answer)
                 return
 
+            if gateway.recorder:
+                self.capture_id = captures.new_id()
+                gateway.log_start(self.command, bare, label, self.capture_id)
             headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
             if target.kind == "local":
                 inst = target.instance
@@ -390,6 +399,11 @@ def format_request(method: str, path: str, status: int, target: str, seconds: fl
     """One line of the background proxy's log (the terminal shows the same, in colour); ``#id`` names its capture."""
     line = f"{datetime.now():%H:%M:%S} {method:<6} {path} {status} → {target}  {seconds * 1000:.0f}ms{db_text(db)}"
     return f"{line} #{ident}" if ident else line
+
+
+def format_start(method: str, path: str, target: str, ident: str) -> str:
+    """The line of a request that just arrived: ``…`` where the status and the time go once it is answered."""
+    return f"{datetime.now():%H:%M:%S} {method:<6} {path} … → {target} #{ident}"
 
 
 class Server(ThreadingHTTPServer):
@@ -455,7 +469,7 @@ def main(argv: list[str] | None = None) -> None:
     gateway = Gateway(
         routes=repo_routes, backend=args.repo / "backend", remote=args.remote or None, impersonate=user,
         timeout=args.timeout, log=lambda *request: print(format_request(*request), flush=True),
-        recorder=captures.Recorder(),
+        recorder=captures.Recorder(), log_start=lambda *request: print(format_start(*request), flush=True),
     )
     # frontend/.env.local is put back by whoever stops it (pdms stop), or by the next proxy if it died.
     serve(gateway, "0.0.0.0", args.port, {
