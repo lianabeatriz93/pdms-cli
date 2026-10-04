@@ -89,12 +89,18 @@ def test_only_local_databases_are_offered_and_accepted() -> None:
         testruns.require_local(cfg, "nope")
 
 
-def test_the_run_always_gets_the_local_database_whatever_the_defaults_say() -> None:
+def test_the_run_gets_the_local_database_and_development_mode_off(monkeypatch) -> None:
+    """DEVELOPMENT_MODE makes restapi_fastapi skip the token check: tests of unauthorized requests would get 200. It is
+    set empty (not left out), so a service's .env cannot turn it on."""
     cfg = Config(dbs={"local": LOCAL})
     cfg.defaults.env = {"DB_PG_CONNECTION_STR": WEB.url(), "OTHER": "1"}
+    monkeypatch.setenv("DEVELOPMENT_MODE", "true")
+    monkeypatch.setenv("DB_PG_CONNECTION_STR", WEB.url())
     env = testruns.test_env(cfg, LOCAL)
     assert env["DB_PG_CONNECTION_STR"] == LOCAL.url()
-    assert env["OTHER"] == "1"
+    assert env["DEVELOPMENT_MODE"] == ""
+    assert "OTHER" not in env and "LOGGING_LEVEL" not in env
+    assert "PATH" in env
     with pytest.raises(actions.ActionError):
         testruns.test_env(cfg, WEB)
 

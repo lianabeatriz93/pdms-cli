@@ -168,18 +168,19 @@ def pytest_command(xml: Path, extra: list[str] | None = None) -> list[str]:
     return [runner.poetry(), "run", "pytest", *report, *extra]
 
 
+# Development mode makes restapi_fastapi skip the token check (an unauthorized request answers 200), and services
+# turn it on in their own .env, which python-decouple reads. A variable wins over .env, so tests get it empty: off
+# for decouple, and for simple_settings' OVERRIDE_BY_ENV too, which copies raw strings ("false" would be on).
+TEST_OVERRIDES = {"DEVELOPMENT_MODE": ""}
+
+
 def test_env(cfg: Config, db: Database, user: DevUser | None = None) -> dict[str, str]:
-    """The environment of a test run. The database goes last, so nothing (not even defaults.env) replaces it."""
+    """The environment of a test run: this one with development mode off, the local database and a user's DEV_*
+    when asked. Not the variables pdms gives running services (defaults.env, LOGGING_LEVEL)."""
     if not migrations.is_local(db):  # the callers checked; this is the last line of defence
         raise actions.ActionError(_("Tests only run against a local database."))
-    return {
-        **runner.poetry_environ(),
-        "DEVELOPMENT_MODE": "True",
-        "LOGGING_LEVEL": cfg.defaults.logging_level,
-        **cfg.defaults.env,
-        **(user.env() if user else {}),
-        "DB_PG_CONNECTION_STR": db.url(),
-    }
+    return {**runner.poetry_environ(), **(user.env() if user else {}), **TEST_OVERRIDES,
+            "DB_PG_CONNECTION_STR": db.url()}
 
 
 def run_tests(cfg: Config, backend: Path, project: str, db_name: str, *, install: bool | None = None,
