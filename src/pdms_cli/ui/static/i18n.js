@@ -24,6 +24,9 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "Changed directly": "Cambiados directamente",
+    "Projects whose own files your branch changes, leaving out the ones affected only through a package they install": "Proyectos cuyos propios archivos cambia tu rama, sin los afectados solo por un paquete que instalan",
+    "Your branch changes no project with tests directly; packages it changes show in Affected by my changes.": "Tu rama no cambia directamente ningún proyecto con tests; los paquetes que cambia aparecen en Afectados por mis cambios.",
     "Development mode": "Modo desarrollo",
     "DEVELOPMENT_MODE=true: no token check, requests act as the DEV_* user. Off by default, as deployed, whatever the service's .env says.": "DEVELOPMENT_MODE=true: sin validar el token, las peticiones actúan como el usuario DEV_*. Apagado por defecto, como en el despliegue, diga lo que diga el .env del servicio.",
     "Ran with DEVELOPMENT_MODE on": "Se ejecutó con DEVELOPMENT_MODE encendido",
