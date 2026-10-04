@@ -26,6 +26,15 @@ from datetime import datetime
 
 RETRY_DELAY = 5
 
+try:
+    import pdms_trace  # this folder (on PYTHONPATH): the request a message was sent for, see that module
+except ImportError:  # pragma: no cover - run without pdms's folder
+    pdms_trace = None
+
+
+def request_of(message: dict) -> str:
+    return pdms_trace.from_attributes(message.get("MessageAttributes")) if pdms_trace else ""
+
 
 def log(message: str) -> None:
     print(f"{datetime.now():%H:%M:%S} [pdms-poller] {message}", flush=True)
@@ -68,7 +77,8 @@ def describe(message: dict) -> str:
         kind = body.get("type") or body.get("action_type") or "?"
     except (ValueError, AttributeError):
         kind = "?"
-    return f"{message['MessageId'][:8]} type={kind}"
+    request = request_of(message)
+    return f"{message['MessageId'][:8]} type={kind}" + (f" #{request}" if request else "")
 
 
 def failed_ids(result: object) -> set[str]:
@@ -122,14 +132,24 @@ def main() -> None:
             continue
         for message in messages:
             log(f"Received {describe(message)}")
-        started = time.monotonic()
+        started, started_at = time.monotonic(), time.time()
+        # The handler works for the request its message was sent for: its logs and what it sends carry the id.
+        request = next((r for r in map(request_of, messages) if r), "")
+        token = pdms_trace.current.set(request) if pdms_trace and request else None
         try:
-            result = handler({"Records": [to_record(m, queue_name) for m in messages]},
-                             Context(args.function_name, args.timeout))
-            failed = failed_ids(result)
-        except Exception:  # noqa: BLE001 - a failing invocation fails every message of the batch, like in AWS
-            traceback.print_exc()
-            failed = {m["MessageId"] for m in messages}
+            try:
+                result = handler({"Records": [to_record(m, queue_name) for m in messages]},
+                                 Context(args.function_name, args.timeout))
+                failed = failed_ids(result)
+            except Exception:  # noqa: BLE001 - a failing invocation fails every message of the batch, like in AWS
+                traceback.print_exc()
+                failed = {m["MessageId"] for m in messages}
+            if token is not None:
+                pdms_trace.record("consumer", queue_name, started_at, time.monotonic() - started,
+                                  function=args.function_name, messages=len(messages), failed=len(failed))
+        finally:
+            if token is not None:
+                pdms_trace.current.reset(token)
         took = f"{(time.monotonic() - started) * 1000:.0f}ms"
         for message in messages:
             receives = attempts[message["MessageId"]] = attempts.get(message["MessageId"], 0) + 1
