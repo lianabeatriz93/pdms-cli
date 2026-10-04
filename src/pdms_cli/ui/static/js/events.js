@@ -1,6 +1,6 @@
 // Events: the local ElasticMQ, its queues and messages, the event types, the local SNS and sending events.
 
-import { $, act, button, el, getJson, phaseLabel, post, toast } from "./core.js";
+import { $, act, button, dateTime, el, getJson, phaseLabel, post, toast } from "./core.js";
 import { state } from "./state.js";
 import { showLogs } from "./logs.js";
 import { openLaunch, servicesCount } from "./launch.js";
@@ -63,7 +63,7 @@ export function paintEvents() {
       info(t("Broker"), !data ? "…" : broker ? broker.key : data.broker ? t("not running") : t("not in the repo")),
       info(t("Consumers running"), String(consumers.length)),
       info(t("Publishing locally"), servicesCount(publishers)),
-      info(t("Last SNS publish"), state.sns && state.sns.last_publish ? new Date(state.sns.last_publish).toLocaleTimeString() : t("nothing yet")),
+      info(t("Last SNS publish"), state.sns && state.sns.last_publish ? dateTime(state.sns.last_publish) : t("nothing yet")),
     );
   } else {
     card.replaceChildren(el("p", { class: "muted note" }, busy ? t("Starting the local ElasticMQ…")
@@ -450,7 +450,7 @@ function snsEntry(entry) {
   const kind = messageKind(text);
   return messageDetails(
     el("summary", {},
-      el("span", { class: "mono muted" }, new Date(entry.time).toLocaleTimeString()),
+      el("time", { class: "mono muted", datetime: entry.time }, dateTime(entry.time)),
       el("span", { class: "topic" }, entry.topic),
       kind ? el("span", { class: "kind" }, kind) : "",
       el("span", { class: "muted" }, t("from {service}", { service: entry.service })),

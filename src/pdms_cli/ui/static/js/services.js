@@ -1,7 +1,7 @@
 // Services: the background instances, grouped by stack, and the processes outside pdms.
 
 import {
-  $, act, button, el, failedText, iconButton, iconLink, phaseLabel, repoPath, statusLabel, toast, uptime,
+  $, act, button, dateTime, el, failedText, iconButton, iconLink, phaseLabel, repoPath, statusLabel, toast, uptime,
 } from "./core.js";
 import { state } from "./state.js";
 import { logs, openLogs } from "./logs.js";
@@ -107,7 +107,7 @@ function tracebackRow(item) {
 }
 
 function lastPublish(item) {
-  return item.last_publish ? t("last {time}", { time: new Date(item.last_publish).toLocaleTimeString() }) : t("nothing yet");
+  return item.last_publish ? t("last {time}", { time: dateTime(item.last_publish) }) : t("nothing yet");
 }
 
 // Services answer requests in parallel by default: tell the ones that don't (started with --no-parallel, the setting

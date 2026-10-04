@@ -18,6 +18,13 @@ export function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+// A moment with its date and time, in the browser's locale (03/10/2026, 20:15:32).
+export function dateTime(value) {
+  return new Date(value).toLocaleString([], {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  });
+}
+
 export function uptime(startedAt) {
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
   const hours = Math.floor(seconds / 3600);
