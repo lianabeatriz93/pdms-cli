@@ -7,11 +7,13 @@
 import { $, act, toast } from "./core.js";
 import { connect, paint, state } from "./state.js";
 import { adoptStrays, paintServices, pickAllShown, pickedItems, servicesView, stopPicked, tickUptimes } from "./services.js";
-import { clearLog, closeLogs, logs, openLogs, showLogs } from "./logs.js";
+import {
+  addLogSource, clearLog, clearRequestFilter, closeLogs, setLogFilter, showLogs, switchLogTab, toggleDock,
+} from "./logs.js";
 import { filterRun, openRestartSet, openRun, resetConfirmation, setChange, setPick, submitLaunch } from "./launch.js";
 import { filterEditor, openEditor, paintStacks, saveEditor } from "./stacks.js";
 import {
-  closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyView, resetProxyPort, showDetailTab,
+  closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyView, requestLogs, resetProxyPort, showDetailTab,
   showProxyTab, submitProxyStart,
 } from "./proxy.js";
 import {
@@ -45,7 +47,13 @@ document.addEventListener("keydown", (event) => { if (event.key === "Escape") $(
 
 $("logs-close").addEventListener("click", closeLogs);
 $("logs-clear").addEventListener("click", clearLog);
-for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => openLogs(logs.key, tab.dataset.which));
+$("logs-hide").addEventListener("click", toggleDock);
+for (const tab of $("logs-tabs").children) tab.addEventListener("click", () => switchLogTab(tab.dataset.which));
+$("logs-add").addEventListener("change", () => { addLogSource($("logs-add").value); $("logs-add").value = ""; });
+$("logs-level").addEventListener("change", setLogFilter);
+$("logs-filter").addEventListener("input", setLogFilter);
+$("logs-request-clear").addEventListener("click", clearRequestFilter);
+$("req-d-logs").addEventListener("click", requestLogs);
 $("svc-all").addEventListener("change", () => pickAllShown($("svc-all").checked));
 $("svc-sel-clear").addEventListener("click", () => { servicesView.selected.clear(); paintServices(); });
 $("svc-sel-stop").addEventListener("click", stopPicked);

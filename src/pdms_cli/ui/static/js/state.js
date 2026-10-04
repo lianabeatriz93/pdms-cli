@@ -2,7 +2,7 @@
 
 import { $, el } from "./core.js";
 import { paintServices } from "./services.js";
-import { logs, paintLogTabs } from "./logs.js";
+import { logs, paintDock } from "./logs.js";
 import { paintStacks } from "./stacks.js";
 import { paintProxy, paintRequests, paintRoutes } from "./proxy.js";
 import { eventsView, paintEvents, paintMap, paintQueues, paintSns, showEventsTab } from "./events.js";
@@ -88,7 +88,7 @@ export function paint(next) {
   syncTests();
   watchStartDb();
   if (wasUp !== undefined && wasUp !== eventsView.up && currentView() === "events") showEventsTab(eventsView.tab);
-  if (logs.key) paintLogTabs();
+  if (logs.sources.length) paintDock();
   syncSettings();
   if (relabel) repaintTexts();
 }
