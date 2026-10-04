@@ -79,6 +79,7 @@ function shownProjects() {
   const filter = $("tests-filter").value.trim().toLowerCase();
   let items = testsView.data.projects;
   if (testsView.show === "affected") items = items.filter((item) => affected.has(item.project));
+  else if (testsView.show === "direct") items = items.filter((item) => (affected.get(item.project) || []).includes("own"));
   else if (testsView.show === "failing") items = items.filter(failing);
   return items.filter((item) => !filter || item.project.toLowerCase().includes(filter));
 }
@@ -191,6 +192,7 @@ export function paintTests() {
   const affected = affectedMap();
   const counts = {
     affected: data.affected.items.length, all: data.projects.length, failing: data.projects.filter(failing).length,
+    direct: data.affected.items.filter((item) => item.why.includes("own")).length,
   };
   for (const node of document.querySelectorAll("#tests-seg button")) {
     node.setAttribute("aria-pressed", String(node.dataset.show === testsView.show));
@@ -200,7 +202,7 @@ export function paintTests() {
   $("tests-base").textContent = !base ? t("No main branch found: only uncommitted files count.")
     : data.affected.files === 1 ? t("1 file changed since the branch left {base}", { base })
       : t("{n} files changed since the branch left {base}", { n: data.affected.files, base });
-  $("tests-base").hidden = testsView.show !== "affected";
+  $("tests-base").hidden = testsView.show !== "affected" && testsView.show !== "direct";
   paintDbs();
   paintNoDb();
 
@@ -216,7 +218,9 @@ export function paintTests() {
   }
   $("tests-rows").replaceChildren(...rows);
   $("tests-empty").hidden = items.length > 0;
-  $("tests-empty").textContent = testsView.show === "affected" && !$("tests-filter").value
+  $("tests-empty").textContent = testsView.show === "direct" && !$("tests-filter").value
+    ? t("Your branch changes no project with tests directly; packages it changes show in Affected by my changes.")
+    : testsView.show === "affected" && !$("tests-filter").value
     ? t("Your changes touch no project with tests. Uncommitted and new files count too.")
     : testsView.show === "failing" && !$("tests-filter").value ? t("Nothing fails.") : t("No project matches the filter.");
   const shown = new Set(items.map((item) => item.project));
