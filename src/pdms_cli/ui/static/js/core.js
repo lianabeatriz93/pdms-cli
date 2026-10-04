@@ -72,10 +72,24 @@ export function failedText(job) {
   return t("{action} failed: {error}", { action: job.action, error });
 }
 
+// A short message above the status bar: "info" (done: saved, copied…) goes by itself; an "error" stays longer, and
+// both close with ✕. The newest goes at the bottom; a few at most.
+const MAX_TOASTS = 4;
+
 export function toast(message, kind = "error") {
-  const node = el("div", { class: `toast ${kind}`, role: "status" }, message);
+  const close = () => {
+    node.classList.add("leaving");
+    setTimeout(() => node.remove(), 180);
+  };
+  const node = el("div", { class: `toast ${kind}`, role: kind === "error" ? "alert" : "status" },
+    el("span", { class: "toast-icon" }, icon(kind === "error" ? "alert" : "check")),
+    el("span", { class: "toast-text" }, message),
+    el("button", { class: "toast-close", type: "button", "aria-label": t("Close"), title: t("Close"), onclick: close }, "✕"));
   $("toasts").append(node);
-  setTimeout(() => node.remove(), kind === "error" ? 8000 : 4000);
+  while ($("toasts").children.length > MAX_TOASTS) $("toasts").firstChild.remove();
+  let timer = setTimeout(close, kind === "error" ? 8000 : 3500);
+  node.addEventListener("mouseenter", () => clearTimeout(timer)); // reading it: it waits
+  node.addEventListener("mouseleave", () => { timer = setTimeout(close, 2000); });
 }
 
 export async function post(path, body = {}) {
