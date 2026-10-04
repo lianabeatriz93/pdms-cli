@@ -1,10 +1,10 @@
 """The tests of the services and packages of a repo: ``pdms test`` and the Tests screen of pdms ui.
 
-Tests only ever run against a local database (:func:`migrations.is_local`): a test run writes and deletes rows, and
-the shared databases hold other people's data. pdms always sets ``DB_PG_CONNECTION_STR`` for the run, so the
-service's own ``.env`` (which may point to web-dev) is never used. Services share tables, so two projects only test
-at the same time on different databases. Without a local database, pdms can start the one of
-``backend/docker-compose_tests.yml``.
+Tests only ever run on pdms's test databases (``pdms_test_1`` … in pdms's own Postgres, see :mod:`localdb`): the
+integration tests drop and create every table of the database they get, so a shared database (other people's data)
+or a local one that keeps data (an alias, a service's ``.env``) would be wiped. pdms always sets
+``DB_PG_CONNECTION_STR`` for the run, so the service's own ``.env`` is never used. Services share tables, so two
+projects only test at the same time on different databases: one project per test database.
 
 Each run writes a JUnit XML file, its output and a summary under ``<state>/tests/<repo>/``, one set per project.
 "Affected by my changes" are the projects whose own files, or the files of a local package they install
@@ -21,19 +21,13 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import IO
 
-from . import actions, events, installer, instances, migrations, repos, runner
+from . import actions, installer, instances, localdb, migrations, repos, runner
 from .config import Config, Database, DevUser
 from .i18n import _
 
-TEST_DB_COMPOSE = "docker-compose_tests.yml"  # in the backend folder; the database the pipeline's tests use
-TEST_DB_SERVICE = "db_pipeline_tests"
-TEST_DB_NAME = "tests"
-TEST_DB = Database(host="localhost", port=5439, database="alivi_pdms", user="local", password="local")
 SKIP_DIRS = {*runner.SKIP_DIRS, ".venv", "venv", "dist", "build"}
 MAX_FAILURES = 50  # kept per project; a broken fixture can fail hundreds of tests the same way
 MAX_FAILURE_LINES = 30
@@ -41,77 +35,39 @@ NO_TESTS = 5  # pytest's exit code when it collected nothing
 FRAME = re.compile(r"^(?P<path>[^\s:][^:]*\.py):(?P<line>\d+): ")
 
 
-# ---------------------------------------------------------------------------------------------- local databases
+# ---------------------------------------------------------------------------------------------- test databases
 
 
-def local_dbs(cfg: Config) -> list[str]:
-    """The databases tests may use: local ones, one name per real database (two aliases of the same one count once)."""
-    seen: set[tuple[str, int, str]] = set()
-    names = []
-    for name, db in cfg.dbs.items():
-        where = (db.host.strip().lower(), db.port, db.database)
-        if migrations.is_local(db) and where not in seen:
-            seen.add(where)
-            names.append(name)
-    return names
-
-
-def require_local(cfg: Config, name: str) -> Database:
-    """The database ``name``, or :class:`actions.ActionError` when it is unknown or not local."""
-    actions.require(cfg.dbs, _("database"), name)
-    db = cfg.dbs[name]
-    if not migrations.is_local(db):
-        raise actions.ActionError(_(
-            "Tests only run against a local database; '{name}' ({host}) is shared. Use a local one: {names}.",
-            name=name, host=db.host, names=", ".join(local_dbs(cfg)) or _("none yet"),
-        ))
-    return db
-
-
-def no_local_db_hint(backend: Path | None) -> str:
-    compose = backend / TEST_DB_COMPOSE if backend else None
-    if compose and compose.is_file():
-        return _("No local database for tests. Start the one of {file} with pdms test --start-db, or add one with "
-                 "pdms db add.", file=TEST_DB_COMPOSE)
-    return _("No local database for tests. Add one with pdms db add (host localhost).")
-
-
-def test_db_compose(backend: Path) -> Path:
-    compose = backend / TEST_DB_COMPOSE
-    if not compose.is_file():
-        raise actions.ActionError(_("{file} is not in {path}.", file=TEST_DB_COMPOSE, path=backend))
-    return compose
-
-
-def start_test_db(cfg: Config, backend: Path, output: IO[str] | None = None, wait: float = 60) -> str:
-    """Start the database of ``backend/docker-compose_tests.yml``, wait until it answers and register it as
-    ``tests`` (an existing local alias of it is reused). Returns the alias."""
-    compose = test_db_compose(backend)
-    ok, detail = events.docker_available()
-    if not ok:
-        raise actions.ActionError(_("Docker is not available: {detail}", detail=detail or _("docker not found")))
-    cmd = ["docker", "compose", "-f", str(compose), "up", "-d", TEST_DB_SERVICE]
+def test_dbs() -> list[str]:
+    """pdms's test databases (pdms_test_1, …) when its Postgres runs, else none."""
     try:
-        result = subprocess.run(cmd, cwd=backend, stdout=output or subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, timeout=600)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise actions.ActionError(_("{cmd} failed: {error}", cmd=" ".join(cmd[:3]), error=exc)) from exc
-    if result.returncode != 0:
-        raise actions.ActionError(_("{cmd} failed (exit code {code}).", cmd="docker compose up", code=result.returncode))
-    name = next((n for n, db in cfg.dbs.items() if migrations.is_local(db) and (db.port, db.database)
-                 == (TEST_DB.port, TEST_DB.database)), "")
-    if not name:
-        name = TEST_DB_NAME if TEST_DB_NAME not in cfg.dbs else f"{TEST_DB_NAME}-{TEST_DB.port}"
-        actions.save_db(cfg, name, replace(TEST_DB), new=True)
-    deadline = time.monotonic() + wait
-    while True:
-        try:
-            actions.check_connection(cfg.dbs[name], 3)
-            return name
-        except actions.ActionError as exc:
-            if time.monotonic() > deadline:
-                raise actions.ActionError(_("The test database does not answer yet: {error}", error=exc.message)) from exc
-            time.sleep(1)
+        return localdb.test_databases() if localdb.available() else []
+    except actions.ActionError:
+        return []
+
+
+def require_test_db(name: str) -> Database:
+    """The test database ``name`` of pdms's Postgres, or :class:`actions.ActionError`: tests drop and create every
+    table of the database they get, so they never run on one that keeps data (an alias, a service's database)."""
+    if not localdb.is_test_database(name):
+        raise actions.ActionError(_(
+            "Tests only run on pdms's test databases ({names}): they drop and create every table of the database they "
+            "get. '{name}' is not one.", names=", ".join(test_dbs()) or "pdms_test_1…", name=name))
+    if name not in test_dbs():
+        raise actions.ActionError(_("{name} does not exist. pdms db local up creates the test databases.", name=name))
+    return localdb.database(name, localdb.state()["port"] or localdb.PORT)
+
+
+def no_test_db_hint() -> str:
+    return _("pdms's test databases are not ready. pdms db local up starts its Postgres (Docker, port {port}) and "
+             "creates them.", port=localdb.PORT)
+
+
+def prepare_test_dbs(count: int = localdb.TEST_COUNT) -> list[str]:
+    """Start pdms's Postgres if needed and create the test databases up to ``count``; the ones there are."""
+    localdb.up()
+    localdb.ensure_test_databases(count)
+    return localdb.test_databases()
 
 
 # ---------------------------------------------------------------------------------------------- projects
@@ -184,8 +140,8 @@ def env_dev_mode(project: Path) -> bool:
 def test_env(cfg: Config, db: Database, user: DevUser | None = None, dev_mode: bool = False) -> dict[str, str]:
     """The environment of a test run: this one with development mode off (on when ``dev_mode``), the local database
     and a user's DEV_* when asked. Not the variables pdms gives running services (defaults.env, LOGGING_LEVEL)."""
-    if not migrations.is_local(db):  # the callers checked; this is the last line of defence
-        raise actions.ActionError(_("Tests only run against a local database."))
+    if not (migrations.is_local(db) and localdb.is_test_database(db.database)):  # the callers checked: last defence
+        raise actions.ActionError(_("Tests only run on pdms's test databases (pdms_test_1, …)."))
     return {**runner.poetry_environ(), **(user.env() if user else {}), DEV_MODE: "true" if dev_mode else "",
             "DB_PG_CONNECTION_STR": db.url()}
 
@@ -197,7 +153,7 @@ def run_tests(cfg: Config, backend: Path, project: str, db_name: str, *, install
     """Run one project's tests on ``db_name`` with the output in its log, and keep the result (see :func:`record`).
     ``started`` gets the process (to stop it); a run ``cancelled`` says so in its log and keeps no result. Used by
     pdms ui; the CLI shows the output in the terminal."""
-    db = require_local(cfg, db_name)
+    db = require_test_db(db_name)
     path = resolve_project(backend, project)
     paths = files(backend, project)
     paths["log"].parent.mkdir(parents=True, exist_ok=True)

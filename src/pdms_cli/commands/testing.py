@@ -12,7 +12,7 @@ import questionary
 import typer
 from rich.table import Table
 
-from .. import actions, completion, events, migrations, prompts, repos, runner, testruns
+from .. import actions, completion, events, localdb, migrations, repos, runner, testruns
 from ..config import Config
 from ..i18n import _
 from .common import PASSTHROUGH, app, console, fail, interactive_terminal, pick
@@ -47,45 +47,28 @@ def resolve_project(cfg: Config, name: Optional[str], path: Optional[Path]) -> P
     return resolve_service(cfg, name, path)
 
 
-def test_db(cfg: Config, db: Optional[str], start_db: bool) -> str:
-    """The local database the tests use: --db (refused when shared), the only local one, or a choice; without any,
-    the one of docker-compose_tests.yml (--start-db, or asked)."""
-    backend = repos.active_backend(cfg)
-    if start_db:
-        return start_compose_db(cfg, backend)
+def test_db(db: Optional[str]) -> str:
+    """The test database the tests use: --db (only pdms_test_N), else the first one. Without any, pdms's Postgres is
+    started and they are created (asked first in a terminal)."""
+    names = testruns.test_dbs()
+    if not names:
+        if not interactive_terminal() or not questionary.confirm(
+            _("Tests only run on pdms's test databases (they drop and create every table). Start pdms's Postgres "
+              "(Docker, port {port}) and create {n} of them?", port=localdb.PORT, n=localdb.TEST_COUNT), default=True,
+        ).unsafe_ask():
+            fail(testruns.no_test_db_hint())
+        with console.status(_("Starting pdms's Postgres and creating the test databases...")):
+            try:
+                names = testruns.prepare_test_dbs()
+            except actions.ActionError as exc:
+                fail(exc.message)
     if db:
         try:
-            testruns.require_local(cfg, db)
+            testruns.require_test_db(db)
         except actions.ActionError as exc:
             fail(exc.message)
         return db
-    local = testruns.local_dbs(cfg)
-    if len(local) == 1:
-        return local[0]
-    if local:
-        prompts.require_tty()
-        default = cfg.last_db if cfg.last_db in local else local[0]
-        return prompts.select_name(_("Choose {kind}:", kind=_("local database")), local, default)
-    compose = backend / testruns.TEST_DB_COMPOSE if backend else None
-    if compose and compose.is_file() and interactive_terminal() and questionary.confirm(
-        _("Tests only run against a local database and there is none. Start the one of {file} (Docker, port {port})?",
-          file=testruns.TEST_DB_COMPOSE, port=testruns.TEST_DB.port), default=True,
-    ).unsafe_ask():
-        return start_compose_db(cfg, backend)
-    fail(testruns.no_local_db_hint(backend))
-
-
-def start_compose_db(cfg: Config, backend: Optional[Path]) -> str:
-    if not backend:
-        fail(_("No current repo. Register one with [bold]pdms repo add <path>[/]."))
-    with console.status(_("Starting the test database ({file})...", file=testruns.TEST_DB_COMPOSE)):
-        try:
-            name = testruns.start_test_db(cfg, backend)
-        except actions.ActionError as exc:
-            fail(exc.message)
-    console.print("[green]✓[/] " + _("Test database '{name}' ready on port {port}.", name=name,
-                                      port=cfg.dbs[name].port))
-    return name
+    return names[0]
 
 
 def ask_dev_mode(target: Path, given: Optional[bool]) -> bool:
@@ -118,11 +101,9 @@ def test(
         None, "--user", "-u", help=_("Inject this user's DEV_* variables."), autocompletion=completion.users
     ),
     db: Optional[str] = typer.Option(
-        None, "--db", "-d", help=_("Local database for DB_PG_CONNECTION_STR (only local ones are allowed)."),
-        autocompletion=completion.local_dbs,
-    ),
-    start_db: bool = typer.Option(
-        False, "--start-db", help=_("Start the database of backend/docker-compose_tests.yml and use it."),
+        None, "--db", "-d", help=_("Test database for DB_PG_CONNECTION_STR (pdms_test_1 by default; only pdms's test "
+                                   "databases: the tests drop every table)."),
+        autocompletion=completion.test_dbs,
     ),
     install: Optional[bool] = typer.Option(
         None, "--install/--no-install", "-i/-n",
@@ -137,11 +118,12 @@ def test(
 ) -> None:
     cfg = Config.load()
     target = resolve_project(cfg, service, path)
-    db_name = test_db(cfg, db, start_db)
+    db_name = test_db(db)
+    database = testruns.require_test_db(db_name)
     dev_user = cfg.users[pick(cfg.users, _("user"), user)] if user else None
     dev_mode = ask_dev_mode(target, dev_mode)
-    env = testruns.test_env(cfg, cfg.dbs[db_name], dev_user, dev_mode)
-    console.print(_("Database: {db} ({url})", db=db_name, url=cfg.dbs[db_name].url(mask=True))
+    env = testruns.test_env(cfg, database, dev_user, dev_mode)
+    console.print(_("Database: {db} ({url})", db=db_name, url=database.url(mask=True))
                   + (" · " + _("user {user}", user=user) if user else "")
                   + " · " + (_("development mode on") if dev_mode else _("development mode off")))
     ensure_installed(cfg, target, install)

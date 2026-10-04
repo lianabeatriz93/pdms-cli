@@ -4,8 +4,6 @@
 import { $, act, el, failedText, getJson, icon, iconButton, phaseLabel, repoPath, toast } from "./core.js";
 import { state } from "./state.js";
 import { openLogs } from "./logs.js";
-import { openDb } from "./settings.js";
-import { openSetting } from "./repos.js";
 
 export const testsView = {
   data: null, version: null, show: "affected", selected: new Set(), dbs: null, loading: false, failed: false,
@@ -175,13 +173,12 @@ function paintNoDb() {
   $("tests-nodb").hidden = !none;
   if (!none) return;
   const job = state.jobs[START_DB_JOB];
-  $("tests-start-db").hidden = !testsView.data.compose;
+  $("tests-start-db").hidden = false;
   $("tests-start-db").disabled = Boolean(job && !job.error);
-  $("tests-start-db").textContent = t("Start the test database (docker compose, port {port})", { port: testsView.data.compose_port });
+  $("tests-start-db").textContent = t("Create the test databases (pdms's Postgres in Docker, port {port})", { port: testsView.data.port });
   $("tests-nodb-job").hidden = !job;
   $("tests-nodb-job").className = job && job.error ? "error" : "muted";
   $("tests-nodb-job").textContent = !job ? "" : job.error ? failedText(job) : phaseLabel(job.phase);
-  $("tests-nodb-log").hidden = !job;
 }
 
 export function paintTests() {
@@ -289,14 +286,6 @@ export function showTests(show) {
 
 export function startTestDb() {
   act("/api/tests/start-db", {}, () => toast(t("Starting the test database…"), "info"));
-}
-
-export function startDbLog() {
-  openLogs(START_DB_JOB, "install");
-}
-
-export function addLocalDb() {
-  openSetting("dbs", () => openDb());
 }
 
 // Starting the test database finished: the screen loads the databases again.
