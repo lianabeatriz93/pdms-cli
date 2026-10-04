@@ -729,3 +729,7 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 .tag.dev { color: var(--warn); }
 .tests-dev { display: inline-flex; align-items: center; gap: .3rem; font-size: .84rem; margin-left: .6rem; cursor: pointer; }
 .tests-dev input { accent-color: var(--warn); }
+#req-rows tr.pending td { background: color-mix(in srgb, var(--accent-soft) 35%, var(--surface)); }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-top-color: var(--accent); } }

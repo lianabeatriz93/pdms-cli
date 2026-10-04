@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import http.client
 import json
+import re
 import os
 import threading
 import time
@@ -438,6 +439,27 @@ def test_the_background_proxy_keeps_each_request_for_its_detail(gateway_url, tmp
     assert status == 200
     again = captures.find(logged[2][5], recorder.file)
     assert ["Authorization", "Bearer s3cret"] in again["request"]["headers"]
+
+
+def test_a_request_is_logged_when_it_arrives_with_the_id_of_its_answer(gateway_url, tmp_path):
+    """pdms ui shows a request in progress from its start line, and replaces it with the answer that shares its id."""
+    lines = []
+    port = gateway_url(recorder=captures.Recorder(tmp_path / "requests.jsonl"),
+                       log=lambda *line: lines.append(("end", line)),
+                       log_start=lambda *line: lines.append(("start", line)))
+    call(port, "GET", "/api/v1/leads/tp?page=2")
+    wait_for(lambda: len(lines) == 2)
+    (first, start), (second, end) = lines
+    assert (first, second) == ("start", "end")
+    method, path, target, ident = start
+    assert (method, path, target) == ("GET", "/api/v1/leads/tp", "lead-tp-list@1") and end[5] == ident
+    line = proxy.format_start(*start)
+    assert re.fullmatch(r"\d\d:\d\d:\d\d GET    /api/v1/leads/tp … → lead-tp-list@1 #[0-9a-f]{8}", line)
+    quiet = []  # a proxy that keeps nothing (pdms proxy in a terminal) logs only answers
+    port = gateway_url(log=lambda *line: quiet.append(line), log_start=lambda *line: quiet.append(("start",)))
+    call(port, "GET", "/api/v1/leads/tp")
+    wait_for(lambda: len(quiet) == 1)
+    assert quiet[0][0] == "GET" and quiet[0][5] == ""
 
 
 def test_captures_rotate_and_big_or_binary_bodies_are_not_replayed(tmp_path, monkeypatch):
