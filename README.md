@@ -552,6 +552,25 @@ aws_sns_topic.sns_account_topic.arn` becomes `arn:aws:sns:us-east-1:000000000000
 `peek` shows which topic each message was for; a publish without a topic still lands there as `(no TopicArn)`.
 SNS calls other than publishing go to the local ElasticMQ, which rejects them, instead of the real AWS.
 
+### Emails: seen in pdms ui, or sent to you only
+
+Whatever a service run by pdms sends through SES (`email-notify`, with or without local events) never reaches its
+recipients. By default it never leaves the computer: the service gets the answer AWS would give, and the email is
+written to a readable log. With an address, emails go through the real SES of the chosen AWS profile to that address
+only, whoever they were for (Cc and Bcc dropped), with `[to: <recipients>]` before the subject. pdms then also takes
+`EMAIL_SENDER` from the service's Lambda in that account (`pdms aws`), a sender its SES accepts.
+
+```bash
+pdms config email-to liana.roget@alivi.com   # from the next start of each service
+pdms config email-to ""                      # back to nowhere
+pdms logs emails                             # live: when, service, kept | sent | failed, headers and text
+```
+
+`pdms ui` shows them in Events → Emails (also with local events off): headers, the text with **Copy**, the HTML in
+a sandboxed frame when an email has one (its scripts never run), and in Settings → Defaults (`email_to`). Each email
+also shows in the trace of the request that sent it. Bulk sends are never sent, and neither is an email pdms cannot
+read.
+
 ## Stacks: several services at once
 
 ```bash

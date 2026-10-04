@@ -180,6 +180,10 @@ def ask_defaults(current: Defaults) -> Defaults:
         _("Measure the database time and the queries of each request (pdms ui shows them with the request)?"),
         default=current.query_stats,
     ).unsafe_ask()
+    email_to = questionary.text(
+        _("Send the emails of the services to this address only (empty = to nobody: pdms ui shows them):"),
+        default=current.email_to,
+    ).unsafe_ask()
     env = dict(current.env)
     while questionary.confirm(
         _("Add/edit extra environment variables? (current: {current})", current=", ".join(env) or _("none")),
@@ -197,5 +201,5 @@ def ask_defaults(current: Defaults) -> Defaults:
         smart_install=smart_install if install else current.smart_install, update_check=update_check, events=events_mode, banner=banner,
         ui_at_login=ui_at_login, db_timeout=int(db_timeout), proxy_timeout=int(proxy_timeout),
         proxy_port=int(proxy_port), parallel_requests=parallel_requests, warm_connections=int(warm_connections),
-        query_stats=query_stats, env=env,
+        query_stats=query_stats, email_to=email_to.strip(), env=env,
     )

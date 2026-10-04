@@ -24,7 +24,7 @@ from typing import IO
 from urllib.parse import unquote, urlsplit
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
-from . import awsenv, captures, health, trace, vscode
+from . import awsenv, captures, emails, health, trace, vscode
 from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -352,6 +352,7 @@ def service_env(cfg: Config, launch: ServiceLaunch) -> dict[str, str]:
     if launch.events.kind == "local" and (found := repo_event_map(cfg, launch.service)):
         extra.update(events.topic_env(*found))  # its own topics; the rest of the setup may be a whole stack's
     extra.update(awsenv.env_for(cfg, launch.service))  # AWS_PROFILE and its Lambda's buckets, when a profile is chosen
+    extra.update(emails.env(cfg))  # its SES emails kept for pdms ui, or sent to one address only
     query_stats = cfg.defaults.query_stats and not launch.is_consumer
     # Always: its sitecustomize.py follows the proxy's requests through logs and events (pdms_trace.py) and loads
     # pdms_parallel.py and pdms_queries.py when asked.
@@ -1241,6 +1242,14 @@ def _number(field: str, value: int | str, low: int, high: int) -> int:
     return number
 
 
+def check_email_to(value: str) -> str:
+    """The address emails go to (empty: nowhere), trimmed, or :class:`InvalidValue`."""
+    value = value.strip()
+    if value and not emails.valid_address(value):
+        raise InvalidValue("email_to", _("'{value}' is not an email address", value=value))
+    return value
+
+
 def _one_of(field: str, value: str, choices: Iterable[str]) -> str:
     if value not in choices:
         raise InvalidValue(field, _("Must be one of: {choices}", choices=", ".join(choices)))
@@ -1436,6 +1445,7 @@ def save_defaults(cfg: Config, defaults: Defaults) -> None:
         warm_connections=_number("warm_connections", defaults.warm_connections, 0, MAX_WARM_CONNECTIONS),
         proxy_port=_number("proxy_port", defaults.proxy_port, 1, 65535),
         theme=_one_of("theme", defaults.theme, THEMES),
+        email_to=check_email_to(defaults.email_to),
         env=dict(defaults.env),
     )
     cfg.save()
@@ -1453,6 +1463,12 @@ def set_language(cfg: Config, lang: str) -> None:
     if lang not in LANGUAGES:
         raise ActionError(_("Unknown language '{lang}'. Available: {codes}", lang=lang, codes=", ".join(LANGUAGES)))
     cfg.defaults.language = lang
+    cfg.save()
+
+
+def set_email_to(cfg: Config, address: str) -> None:
+    """Where the emails of the services go from their next start (empty: nowhere, pdms ui shows them)."""
+    cfg.defaults.email_to = check_email_to(address)
     cfg.save()
 
 

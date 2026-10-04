@@ -17,7 +17,7 @@ HEADER = "x-request-id"
 HEADER_NAME = "X-Request-Id"
 ID = re.compile(r"[0-9a-f]{8}")
 MAX_STEPS = 200  # a request that fans out into hundreds of messages shows the first ones
-KINDS = ("sqs", "sns", "consumer")
+KINDS = ("sqs", "sns", "consumer", "email")
 
 
 def path() -> Path:

@@ -11,6 +11,9 @@ one message in that local queue (``pdms events peek pdms-sns``) and answered lik
 machine; with ``PDMS_SNS_LOG`` it is also written there, readable (``pdms logs sns`` and the sns row of ``pdms ui``).
 Other SNS calls go to ElasticMQ, which rejects them, instead of the real AWS.
 
+The emails sent through SES are kept for pdms ui, or sent to one address only, in pdms_email.py (with
+``PDMS_EMAIL_LOG``, which pdms sets on every service it runs).
+
 The speed-ups for slow databases (requests in parallel, connections opened at start) live in pdms_parallel.py, the
 database time and queries of each request in pdms_queries.py, and following one request through logs and events in
 pdms_trace.py.
@@ -178,7 +181,8 @@ def _local_credentials(kwargs, endpoint):
 def _patch() -> None:
     endpoint = os.environ.get("PDMS_SQS_ENDPOINT")
     tracing = bool(os.environ.get("PDMS_TRACE_LOG"))  # SQS sends and SNS publishes timed for pdms ui (pdms_trace.py)
-    if not endpoint and not tracing:
+    emails = bool(os.environ.get("PDMS_EMAIL_LOG"))  # SES sends kept or redirected (pdms_email.py)
+    if not endpoint and not tracing and not emails:
         return
     try:
         import botocore.session
@@ -199,6 +203,11 @@ def _patch() -> None:
             for operation in ("Publish", "PublishBatch"):
                 client.meta.events.register(f"before-parameter-build.sns.{operation}", _capture_params)
                 client.meta.events.register(f"before-call.sns.{operation}", _publish_locally(sns_queue, sns_log))
+        if emails and service_name in ("ses", "sesv2"):
+            # Not in a try: if it cannot watch the client, the service must not send real emails unseen.
+            import pdms_email  # this folder
+
+            pdms_email.watch_client(client, service_name)
         if tracing:
             try:
                 import pdms_trace  # this folder

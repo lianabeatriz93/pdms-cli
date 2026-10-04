@@ -51,6 +51,23 @@ def config_language(
     console.print("[green]✓[/] " + _("Language set to {name}.", name=i18n.LANGUAGES[lang]))
 
 
+@config_app.command("email-to", help=_("Where the emails services send go: an address (only there) or none (only to pdms ui)."))
+def config_email_to(
+    address: Optional[str] = typer.Argument(
+        None, help=_("The address, or \"\" so they go nowhere. Without it: show where they go now.")
+    ),
+) -> None:
+    cfg = Config.load()
+    if address is None:
+        console.print(_("Emails go to {address}.", address=cfg.defaults.email_to) if cfg.defaults.email_to
+                      else _("Emails go nowhere: pdms ui shows them (pdms logs emails)."))
+        return
+    settle(lambda: actions.set_email_to(cfg, address))
+    message = _("Emails go to {address} only.", address=cfg.defaults.email_to) if cfg.defaults.email_to \
+        else _("Emails go nowhere: pdms ui shows them (pdms logs emails).")
+    console.print("[green]✓[/] " + message + " " + _("Services already running change when they restart."))
+
+
 def section_label(section: str) -> str:
     return {
         "defaults": _("defaults"), "users": _("users"), "dbs": _("databases"), "stacks": _("stacks"),

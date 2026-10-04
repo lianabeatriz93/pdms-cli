@@ -2,8 +2,9 @@
 
 The user picks one of the profiles of their AWS config (``defaults.aws_profile``; pdms never assumes one). pdms then
 reads the configuration of that account's Lambdas (``aws lambda list-functions``, read-only) and keeps, for each
-function, only the variables that name a bucket (and its region): the rest of a Lambda's environment holds secrets
-and is never kept. The copy lives in ``<state>/aws-env.json``. A service gets the variables of the Lambda with its
+function, only the variables that name a bucket (and its region) and the address it sends emails from
+(``EMAIL_SENDER``, verified in that account's SES): the rest of a Lambda's environment holds secrets and is never
+kept. The copy lives in ``<state>/aws-env.json``. A service gets the variables of the Lambda with its
 name in the repo's dev Terraform (else the name of its folder) when it starts, without asking AWS again; a variable
 the service's own ``.env`` or ``defaults.env`` sets keeps that value. pdms ui reads the Lambdas again at most once a
 day (:data:`READ_EVERY`) and remembers what changed.
@@ -25,7 +26,7 @@ from . import instances, repos, routes, runner
 from .config import Config, write_private
 from .i18n import _
 
-KEPT = re.compile(r"BUCKET")  # the only variables copied from a Lambda's environment
+KEPT = re.compile(r"BUCKET|^EMAIL_SENDER$")  # the only variables copied from a Lambda's environment
 DEFAULT_REGION = "us-east-1"
 READ_EVERY = 24 * 3600  # seconds between two reads of the Lambdas by pdms ui
 # What the AWS CLI says when the SSO session is over (then `aws sso login` fixes it).
@@ -123,8 +124,13 @@ def login_command(profile: str) -> list[str]:
 # --------------------------------------------------------------------------- the Lambdas' buckets
 
 
+def is_bucket(variable: str) -> bool:
+    """Whether a kept variable names a bucket (not its region, not the email sender)."""
+    return "BUCKET" in variable and "REGION" not in variable
+
+
 def read_functions(profile: str, timeout: float = 180) -> dict[str, dict[str, str]]:
-    """Every Lambda of the account with only its bucket variables (an empty dict when it has none)."""
+    """Every Lambda of the account with only its kept variables (an empty dict when it has none)."""
     out = _aws(profile, ["lambda", "list-functions"], timeout)  # the CLI goes through every page itself
     try:
         listed = json.loads(out).get("Functions", [])
@@ -184,12 +190,12 @@ def refresh(profile: str) -> list[Change]:
         raise AwsError(who.detail, expired=who.state == "expired")
     functions = read_functions(profile)
     saved = load()
-    same = saved.get("account") == who.account and saved.get("functions")
+    same = saved.get("account") == who.account and saved.get("functions") and saved.get("kept") == KEPT.pattern
     changes = compare(saved["functions"], functions) if same else []
     at = now()
     save({
         "profile": profile, "account": who.account, "region": region_of(profile), "read_at": at, "checked_at": at,
-        "functions": functions,
+        "functions": functions, "kept": KEPT.pattern,
         "changes": [vars(c) for c in changes] if changes else saved.get("changes", []) if same else [],
         "changed_at": at if changes else saved.get("changed_at", "") if same else "",
     })
@@ -197,8 +203,9 @@ def refresh(profile: str) -> list[Change]:
 
 
 def due(saved: dict, profile: str, seconds: float = READ_EVERY) -> bool:
-    """Whether pdms ui should read the Lambdas again: never read, another profile, or older than ``seconds``."""
-    if saved.get("profile") != profile or not saved.get("checked_at"):
+    """Whether pdms ui should read the Lambdas again: never read, another profile, kept other variables (an older
+    pdms) or older than ``seconds``."""
+    if saved.get("profile") != profile or not saved.get("checked_at") or saved.get("kept") != KEPT.pattern:
         return True
     try:
         last = datetime.fromisoformat(saved["checked_at"])
@@ -345,14 +352,14 @@ def summary(cfg: Config) -> dict:
     services = [path.relative_to(found_repo[1]).as_posix() for path in runner.find_services_below(found_repo[1])] \
         if found_repo else []
     found = match(services, list(functions), terraform_names(found_repo[0])) if functions and found_repo else Matches()
-    with_buckets = sorted(s for s in services if functions.get(found.of(s)))
+    with_buckets = sorted(s for s in services if any(map(is_bucket, functions.get(found.of(s), {}))))
     return {
         "profile": profile, "profiles": profiles(), "cli": bool(cli()), "region": region_of(profile) if profile else "",
         "account": current.get("account", ""), "read_at": current.get("read_at", ""),
         "checked_at": current.get("checked_at", ""), "functions": len(functions),
         "services": len(services), "with_buckets": len(with_buckets), "named": {s: found.named[s] for s in with_buckets if s in found.named},
         "unmatched": len(found.none),
-        "buckets": sorted({value for f in functions.values() for key, value in f.items() if "REGION" not in key}),
+        "buckets": sorted({value for f in functions.values() for key, value in f.items() if is_bucket(key)}),
         "changes": current.get("changes", []), "changed_at": current.get("changed_at", ""),
         "restart": running_on(current.get("changes", []), current.get("changed_at", ""), cfg),
     }
