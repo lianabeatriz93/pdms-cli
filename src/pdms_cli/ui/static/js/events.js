@@ -1,6 +1,6 @@
 // Events: the local ElasticMQ, its queues and messages, the event types, the local SNS and sending events.
 
-import { $, act, button, dateTime, el, getJson, phaseLabel, post, toast } from "./core.js";
+import { $, act, button, copyText, dateTime, el, getJson, phaseLabel, post, toast } from "./core.js";
 import { state } from "./state.js";
 import { showLogs } from "./logs.js";
 import { openLaunch, servicesCount } from "./launch.js";
@@ -292,14 +292,7 @@ function messageDetails(summary, text) {
   const node = el("details", { class: "msg" }, summary);
   const fill = () => {
     if (node.querySelector("pre")) return;
-    const copy = button(t("Copy"), async () => {
-      try {
-        await navigator.clipboard.writeText(text);
-        toast(t("Copied."), "info");
-      } catch {
-        toast(t("The browser did not allow copying."));
-      }
-    }, { class: "btn tiny copy" });
+    const copy = button(t("Copy"), () => copyText(text, t("Copied.")), { class: "btn tiny copy" });
     node.append(el("div", { class: "msg-body" }, copy, el("pre", {}, jsonView(text))));
   };
   node.addEventListener("toggle", () => { if (node.open) fill(); });
