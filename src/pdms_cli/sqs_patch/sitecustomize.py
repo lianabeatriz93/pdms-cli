@@ -11,8 +11,9 @@ one message in that local queue (``pdms events peek pdms-sns``) and answered lik
 machine; with ``PDMS_SNS_LOG`` it is also written there, readable (``pdms logs sns`` and the sns row of ``pdms ui``).
 Other SNS calls go to ElasticMQ, which rejects them, instead of the real AWS.
 
-The speed-ups for slow databases (requests in parallel, connections opened at start) live in pdms_parallel.py, and
-the database time and queries of each request in pdms_queries.py.
+The speed-ups for slow databases (requests in parallel, connections opened at start) live in pdms_parallel.py, the
+database time and queries of each request in pdms_queries.py, and following one request through logs and events in
+pdms_trace.py.
 """
 
 import base64
@@ -81,7 +82,10 @@ def write_log(path, kept):
             os.replace(path, f"{path}.1")
     except OSError:
         pass
-    extras = [f"{name}={kept[key]}" for name, key in (("group", "MessageGroupId"), ("subject", "Subject")) if kept[key]]
+    extras = [f"{name}={kept[key]}" for name, key in (("group", "MessageGroupId"), ("subject", "Subject"))
+              if kept[key]]
+    if kept.get("RequestId"):
+        extras.append(f"request={kept['RequestId']}")
     if kept["MessageAttributes"]:
         extras.append("attributes=" + json.dumps(kept["MessageAttributes"], sort_keys=True))
     try:
@@ -94,11 +98,23 @@ def write_log(path, kept):
         fh.write(header + "\n" + "".join(f"  {line}\n" for line in message.splitlines()))
 
 
+def _request_id():
+    """The request the service works for (pdms_trace.py), or ""."""
+    try:
+        import pdms_trace
+
+        return pdms_trace.current.get()
+    except Exception:  # noqa: BLE001 - tracing is optional
+        return ""
+
+
 def notification(params, entry=None):
-    """What a ``Publish`` (or one ``PublishBatch`` entry) carried, with where and when it was published."""
+    """What a ``Publish`` (or one ``PublishBatch`` entry) carried, with where and when it was published, and the
+    request it was published for (pdms ui follows a request through its events)."""
     source = entry or params
     arn = params.get("TopicArn") or params.get("TargetArn") or params.get("PhoneNumber") or ""
     return {
+        "RequestId": _request_id(),
         "TopicArn": arn,
         "Topic": arn.rsplit(":", 1)[-1] if arn else "(no TopicArn)",
         "Message": source.get("Message", ""),
@@ -161,7 +177,8 @@ def _local_credentials(kwargs, endpoint):
 
 def _patch() -> None:
     endpoint = os.environ.get("PDMS_SQS_ENDPOINT")
-    if not endpoint:
+    tracing = bool(os.environ.get("PDMS_TRACE_LOG"))  # SQS sends and SNS publishes timed for pdms ui (pdms_trace.py)
+    if not endpoint and not tracing:
         return
     try:
         import botocore.session
@@ -171,17 +188,24 @@ def _patch() -> None:
     if getattr(original, "_pdms_patched", False):
         return
 
-    sns_queue = os.environ.get("PDMS_SNS_QUEUE_URL")
+    sns_queue = os.environ.get("PDMS_SNS_QUEUE_URL") if endpoint else None
     sns_log = os.environ.get("PDMS_SNS_LOG")
 
     def create_client(self, service_name, *args, **kwargs):
-        if service_name == "sqs" or (service_name == "sns" and sns_queue):
+        if endpoint and (service_name == "sqs" or (service_name == "sns" and sns_queue)):
             _local_credentials(kwargs, endpoint)
         client = original(self, service_name, *args, **kwargs)
         if service_name == "sns" and sns_queue:
             for operation in ("Publish", "PublishBatch"):
                 client.meta.events.register(f"before-parameter-build.sns.{operation}", _capture_params)
                 client.meta.events.register(f"before-call.sns.{operation}", _publish_locally(sns_queue, sns_log))
+        if tracing:
+            try:
+                import pdms_trace  # this folder
+
+                pdms_trace.watch_client(client, service_name, local_events=bool(endpoint))
+            except Exception:  # noqa: BLE001 - tracing must never break the client
+                pass
         return client
 
     create_client._pdms_patched = True
@@ -204,5 +228,12 @@ try:
     import pdms_queries  # this folder: database time and queries of each request (see that module)
 
     pdms_queries.install()  # after pdms_parallel: it measures around the thread a request runs in
+except Exception:  # noqa: BLE001 - same as above
+    pass
+
+try:
+    import pdms_trace  # this folder: the request a service works for, through its logs and events (see that module)
+
+    pdms_trace.install()  # last: its id must be current around what the others measure
 except Exception:  # noqa: BLE001 - same as above
     pass

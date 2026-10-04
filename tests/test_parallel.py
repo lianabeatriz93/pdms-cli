@@ -75,7 +75,9 @@ def test_the_service_gets_the_patch_folder_and_its_variables(cfg, monkeypatch, t
     cfg.defaults = replace(cfg.defaults, query_stats=False)
     env = actions.service_env(cfg, plan(cfg, tmp_path, parallel=False))
     assert not {"PDMS_PARALLEL_REQUESTS", "PDMS_WARM_CONNECTIONS", "PDMS_QUERY_STATS"} & set(env)
-    assert str(events.PATCH_DIR) not in env.get("PYTHONPATH", "")  # nothing to load: no patch folder
+    # The patch folder stays: it follows the proxy's requests through logs and events (pdms_trace.py)
+    assert env["PYTHONPATH"].split(os.pathsep)[0] == str(events.PATCH_DIR)
+    assert env["PDMS_TRACE_LOG"].endswith("trace.jsonl")
 
 
 def test_the_instance_remembers_it(cfg, monkeypatch, tmp_path) -> None:

@@ -24,7 +24,7 @@ from typing import IO
 from urllib.parse import unquote, urlsplit
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
-from . import captures, health, vscode
+from . import captures, health, trace, vscode
 from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -352,8 +352,11 @@ def service_env(cfg: Config, launch: ServiceLaunch) -> dict[str, str]:
     if launch.events.kind == "local" and (found := repo_event_map(cfg, launch.service)):
         extra.update(events.topic_env(*found))  # its own topics; the rest of the setup may be a whole stack's
     query_stats = cfg.defaults.query_stats and not launch.is_consumer
+    # Always: its sitecustomize.py follows the proxy's requests through logs and events (pdms_trace.py) and loads
+    # pdms_parallel.py and pdms_queries.py when asked.
+    extra["PYTHONPATH"] = str(events.PATCH_DIR)
+    extra["PDMS_TRACE_LOG"] = str(trace.path())
     if launch.parallel or cfg.defaults.warm_connections or query_stats:
-        extra["PYTHONPATH"] = str(events.PATCH_DIR)  # its sitecustomize.py loads pdms_parallel.py and pdms_queries.py
         if launch.parallel:
             extra["PDMS_PARALLEL_REQUESTS"] = "1"
         if cfg.defaults.warm_connections:
@@ -886,7 +889,7 @@ def proxy_request(ident: str) -> dict:
     running = proxy.running_proxy()
     why = captures.replayable(capture) or ("" if running else _("the proxy is not running"))
     return {"request": captures.public(capture), "curl": captures.curl(capture, running["port"]) if running else "",
-            "replay": why}
+            "replay": why, "steps": trace.steps(ident)}
 
 
 def replay_request(ident: str) -> dict:

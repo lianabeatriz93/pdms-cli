@@ -74,7 +74,8 @@ class Recorder:
 
 def entry(ident: str, method: str, path_: str, status: int, target: str, seconds: float,
           request_headers: list[tuple[str, str]], request_body: bytes | None,
-          response_headers: list[tuple[str, str]], response_body: bytes | None, db: dict | None = None) -> dict:
+          response_headers: list[tuple[str, str]], response_body: bytes | None, db: dict | None = None,
+          started_at: float = 0.0) -> dict:
     kept = {
         "id": ident, "at": datetime.now().isoformat(timespec="seconds"), "method": method, "path": path_,
         "status": status, "target": target, "ms": round(seconds * 1000),
@@ -83,6 +84,8 @@ def entry(ident: str, method: str, path_: str, status: int, target: str, seconds
     }
     if db is not None:
         kept["db"] = db
+    if started_at:
+        kept["started_at"] = round(started_at, 4)  # epoch: the request's events are placed in time from here
     return kept
 
 

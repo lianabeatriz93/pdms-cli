@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
-from . import captures, instances, repos
+from . import captures, instances, repos, trace
 from .config import Config, DevUser
 from .i18n import _
 from .routes import Route, load_routes, match
@@ -301,12 +301,14 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                 headers = [(k, v) for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP]
                 try:
                     gateway.recorder.record(captures.entry(ident, self.command, path, status, target, seconds,
-                                                           headers, sent, answer_headers, answer, db))
+                                                           headers, sent, answer_headers, answer, db,
+                                                           started_at=self.started_at))
                 except OSError:
                     ident = ""  # a full disk must not break the proxy
             gateway.log(self.command, path.split("?", 1)[0], status, target, seconds, ident, db)
 
         capture_id = ""  # given when the request arrives (background proxy): its start and end lines share it
+        started_at = 0.0  # when it arrived (epoch): the steps of its events are placed from there
 
         def forward(self) -> None:
             started, started_at = time.monotonic(), time.time()  # the wall clock places the service's part in time
@@ -338,8 +340,11 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
 
             if gateway.recorder:
                 self.capture_id = captures.new_id()
+                self.started_at = started_at
                 gateway.log_start(self.command, bare, label, self.capture_id)
             headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_BY_HOP}
+            if self.capture_id and not any(k.lower() == trace.HEADER for k in headers):
+                headers[trace.HEADER_NAME] = self.capture_id  # services log it and pass it on (sqs_patch/pdms_trace.py)
             if target.kind == "local":
                 inst = target.instance
                 host, port, scheme, base = "127.0.0.1", inst.port, "http", ""

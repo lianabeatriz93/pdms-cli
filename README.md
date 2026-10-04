@@ -356,7 +356,15 @@ ran each one (it opens VS Code there), pointing out the same query run again and
 what came back (headers, with `Authorization` and cookies hidden, and bodies up to 64 KB), with **Copy as curl**,
 **Replay** (sent through the proxy again, as it came) and **Open the log here** (the local service's log with its lines
 marked). The background proxy keeps them in `proxy-requests.jsonl` in the state folder, readable only by you and never
-more than a few MB. Its routes tab shows where each route goes now, like `pdms proxy routes`. A proxy
+more than a few MB. A request shows as soon as it reaches the proxy, with its time counting, until it is answered.
+
+Each request is followed through the services and events: the background proxy sends it with `X-Request-Id`, and the
+services pdms starts end each line they log for it with `#<id>`, pass the id on in their SQS messages (with local
+events: the broker and the consumers carry it along) and write each SQS send, SNS publish and consumer run to
+`trace.jsonl` in the state folder. The request's **Trace** adds them to its time line, and **Logs of this request**
+opens the log dock with the proxy, the service and those consumers, only that request's lines. The log dock sits under
+every screen: several logs interleaved by time, each with its colour, filtered by level, text or request, hidden to its
+bar when not needed. Its routes tab shows where each route goes now, like `pdms proxy routes`. A proxy
 started in a terminal shows there too, but its requests stay in that terminal. The events screen starts (like
 `pdms events up`, the broker included) and stops the local ElasticMQ, lists every queue with its waiting messages and
 consumer, shows a queue's messages without consuming them, purges them, and sends events (with the fields of the
