@@ -266,6 +266,7 @@
     <button type="button" role="tab" data-tab="queues">Queues</button>
     <button type="button" role="tab" data-tab="types">Event types</button>
     <button type="button" role="tab" data-tab="sns">SNS</button>
+    <button type="button" role="tab" data-tab="emails">Emails</button>
   </div>
 
   <div class="panel" id="events-queues">
@@ -319,6 +320,18 @@
     <div class="messages" id="sns-entries"></div>
     <p class="empty card" id="sns-empty" hidden></p>
     <p class="muted note">With local events, whatever a service publishes to SNS, to any topic, stays here (queue <code>pdms-sns</code>, <code>pdms logs sns</code>) instead of reaching AWS.</p>
+  </div>
+
+  <div class="panel" id="events-emails" hidden>
+    <div class="bar">
+      <input type="search" id="email-filter" placeholder="Filter by recipient, subject or text" aria-label="Filter emails" autocomplete="off">
+      <span class="muted" id="email-count"></span>
+      <button class="btn ghost push" id="email-clear" type="button">Clear</button>
+    </div>
+    <div class="card email-where" id="email-where"></div>
+    <div class="messages" id="email-entries"></div>
+    <p class="empty card" id="email-empty" hidden></p>
+    <p class="muted note">Whatever a service run by pdms sends through SES shows here (<code>pdms logs emails</code>), with or without local events. Services already running change where their emails go when they restart.</p>
   </div>
 </section>
 

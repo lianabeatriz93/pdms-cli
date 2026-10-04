@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, events, frontend, health, i18n, images, instances, proxy, testruns
+from .. import actions, emails, events, frontend, health, i18n, images, instances, proxy, testruns
 from ..config import Config
 from ..logview import LogFollower
 from . import instance as ui_instance
@@ -56,6 +56,10 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
 }
+# An email's HTML (the Emails tab shows it in a sandboxed frame): its inline styles, pictures and fonts, no scripts,
+# no forms, and only inside pdms ui.
+EMAIL_CSP = ("default-src 'none'; style-src 'unsafe-inline' https:; img-src https: data:; font-src https: data:; "
+             "frame-ancestors 'self'; base-uri 'none'; form-action 'none'")
 MAX_BODY = 1024 * 1024  # an imported configuration travels in the body
 LOG_LINES = 200
 MAX_LOG_LINES = 20000  # the local SNS log: a publish takes a line per line of its JSON
@@ -282,6 +286,14 @@ def make_handler(
             if self.command != "HEAD":
                 self.wfile.write(body)
 
+        def email_html(self, ident: str) -> None:
+            """An email's HTML for the frame of the Emails tab: its own styles and pictures, never a script."""
+            html = emails.html_of(ident)
+            if html is None:
+                self.reply(404, "text/plain", b"pdms ui: no such email\n")
+                return
+            self.reply(200, "text/html; charset=utf-8", html.encode("utf-8"), {"Content-Security-Policy": EMAIL_CSP})
+
         def reply_json(self, status: int, data: object) -> None:
             self.reply(status, "application/json", json.dumps(data).encode())
 
@@ -338,6 +350,8 @@ def make_handler(
                 self.stream()
             elif url.path == "/api/services":
                 self.services()
+            elif url.path == "/api/emails/html":
+                self.email_html(parse_qs(url.query).get("id", [""])[0])
             elif url.path == "/api/config":
                 self.reply_json(200, {**ui_jobs.settings(Config.load()), "pick_folder": control.pick_folder is not None})
             elif url.path == "/api/doctor":
@@ -740,6 +754,8 @@ def make_handler(
                 base = proxy.log_path()
             elif key == events.SNS_KEY:
                 base = events.sns_log_path()
+            elif key == emails.KEY:
+                base = emails.log_path()
             elif (inst := instances.load().get(key)) is not None:
                 base = Path(inst.log)
             elif key in (current := jobs.snapshot()) or any(job["log_key"] == key for job in current.values()):
@@ -749,7 +765,7 @@ def make_handler(
             if which == "previous":
                 return instances.previous_log_path(base)
             if which == "install":
-                return None if proxy.is_key(key) or key == events.SNS_KEY else ui_jobs.install_log(key)
+                return None if proxy.is_key(key) or key in (events.SNS_KEY, emails.KEY) else ui_jobs.install_log(key)
             return base if which == "current" else None
 
         def logs(self, query: dict[str, list[str]], live: bool) -> None:

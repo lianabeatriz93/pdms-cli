@@ -10,7 +10,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from .. import __version__, actions, events, frontend, i18n, instances, localcopy, localdb, proxy, repos
+from .. import __version__, actions, emails, events, frontend, i18n, instances, localcopy, localdb, proxy, repos
 from ..config import Config
 from . import updates
 
@@ -213,6 +213,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, 
         "proxy": proxy_state(cfg),
         "events": {"port": cfg.defaults.events_port, "up": events_up},
         "sns": sns_state(cfg, events_up),
+        "emails": {"key": emails.KEY, "to": cfg.defaults.email_to},
         "frontend": frontend_state(cfg),
         "setup": asdict(cfg.setup),
         "setups": {name: asdict(saved) for name, saved in cfg.setups.items()},

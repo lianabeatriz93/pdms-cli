@@ -18,6 +18,7 @@ const SNS_HEADER = /^(\S+) (\S+) → (\S+)(.*)$/; // events' sitecustomize.write
 
 export const eventsView = {
   browse: false, tab: "queues", queues: null, map: null, peek: null, sns: [], snsStream: null, topics: "",
+  emails: [], emailStream: null, emailTab: {}, // emailTab: the text or HTML shown of each open email, by id
   ready: null, readyAt: 0, readyLoading: false, readyFailed: false, // GET /api/events/ready, while they are off
 };
 
@@ -48,10 +49,11 @@ export function paintEvents() {
   const data = eventsView.queues;
   // Off: what local events are and how to start them, instead of tables of dashes (they stay a click away).
   const intro = !up && !busy && !(job && job.error) && !eventsView.browse;
-  $("events-off").hidden = !intro;
-  card.hidden = intro;
-  $("events-tabs").hidden = intro;
-  if (intro) paintEventsOff();
+  // The emails do not depend on local events: the tabs stay while they are off, and the others show what they are.
+  const emailsTab = eventsView.tab === "emails";
+  $("events-off").hidden = !intro || emailsTab;
+  card.hidden = intro || emailsTab;
+  if (intro && !emailsTab) paintEventsOff();
   const queues = data && data.queues ? data.queues.length : eventsView.ready && eventsView.ready.queues;
   $("events-off-browse").textContent = queues ? t("See the {n} queues", { n: queues }) : t("See the queues");
   if (up) {
@@ -80,8 +82,11 @@ export function paintEvents() {
   $("events-queues").hidden = intro || eventsView.tab !== "queues";
   $("events-types").hidden = intro || eventsView.tab !== "types";
   $("events-sns").hidden = intro || eventsView.tab !== "sns";
+  $("events-emails").hidden = !emailsTab;
   if (eventsView.tab === "queues") paintQueues(); // a consumer's start shows as it goes
+  if (emailsTab) paintEmailWhere();
   syncSns();
+  syncEmails();
 }
 
 export function showEventsTab(tab) {
@@ -494,6 +499,147 @@ export function paintSns() {
     ? state && state.events.up ? t("Nothing was published to the local SNS yet. Services started with local events publish here.") : t("Nothing published locally yet. Start the local events, then the services that publish.")
     : t("No publish matches the filter.");
   $("sns-empty").hidden = shown.length > 0;
+}
+
+// ---- emails: emails.log (sqs_patch/pdms_email.py), followed while the tab is open
+
+const EMAIL_HEADER = /^(\S+) (\S+) (kept|sent|failed) ([0-9a-f]{12})(?: #(\S+))?$/;
+const EMAIL_HTML = "--- HTML ---";
+const EMAIL_LINES = 20000;
+const MAX_EMAILS = 1000;
+
+function syncEmails() {
+  const wanted = currentView() === "events" && eventsView.tab === "emails";
+  if (wanted && !eventsView.emailStream) {
+    const stream = eventsView.emailStream = new EventSource(`/api/logs/stream?${new URLSearchParams({ key: "emails", lines: EMAIL_LINES })}`);
+    stream.onopen = () => { eventsView.emails = []; paintEmails(); };
+    stream.addEventListener("lines", (event) => addEmails(JSON.parse(event.data)));
+    stream.addEventListener("reset", () => { eventsView.emails = []; paintEmails(); }); // the log rotated
+  } else if (!wanted && eventsView.emailStream) {
+    eventsView.emailStream.close();
+    eventsView.emailStream = null;
+  }
+}
+
+// Where emails go now: the setting, and how to change it.
+function paintEmailWhere() {
+  const to = state.emails && state.emails.to;
+  const settings = button(t("Change in Settings"), () => openEmailSetting(), { class: "btn small ghost" });
+  $("email-where").replaceChildren(to
+    ? el("p", {}, el("span", { class: "st ok" }, t("to {address}", { address: to })), " ",
+      t("Services send their emails to this address only, through the real SES, with who they were for in the subject."), " ", settings)
+    : el("p", {}, el("span", { class: "st off" }, t("not sent")), " ",
+      t("Emails never leave this computer: they only show here. To get them in your inbox, give your address."), " ", settings));
+}
+
+// Settings → Defaults, filtered to the row of the address (the screen paints it when it loads).
+async function openEmailSetting() {
+  const { settingsView } = await import("./settings.js");
+  settingsView.tab = "defaults";
+  $("defaults-filter").value = "email_to";
+  location.hash = "#settings";
+}
+
+function addEmails(lines) {
+  for (const line of lines) {
+    const match = EMAIL_HEADER.exec(line);
+    if (match) {
+      eventsView.emails.push({ time: match[1], service: match[2], status: match[3], id: match[4], request: match[5] || "",
+        fields: {}, text: [], html: [], part: "fields" });
+      continue;
+    }
+    const last = eventsView.emails[eventsView.emails.length - 1];
+    if (!last || (line && !line.startsWith(" "))) continue;
+    const content = line.slice(2);
+    if (last.part === "fields") {
+      if (!content) { last.part = "text"; continue; }
+      const cut = content.indexOf(": ");
+      if (cut > 0) last.fields[content.slice(0, cut)] = content.slice(cut + 2);
+    } else if (last.part === "text" && content === EMAIL_HTML) {
+      last.part = "html";
+      if (last.text.length && !last.text[last.text.length - 1]) last.text.pop(); // the blank line before the mark
+    } else {
+      last[last.part].push(content);
+    }
+  }
+  if (eventsView.emails.length > MAX_EMAILS * 1.2) eventsView.emails = eventsView.emails.slice(-MAX_EMAILS);
+  paintEmails();
+}
+
+const EMAIL_FIELDS = { From: N_("From"), To: N_("To"), Cc: N_("Cc"), Bcc: N_("Bcc"), "Sent to": N_("Sent to"), Error: N_("Error"), Note: N_("Note") };
+const EMAIL_STATUS = { kept: ["off", N_("not sent")], sent: ["ok", N_("sent")], failed: ["stopped", N_("failed")] };
+
+function emailText(entry) {
+  return [entry.service, entry.request, ...Object.values(entry.fields), ...entry.text].join("\n").toLowerCase();
+}
+
+function emailBody(entry) {
+  const fields = Object.entries(entry.fields).filter(([name]) => name !== "Subject");
+  const head = el("dl", { class: "email-head" }, ...fields.flatMap(([name, value]) => [el("dt", {}, EMAIL_FIELDS[name] ? t(EMAIL_FIELDS[name]) : name), el("dd", {}, value)]));
+  const text = entry.text.join("\n");
+  const html = entry.html.length > 0;
+  const shown = html && eventsView.emailTab[entry.id] === "html" ? "html" : "text";
+  const view = el("div", { class: "msg-body" });
+  const paint = (which) => {
+    eventsView.emailTab[entry.id] = which;
+    for (const tab of tabs.children) tab.setAttribute("aria-selected", String(tab.dataset.tab === which));
+    view.replaceChildren(which === "html"
+      ? el("iframe", { class: "email-html", sandbox: "", referrerpolicy: "no-referrer", title: t("The email as HTML"),
+        src: `/api/emails/html?${new URLSearchParams({ id: entry.id })}` })
+      : el("pre", {}, text || t("(no text)")),
+    button(t("Copy"), () => copyText(which === "html" ? entry.html.join("\n") : text, t("Copied.")), { class: "btn tiny copy" }));
+  };
+  const tabs = el("div", { class: "tabs email-tabs", role: "tablist" },
+    button(t("Text"), () => paint("text"), { class: "btn small ghost", role: "tab", "data-tab": "text" }),
+    button(t("HTML"), () => paint("html"), { class: "btn small ghost", role: "tab", "data-tab": "html" }));
+  paint(shown);
+  return [head, ...(html ? [tabs] : []), view];
+}
+
+function emailEntry(entry) {
+  const [kind, label] = EMAIL_STATUS[entry.status];
+  const to = entry.fields.To || t("nobody");
+  const node = el("details", { class: "msg" },
+    el("summary", {},
+      el("time", { class: "mono muted", datetime: entry.time }, dateTime(entry.time)),
+      el("span", { class: `st ${kind}` }, t(label)),
+      el("b", {}, entry.fields.Subject || t("(no subject)")),
+      el("span", { class: "muted" }, entry.fields["Sent to"] ? t("for {to}, sent to {address}", { to, address: entry.fields["Sent to"] }) : t("for {to}", { to })),
+      el("span", { class: "muted" }, t("from {service}", { service: entry.service })),
+      entry.request ? el("span", { class: "attr" }, `#${entry.request}`) : "",
+    ));
+  const fill = () => {
+    if (node.querySelector(".msg-body")) return;
+    node.append(...emailBody(entry));
+  };
+  node.addEventListener("toggle", () => { if (node.open) fill(); });
+  node.fill = fill;
+  return node;
+}
+
+export function paintEmails() {
+  const text = $("email-filter").value.trim().toLowerCase();
+  const open = new Set([...$("email-entries").querySelectorAll("details[open]")].map((node) => node.dataset.id));
+  const shown = [];
+  for (let i = eventsView.emails.length - 1; i >= 0 && shown.length < 300; i--) {
+    const entry = eventsView.emails[i];
+    if (!text || emailText(entry).includes(text)) shown.push(entry);
+  }
+  $("email-entries").replaceChildren(...shown.map((entry) => {
+    const node = emailEntry(entry);
+    node.dataset.id = entry.id;
+    if (open.has(entry.id)) {
+      node.fill();
+      node.open = true;
+    }
+    return node;
+  }));
+  const total = eventsView.emails.length;
+  $("email-count").textContent = !total ? ""
+    : shown.length < 300 ? t("{shown} of {total} emails", { shown: shown.length, total }) : t("latest 300 of {total} emails", { total });
+  $("email-empty").textContent = !total ? t("No email yet. Services pdms starts show here whatever they send through SES (email-notify, for one).")
+    : t("No email matches the filter.");
+  $("email-empty").hidden = shown.length > 0;
 }
 
 // ---- start, stop and send
