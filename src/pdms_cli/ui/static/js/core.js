@@ -43,6 +43,7 @@ export function phaseLabel(phase) {
   if (verb === "starting") return what ? t("starting {what}…", { what }) : t("starting…");
   if (verb === "building") return what ? t("building {what}…", { what }) : t("building…");
   if (verb === "restarting") return t("restarting…");
+  if (verb === "copying") return t("copying… (pg_dump, migrations)");
   if (verb === "waiting") return t("waiting for its turn…");
   return text;
 }

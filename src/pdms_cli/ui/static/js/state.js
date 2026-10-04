@@ -14,6 +14,7 @@ import { doctorView, loadDoctor, paintDoctor, paintDoctorBadge } from "./doctor.
 import { currentView } from "./router.js";
 import { paintStatus } from "./status.js";
 import { syncTests, watchStartDb } from "./tests.js";
+import { syncData } from "./data.js";
 
 export let state = null;
 
@@ -87,6 +88,7 @@ export function paint(next) {
   paintEvents();
   syncTests();
   watchStartDb();
+  syncData();
   if (wasUp !== undefined && wasUp !== eventsView.up && currentView() === "events") showEventsTab(eventsView.tab);
   if (logs.sources.length) paintDock();
   syncSettings();

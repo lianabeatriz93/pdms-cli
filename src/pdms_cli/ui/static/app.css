@@ -758,3 +758,19 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 .c0 { color: var(--accent); } .c1 { color: var(--db); } .c2 { color: var(--warn); } .c3 { color: var(--ok); } .c4 { color: var(--bad); } .c5 { color: var(--muted); }
 .logs-text .src { font-weight: 600; }
 @media (max-width: 640px) { .dock .logs-text { height: 40vh; } .dock input[type="search"] { width: 100%; } }
+
+/* Data */
+.data-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; align-items: start; }
+@media (max-width: 1080px) { .data-grid { grid-template-columns: minmax(0, 1fr); } }
+.data-card { padding: .2rem 0 .8rem; display: grid; gap: .6rem; }
+.data-card > .panel-head, .data-card > .note, .data-card > .bar-actions, .data-card > p, .data-card > form, .data-card > .btn { margin: 0 1rem; }
+.data-card > .tbl { border: 0; border-radius: 0; border-top: 1px solid var(--line); }
+.data-card .panel-head { display: flex; align-items: center; gap: .6rem; padding-top: .6rem; }
+.data-card .panel-head h2 { margin: 0; font-size: .95rem; }
+.data-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .3rem 1rem; margin: 0 1rem; font-size: .85rem; }
+.data-facts dt { color: var(--muted); }
+.data-facts dd { margin: 0; overflow-wrap: anywhere; }
+.data-snap-form { display: flex; flex-wrap: wrap; gap: .5rem; }
+.data-snap-form input { flex: 1 1 12rem; min-width: 0; font: inherit; font-size: .85rem; padding: .3rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+#data-dbs td.num .slow { color: var(--warn); font-weight: 600; }
+.data-card .bar-actions { flex-wrap: wrap; }

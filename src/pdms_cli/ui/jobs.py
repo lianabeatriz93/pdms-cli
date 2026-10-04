@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .. import __version__, actions, events, frontend, i18n, instances, proxy, repos, routes, runner, transfer, update
-from .. import localdb, migrations, testruns, userimport
+from .. import localcopy, localdb, migrations, testruns, userimport
 from ..config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from ..i18n import _
 from . import state as ui_state
@@ -30,6 +30,7 @@ EVENTS_KEY = "events:elasticmq"  # the job of pdms events up/down (not an instan
 HOME_KEY = "home"  # the job of Home's Start everything / Stop everything
 REPO_KEY = "repo"  # the job of switching the current repo (stopping or moving what ran from the old one)
 TESTS_DB_KEY = "tests:db"  # the job of starting pdms's Postgres and creating its test databases
+DATA_KEY = "data:postgres"  # the jobs of the Data screen on pdms's Postgres (start, stop, refresh the local copy)
 SWITCH_CHOICES = ("keep", "stop", "move")
 
 
@@ -147,6 +148,48 @@ class Jobs:
             testruns.prepare_test_dbs()
 
         return self.run(TESTS_DB_KEY, "start", "starting", work)
+
+    # ------------------------------------------------------------------ data
+
+    def postgres(self, verb: str) -> Job:
+        """Start or stop pdms's Postgres (``pdms db local up/down``); starting also creates the test databases."""
+        if verb not in ("up", "down"):
+            raise actions.ActionError("verb must be up or down")
+
+        def work(job: Job) -> None:
+            if verb == "up":
+                self.phase(job, "starting")
+                testruns.prepare_test_dbs()
+            else:
+                self.phase(job, "stopping")
+                localdb.down()
+
+        return self.run(DATA_KEY, "start" if verb == "up" else "stop", "starting" if verb == "up" else "stopping",
+                        work)
+
+    def refresh_copy(self, body: dict) -> Job:
+        """``pdms db local refresh`` in a job, its output in the install log of the Data screen's key."""
+        cfg = Config.load()
+        alias = _text(body, "from", localcopy.SOURCE_ALIAS)
+        database = _text(body, "database", localcopy.SOURCE_DATABASE)
+        localcopy.source(cfg, alias, database)  # an unknown alias or a bad name is said now, not in the job
+        using = localcopy.using_copy(cfg) if localdb.state()["running"] else []
+        if using and body.get("confirmed") is not True:
+            raise actions.Decision(_("{n} running services use the local copy ({keys}): their connections end while "
+                                     "it is replaced.", n=len(using), keys=", ".join(using)))
+        try:
+            repo = actions.current_migrations_repo(cfg) if body.get("migrate", True) else None
+        except actions.ActionError:
+            repo = None  # no migrations repo: copied as the source has it
+
+        def work(job: Job) -> None:
+            log = install_log(DATA_KEY)
+            log.parent.mkdir(parents=True, exist_ok=True)
+            self.phase(job, "copying", installed=True, log_key=DATA_KEY)
+            with open(log, "w", encoding="utf-8", errors="replace") as output:
+                localcopy.refresh(cfg, output, alias=alias, database=database, migrations_repo=repo)
+
+        return self.run(DATA_KEY, "refresh", "copying", work)
 
     # ------------------------------------------------------------------ repos
 
@@ -989,6 +1032,61 @@ def tests_info(cfg: Config, tests: Tests) -> dict:
         "port": localdb.PORT,
         "root": str(root),
     }
+
+
+def data_info(cfg: Config) -> dict:
+    """The Data screen: the databases, pdms's Postgres with the local copy, its snapshots and the test databases."""
+    pg = localdb.state()
+    sizes: dict[str, int] = {}
+    if pg["running"]:
+        try:
+            sizes = localdb.databases()
+        except actions.ActionError:
+            sizes = {}
+    copy_port = pg["port"] or localdb.PORT
+    copy_alias = next((name for name, db in cfg.dbs.items() if migrations.is_local(db)
+                       and (db.port, db.database) == (copy_port, localdb.MAIN_DB)), "")
+    try:
+        snapshots = localcopy.snapshots() if pg["running"] else []
+    except actions.ActionError:
+        snapshots = []
+    return {
+        "dbs": [{"name": name, "host": db.host, "port": db.port, "database": db.database, "protected": db.protected,
+                 "local": migrations.is_local(db), "copy": name == copy_alias}
+                for name, db in cfg.dbs.items()],
+        "postgres": {**pg, "container": localdb.CONTAINER, "volume": localdb.VOLUME, "image": localdb.IMAGE,
+                     "user": localdb.USER, "default_port": localdb.PORT},
+        "copy": {"alias": copy_alias, "size": sizes.get(localdb.MAIN_DB), "refresh": localcopy.load_state().get("refresh"),
+                 "source": f"{localcopy.SOURCE_ALIAS}:{localcopy.SOURCE_DATABASE}"},
+        "snapshots": snapshots,
+        "tests": [{"name": name, "size": sizes.get(name, 0)} for name in localdb.test_databases(sizes)] if sizes else [],
+        "test_count": localdb.TEST_COUNT,
+    }
+
+
+def data_action(verb: str, body: dict) -> dict:
+    """Snapshots and test databases: quick, so answered right away."""
+    name = _text(body, "name")
+    if verb == "snapshot-save":
+        return localcopy.save_snapshot(name)
+    if verb == "snapshot-restore":
+        localcopy.restore_snapshot(name)
+        return {}
+    if verb == "snapshot-delete":
+        localcopy.delete_snapshot(name)
+        return {}
+    if verb == "tests-recreate":
+        localdb.recreate_test_database(name)
+        return {}
+    if verb == "tests-count":
+        count = body.get("count")
+        if not isinstance(count, int) or isinstance(count, bool) or not 0 <= count <= 20:
+            raise actions.ActionError("count must be a number from 0 to 20")
+        names = testruns.prepare_test_dbs(count)
+        for extra in names[count:]:
+            localdb.remove_test_database(extra)
+        return {"tests": names[:count]}
+    raise actions.ActionError(f"unknown action {verb}")
 
 
 def migration_status(body: dict) -> dict:

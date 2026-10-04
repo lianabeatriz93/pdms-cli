@@ -345,6 +345,8 @@ def make_handler(
                     self.reply_json(200, {"notes": ui_updates.notes(parse_qs(url.query).get("version", [""])[0])})
                 except actions.ActionError as exc:
                     self.reply_json(502, {"error": plain(exc.message)})
+            elif url.path == "/api/data":
+                self.reply_json(200, ui_jobs.data_info(Config.load()))
             elif url.path == "/api/tests":
                 try:
                     self.reply_json(200, ui_jobs.tests_info(Config.load(), jobs.tests))
@@ -522,6 +524,12 @@ def make_handler(
                 if control.pick_folder is None:
                     return 404, {"error": "only in the window"}
                 return 200, {"path": control.pick_folder(str(body.get("start") or ""))}
+            if path in ("/api/data/up", "/api/data/down"):
+                return 202, {"job": jobs.postgres(path.rsplit("/", 1)[-1]).key}
+            if path == "/api/data/refresh":
+                return 202, {"job": jobs.refresh_copy(body).key}
+            if path.startswith("/api/data/") and path.count("/") == 3:
+                return 200, ui_jobs.data_action(path.rsplit("/", 1)[-1], body)
             if path == "/api/tests/run":
                 return 202, jobs.run_tests(body)
             if path == "/api/tests/stop":
