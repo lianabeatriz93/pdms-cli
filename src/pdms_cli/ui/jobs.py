@@ -982,15 +982,19 @@ def repo_consumers(root: Path) -> list[str]:
 
 
 def save_stack(name: str, services: list[str], user: str, db: str, new: bool,
-               overrides: dict[str, dict[str, str]] | None = None) -> None:
-    """Create (``new``) or replace a stack; the services must exist in the current repo. Without ``overrides`` an
-    existing stack keeps its own (for the services it still has)."""
+               overrides: dict[str, dict[str, str]] | None = None, rename: str = "") -> str:
+    """Create (``new``) or replace a stack, and give an existing one another name (``rename``); the services must
+    exist in the current repo. Without ``overrides`` an existing stack keeps its own (for the services it still has).
+    The stack's name afterwards."""
     cfg = Config.load()
     name = name.strip()
+    rename = rename.strip()
     if new:
         actions.check_alias(name, cfg.stacks)
     else:
         actions.require(cfg.stacks, _("stack"), name)
+        if rename and rename != name:
+            actions.check_alias(rename, cfg.stacks)  # before saving anything
     _root, known = repo_services(cfg)
     unknown = [svc for svc in services if svc not in known]
     if unknown:
@@ -998,6 +1002,13 @@ def save_stack(name: str, services: list[str], user: str, db: str, new: bool,
     if overrides is None:
         overrides = {} if new else dict(cfg.stacks[name].overrides)
     actions.save_stack(cfg, name, Stack(services=list(dict.fromkeys(services)), user=user, db=db, overrides=overrides))
+    return actions.rename_stack(cfg, name, rename) if not new and rename else name
+
+
+def stack_from_running() -> dict:
+    """What the editor starts from to keep the running services as a new stack (see actions.stack_from_running)."""
+    cfg = Config.load()
+    return asdict(actions.stack_from_running(cfg, backend(cfg)))
 
 
 def remove_stack(name: str) -> None:

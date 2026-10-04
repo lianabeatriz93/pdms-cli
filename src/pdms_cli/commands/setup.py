@@ -220,7 +220,7 @@ def setup_stacks() -> None:
     setup_step(_("Stacks"))
     if questionary.confirm(_("Create a stack (services you usually start together) now?"), default=False).unsafe_ask():
         try:
-            stack_add()
+            stack_add(None, False)
         except typer.Exit:
             pass
     else:

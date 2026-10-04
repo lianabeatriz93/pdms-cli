@@ -149,9 +149,9 @@ def test_the_stack_editor_keeps_the_exceptions_unless_it_sends_them(ui, machine,
     monkeypatch.setattr(ui_jobs, "repo_services", lambda cfg: (Path("/r"), ["a", "b"]))
     machine.stacks["s"] = Stack(services=["a", "b"], overrides={"b": {"user": "boss"}})
     port = ui[0]
-    assert post(port, "/api/stacks/s/save", {"services": ["a", "b"]}) == (200, {})
+    assert post(port, "/api/stacks/s/save", {"services": ["a", "b"]}) == (200, {"name": "s"})
     assert machine.stacks["s"].overrides == {"b": {"user": "boss"}}
-    assert post(port, "/api/stacks/s/save", {"services": ["a", "b"], "overrides": {}}) == (200, {})
+    assert post(port, "/api/stacks/s/save", {"services": ["a", "b"], "overrides": {}}) == (200, {"name": "s"})
     assert machine.stacks["s"].overrides == {}
     assert post(port, "/api/stacks/s/save", {"services": ["a"], "overrides": {"a": {"user": 3}}})[0] == 400
 
