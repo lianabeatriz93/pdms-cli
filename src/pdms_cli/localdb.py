@@ -147,6 +147,7 @@ def recreate_test_database(name: str) -> None:
 def available(timeout: float = 15) -> bool:
     """Whether the container runs and answers (without starting it)."""
     try:
-        return state()["running"] and _docker("exec", CONTAINER, "pg_isready", "-U", USER, timeout=timeout)[0] == 0
+        return state()["running"] and _docker("exec", CONTAINER, "pg_isready", "-U", USER, "-d", MAIN_DB,
+                                              timeout=timeout)[0] == 0
     except (OSError, subprocess.SubprocessError):
         return False

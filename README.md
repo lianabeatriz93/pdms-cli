@@ -609,6 +609,9 @@ pdms test core -d pdms_test_2 -u supervisor  # a package too; another test datab
 pdms db local up                         # pdms's own Postgres (Docker, :5440) with 4 empty test databases
 pdms db local status                     # its databases and their size
 pdms db local tests 6 --recreate pdms_test_1  # have 6 of them; recreate one empty
+pdms db local refresh                    # copy pdm_template_dev (web-dev's server, read only) as alias pdms-local
+pdms db local snapshot save fresh        # keep the copy as it is…
+pdms db local snapshot restore fresh     # …and come back to it in a second
 pdms test lead-tp-create --dev-mode      # DEVELOPMENT_MODE on (no token check); off by default, as deployed
 pdms migrate -d web-dev                  # flyway info: applied and pending migrations (read-only)
 pdms migrate validate -d web-dev         # flyway validate, like the pipeline (pending ones are not errors)
@@ -619,7 +622,15 @@ Tests only ever run on **pdms's test databases** (`pdms_test_1` … in pdms's ow
 container on port 5440 with its data in the `pdms-postgres-data` volume): the integration tests drop and create every
 table of the database they get, so a database that keeps data — web-dev, or a local one like `pdms_sync` — would be
 wiped. pdms always sets `DB_PG_CONNECTION_STR` to one of them, so a service's `.env` is never used, and refuses any
-other database. Without them, `pdms test` offers to start that Postgres and create them (`pdms db local up`). Tests run
+other database. Without them, `pdms test` offers to start that Postgres and create them (`pdms db local up`).
+
+The same Postgres keeps a **local copy** to run services on without the slow round trips of web-dev:
+`pdms db local refresh` copies `pdm_template_dev` (the schema, its Flyway history and the reference data) from the
+server of the `web-dev` alias — only read, with `pg_dump` from the Postgres image, through the same tunnel as the
+services — into its `pdms` database, builds the `configuration` schema from the repo's migrations (the dev user cannot
+read it), applies the repo's pending migrations and registers the alias `pdms-local`. Snapshots keep it and bring it
+back in about a second. Flyway's `migrate` from pdms holds a session lock (`postgresql.transactional.lock=false`): with
+a transaction lock, a migration with `CREATE INDEX CONCURRENTLY` waits for Flyway's own lock forever. Tests run
 with `DEVELOPMENT_MODE` off (a service's `.env` usually turns it on, and with it the token is not checked, so tests
 of unauthorized requests fail): when the `.env` turns it on, `pdms test` asks, `--dev-mode` / `--no-dev-mode`
 answer it, and the Tests screen has a Development mode checkbox; each result says how it ran. Each run keeps
