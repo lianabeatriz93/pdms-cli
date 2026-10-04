@@ -152,8 +152,35 @@ export async function getJson(path) {
   }
 }
 
-export function copyText(text, done) {
-  navigator.clipboard.writeText(text).then(() => toast(done, "info"), () => toast(t("The browser did not allow copying.")));
+// The old copy command first, allowed during the click: in pdms ui --window on Linux (Qt WebEngine) the clipboard
+// API asks for a permission that pywebview's handler fails to answer, and its promise never settles.
+export async function copyText(text, done) {
+  if (!copyByCommand(text)) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      toast(t("The browser did not allow copying."));
+      return;
+    }
+  }
+  toast(done, "info");
+}
+
+function copyByCommand(text) {
+  const area = el("textarea", { readonly: "", style: "position:fixed;top:0;left:0;opacity:0" });
+  area.value = text;
+  const focused = document.activeElement;
+  document.body.append(area);
+  area.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+  area.remove();
+  if (focused && focused.focus) focused.focus();
+  return copied;
 }
 
 // An action that needs Docker images pdms does not have yet: say which and how big, and download them only if the

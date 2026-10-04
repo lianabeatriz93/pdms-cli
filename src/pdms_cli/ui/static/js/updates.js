@@ -1,6 +1,6 @@
 // Updates of pdms: the title bar chip, the release notes and Update and restart.
 
-import { $, el, failedText, getJson, phaseLabel, post, toast } from "./core.js";
+import { $, copyText, el, failedText, getJson, phaseLabel, post, toast } from "./core.js";
 import { state } from "./state.js";
 
 export const UPDATE_JOB = "update";
@@ -186,11 +186,6 @@ export async function submitUpdate(event) {
   }
 }
 
-export async function copyCommand() {
-  try {
-    await navigator.clipboard.writeText(state.update.command);
-    toast(t("Copied."), "info");
-  } catch {
-    toast(t("The browser did not allow copying."));
-  }
+export function copyCommand() {
+  copyText(state.update.command, t("Copied."));
 }
