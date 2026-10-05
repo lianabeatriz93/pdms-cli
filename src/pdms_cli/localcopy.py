@@ -2,9 +2,9 @@
 
 The refresh copies a source database (by default ``pdm_template_dev`` on the server of the ``web-dev`` alias: the
 schema with its Flyway history and the reference data) into the ``pdms`` database of pdms's Postgres, then applies
-the migrations of the repo it does not have yet, and registers the alias ``pdms-local`` for it. Only ``public`` is
-copied: the ``configuration`` schema (which the dev user may not read) is built from the repo's own migrations
-first, since public's views use it. The source is only
+the migrations of the repo it does not have yet, and registers the alias ``pdms-local`` for it. ``public`` is
+copied, and ``configuration`` too when the source's user may read all of it; otherwise ``configuration`` is built
+from the repo's own migrations first, since public's views use it. The source is only
 read: ``pg_dump`` runs in a throwaway container of the same Postgres image (nothing to install), on the host's
 network so it goes through the same tunnel as the services.
 
@@ -32,8 +32,9 @@ from .i18n import _
 ALIAS = "pdms-local"
 SOURCE_ALIAS = "web-dev"
 SOURCE_DATABASE = "pdm_template_dev"
-# Copied from the source: public. configuration is created and filled by the repo's own migrations (510.01–05) and
-# the dev user may not read it, so it is built from them in the copy; backup_data only keeps old migrations' backups.
+# Copied from the source: public, and configuration when its user may read every table and sequence there; else
+# configuration is built in the copy from the repo's own migrations that create and fill it (510.01–05).
+# backup_data only keeps old migrations' backups and is never copied.
 COPIED_SCHEMAS = ("public",)
 REBUILT_SCHEMAS = ("configuration",)
 SNAPSHOT_PREFIX = "pdms_snap_"
@@ -68,7 +69,41 @@ def source(cfg: Config, alias: str = SOURCE_ALIAS, database: str = SOURCE_DATABA
     return replace(cfg.dbs[alias], database=database)
 
 
-def dump_command(db: Database) -> list[str]:
+def unreadable(db: Database, schema: str, timeout: int = 30) -> list[str]:
+    """What of ``schema`` the source's user may not read (tables and sequences, or the schema itself); [] if all."""
+    import psycopg
+
+    with psycopg.connect(host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password,
+                         connect_timeout=timeout) as conn:
+        conn.read_only = True
+        if not conn.execute("select to_regnamespace(%s) is not null and has_schema_privilege(%s, 'USAGE')",
+                            [f'"{schema}"', schema]).fetchone()[0]:
+            return [schema]
+        rows = conn.execute(
+            "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace "
+            "where n.nspname = %s and c.relkind in ('r', 'p', 'v', 'm', 'S') "
+            "and not has_table_privilege(c.oid, 'SELECT') order by 1", [schema]).fetchall()
+    return [f"{schema}.{name}" for (name,) in rows]
+
+
+def schemas_to_copy(db: Database, output: IO[str]) -> tuple[list[str], list[str]]:
+    """The schemas pg_dump takes from ``db`` and the ones to build from the repo's migrations instead."""
+    copied, rebuilt = list(COPIED_SCHEMAS), []
+    for schema in REBUILT_SCHEMAS:
+        try:
+            missing = unreadable(db, schema)
+        except Exception as exc:  # noqa: BLE001 - pg_dump says it better if the source cannot be reached at all
+            missing = [str(exc).splitlines()[0] if str(exc) else type(exc).__name__]
+        if missing:
+            output.write(_("{schema} is built from the repo's migrations: {user} may not read {what}.", schema=schema,
+                           user=db.user, what=", ".join(missing)) + "\n")
+            rebuilt.append(schema)
+        else:
+            copied.append(schema)
+    return copied, rebuilt
+
+
+def dump_command(db: Database, schemas: tuple[str, ...] | list[str] = COPIED_SCHEMAS) -> list[str]:
     """``docker run`` of pg_dump (custom format, to stdout) for ``db``; the password travels as PGPASSWORD."""
     host = db.host.strip()
     network: list[str] = []
@@ -85,7 +120,7 @@ def dump_command(db: Database) -> list[str]:
     return [
         "docker", "run", "--rm", *network, "-e", "PGPASSWORD", localdb.IMAGE,
         "pg_dump", "-h", host, "-p", str(db.port), "-U", db.user, "-d", db.database,
-        "--format=custom", "--no-owner", "--no-acl", *(f"--schema={schema}" for schema in COPIED_SCHEMAS),
+        "--format=custom", "--no-owner", "--no-acl", *(f"--schema={schema}" for schema in schemas),
         "--extension=*",  # with --schema, extensions (pg_trgm for the gin indexes) would be left out
     ]
 
@@ -101,10 +136,10 @@ def schema_migrations(repo: Path, schema: str) -> list[Path]:
     return [path for _key, path in sorted(found)]
 
 
-def rebuild_schemas(repo: Path, output: IO[str]) -> list[str]:
+def rebuild_schemas(repo: Path, output: IO[str], schemas: tuple[str, ...] | list[str] = REBUILT_SCHEMAS) -> list[str]:
     """Create the schemas the copy does not take from the source, running their migrations in the copy."""
     ran = []
-    for schema in REBUILT_SCHEMAS:
+    for schema in schemas:
         for path in schema_migrations(repo, schema):
             output.write(f"$ psql -f {path.name}\n")
             output.flush()
@@ -165,8 +200,10 @@ def refresh(cfg: Config, output: IO[str], *, alias: str = SOURCE_ALIAS, database
     # Replaced, not merged: the copy is what the source has. Its connections end (services reconnect).
     localdb.psql(f'drop database if exists "{localdb.MAIN_DB}" with (force)')
     localdb.psql(f'create database "{localdb.MAIN_DB}"')
-    rebuilt = rebuild_schemas(migrations_repo, output) if migrations_repo else []  # before: public's views use them
-    dump = subprocess.Popen(dump_command(src), stdout=subprocess.PIPE, stderr=output,
+    copied, to_rebuild = schemas_to_copy(src, output)
+    # Before the restore: public's views use them.
+    rebuilt = rebuild_schemas(migrations_repo, output, to_rebuild) if migrations_repo and to_rebuild else []
+    dump = subprocess.Popen(dump_command(src, copied), stdout=subprocess.PIPE, stderr=output,
                             env={**os.environ, "PGPASSWORD": src.password})
     restore = subprocess.Popen(
         ["docker", "exec", "-i", localdb.CONTAINER, "pg_restore", "-U", localdb.USER, "-d", localdb.MAIN_DB,
@@ -193,7 +230,7 @@ def refresh(cfg: Config, output: IO[str], *, alias: str = SOURCE_ALIAS, database
     result = {
         "alias": name, "source": f"{alias}:{database}", "host": src.host, "at": started.isoformat(timespec="seconds"),
         "seconds": round((datetime.now().astimezone() - started).total_seconds(), 1),
-        "size": localdb.databases().get(localdb.MAIN_DB, 0), "migrated": migrated, "rebuilt": rebuilt,
+        "size": localdb.databases().get(localdb.MAIN_DB, 0), "migrated": migrated, "copied": copied, "rebuilt": rebuilt,
     }
     _save_state({**load_state(), "refresh": result})
     output.write(_("Done: {alias} ({size:.1f} MB).", alias=name, size=result["size"] / 1048576) + "\n")

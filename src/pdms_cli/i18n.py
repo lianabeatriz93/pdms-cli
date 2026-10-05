@@ -94,6 +94,7 @@ ES: dict[str, str] = {
     "Apply the repo's Flyway migrations after.": "Aplicar después las migraciones Flyway del repo.",
     "Copy a database into pdms's Postgres (the local copy, alias pdms-local), replacing it, and apply the repo's migrations. By default pdm_template_dev on the server of web-dev, which is only read.": "Copiar una base de datos al Postgres de pdms (la copia local, alias pdms-local), reemplazándola, y aplicar las migraciones del repo. Por defecto pdm_template_dev del servidor de web-dev, que solo se lee.",
     "Copying {database} from {host} into {target}…": "Copiando {database} de {host} a {target}…",
+    "{schema} is built from the repo's migrations: {user} may not read {what}.": "{schema} se construye con las migraciones del repo: {user} no puede leer {what}.",
     "Database to copy.": "Base de datos a copiar.",
     "Delete a snapshot.": "Borrar un snapshot.",
     "Do not ask, even when services use the copy.": "No preguntar, aunque haya servicios usando la copia.",
