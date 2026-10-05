@@ -1,3 +1,9 @@
+## v0.4.4 (2026-10-05)
+
+### Feat
+
+- **db**: the local copy takes configuration from the source when its user may read it
+
 ## v0.4.3 (2026-10-05)
 
 ### Fix
