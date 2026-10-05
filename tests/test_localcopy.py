@@ -3,6 +3,7 @@ snapshots, and Flyway's lock with CREATE INDEX CONCURRENTLY."""
 
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
 
@@ -33,6 +34,30 @@ def test_pg_dump_copies_public_with_its_extensions_through_the_hosts_tunnel(monk
     assert f"{WEB.host}:127.0.0.6" in cmd and localdb.IMAGE in cmd
     assert "--schema=public" in cmd and "--extension=*" in cmd and "--format=custom" in cmd
     assert "PGPASSWORD" in cmd and "s3cret" not in " ".join(cmd)  # the password goes in the environment
+
+
+def test_configuration_is_copied_when_the_source_user_may_read_all_of_it(monkeypatch) -> None:
+    monkeypatch.setattr(localcopy, "unreadable", lambda db, schema: [])
+    log = io.StringIO()
+    copied, rebuilt = localcopy.schemas_to_copy(WEB, log)
+    assert (copied, rebuilt, log.getvalue()) == (["public", "configuration"], [], "")
+    cmd = localcopy.dump_command(WEB, copied)
+    assert "--schema=public" in cmd and "--schema=configuration" in cmd and "--schema=backup_data" not in cmd
+
+
+def test_configuration_is_built_from_migrations_when_something_in_it_is_not_readable(monkeypatch) -> None:
+    monkeypatch.setattr(localcopy, "unreadable", lambda db, schema: ["configuration.nom_new"])
+    log = io.StringIO()
+    assert localcopy.schemas_to_copy(WEB, log) == (["public"], ["configuration"])
+    assert "configuration.nom_new" in log.getvalue() and "dev" in log.getvalue()
+
+    def unreachable(db, schema):
+        raise OSError("connection timed out")
+
+    monkeypatch.setattr(localcopy, "unreadable", unreachable)
+    log = io.StringIO()
+    assert localcopy.schemas_to_copy(WEB, log) == (["public"], ["configuration"])
+    assert "connection timed out" in log.getvalue()
 
 
 def test_the_schemas_the_source_does_not_give_are_built_from_their_migrations(tmp_path) -> None:
