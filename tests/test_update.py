@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 from pdms_cli import __version__, update
 
 
@@ -22,6 +25,19 @@ def test_release_asset_urls(monkeypatch):
     monkeypatch.setattr(update, "has_desktop", lambda: False)
     cmd = update.upgrade_command("0.2.0")
     assert cmd[1:4] == ["tool", "install", "--force"] and cmd[-1].endswith("pdms_cli-0.2.0-py3-none-any.whl")
+
+
+def test_an_update_keeps_the_python_it_runs_on(monkeypatch):
+    # Left to itself uv may pick an older Python first (macOS's 3.9), which the release does not support.
+    cmd = update.upgrade_command("0.2.0")
+    python = cmd[cmd.index("--python") + 1]
+    assert Path(python).is_file() and Path(sys.prefix).resolve() not in Path(python).parents
+
+
+def test_without_a_base_interpreter_the_update_asks_for_this_version(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "prefix", str(tmp_path))
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "python"))
+    assert update.base_python() == f"{sys.version_info.major}.{sys.version_info.minor}"
 
 
 def test_an_update_keeps_the_desktop_extra(monkeypatch):

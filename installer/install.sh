@@ -55,7 +55,8 @@ else
 fi
 
 say "Installing pdms from $SOURCE"
-"$UV" tool install --force "$SOURCE"
+# Without --python uv may take an older Python it finds first (macOS's /usr/bin/python3 is 3.9).
+"$UV" tool install --force --python ">=3.10" "$SOURCE"
 "$UV" tool update-shell >/dev/null 2>&1 || true
 
 BIN_DIR="$("$UV" tool dir --bin)"
