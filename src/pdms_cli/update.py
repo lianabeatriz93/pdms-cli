@@ -74,9 +74,29 @@ def has_desktop() -> bool:
     return importlib.util.find_spec("webview") is not None
 
 
+def base_python() -> str:
+    """The Python this pdms's environment was made with, for ``--python``; else its version, for uv to find.
+
+    Without ``--python`` uv takes the first Python it finds, which may be too old (macOS's /usr/bin/python3 is 3.9)
+    and is often another one when pdms ui was opened from the app menu, with a shorter PATH."""
+    name = "python.exe" if sys.platform == "win32" else f"python{sys.version_info.major}.{sys.version_info.minor}"
+    candidates = [Path(sys.executable).resolve()]
+    try:
+        config = (Path(sys.prefix) / "pyvenv.cfg").read_text(encoding="utf-8")
+        home = re.search(r"^home\s*=\s*(.+?)\s*$", config, re.MULTILINE)
+        if home:
+            candidates.insert(0, Path(home.group(1)) / name)
+    except OSError:
+        pass
+    for candidate in candidates:
+        if candidate.is_file() and Path(sys.prefix).resolve() not in candidate.parents:
+            return str(candidate)
+    return f"{sys.version_info.major}.{sys.version_info.minor}"
+
+
 def upgrade_command(version: str) -> list[str]:
     source = f"pdms-cli[desktop] @ {wheel_url(version)}" if has_desktop() else wheel_url(version)
-    return [shutil.which("uv") or "uv", "tool", "install", "--force", source]
+    return [shutil.which("uv") or "uv", "tool", "install", "--force", "--python", base_python(), source]
 
 
 def is_newer(candidate: str, current: str = __version__) -> bool:

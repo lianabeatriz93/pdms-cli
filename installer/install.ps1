@@ -54,7 +54,8 @@ if ($env:PDMS_WHEEL) {
 }
 
 Write-Host "Installing pdms from $source"
-Invoke-Native { & $uv tool install --force $source }
+# Without --python uv may take an older Python it finds first.
+Invoke-Native { & $uv tool install --force --python ">=3.10" $source }
 if ($LASTEXITCODE -ne 0) { throw "uv tool install failed (exit code $LASTEXITCODE)" }
 Invoke-Native { & $uv tool update-shell | Out-Null }
 
