@@ -1,3 +1,9 @@
+## v0.4.3 (2026-10-05)
+
+### Fix
+
+- **update**: install with the Python pdms runs on, not the first uv finds
+
 ## v0.4.2 (2026-10-04)
 
 ### Feat
