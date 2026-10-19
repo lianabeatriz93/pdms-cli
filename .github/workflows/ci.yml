@@ -193,12 +193,22 @@ jobs:
         run: docker load -i "$RUNNER_TEMP/flyway-image.tar"
       - name: Download the Flyway image
         if: steps.image-cache.outputs.cache-hit != 'true'
+        # When ECR refuses, the official image of the same Flyway version under the pipeline's name: the pipeline's
+        # adds Python, psql and git, which pdms migrate (docker run --entrypoint flyway) does not use.
         run: |
-          uv run python -c "
-          from pdms_cli.migrations import pull_image
-          ok, error = pull_image(attempts=5, wait=30)
-          raise SystemExit(0 if ok else f'::error title=docker pull::{error}')"
-          docker save -o "$RUNNER_TEMP/flyway-image.tar" '${{ steps.image.outputs.name }}'
+          image='${{ steps.image.outputs.name }}'
+          if ! uv run python -c "
+          from pdms_cli import actions, images
+          try:
+              images.pull(images.FLYWAY, attempts=3, wait=20)
+          except actions.ActionError as error:
+              raise SystemExit(f'::warning title=docker pull::{error}')"; then
+            official="flyway/flyway:$(echo "${image##*:}" | cut -d- -f1)-alpine"
+            echo "::warning title=Flyway image::$image could not be downloaded; using $official"
+            docker pull "$official"
+            docker tag "$official" "$image"
+          fi
+          docker save -o "$RUNNER_TEMP/flyway-image.tar" "$image"
       - name: Cache the Flyway image
         if: steps.image-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
