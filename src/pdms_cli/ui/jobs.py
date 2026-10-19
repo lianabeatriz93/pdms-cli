@@ -252,7 +252,8 @@ class Jobs:
                 self.phase(job, f"starting {inst.key}")
                 actions.start_service(cfg, actions.plan_service(
                     cfg, Path(inst.service), user_name=inst.user, db_name=inst.db, port=inst.port or None,
-                    host=inst.host, reload=inst.reload, events_mode="local" if inst.events == "local" else None))
+                    host=inst.host, reload=inst.reload, events_mode="local" if inst.events == "local" else None,
+                    on_demand=inst.on_demand), awake=True)
 
         return self.run(DATA_KEY, "restore", "stopping", work)
 
@@ -333,10 +334,10 @@ class Jobs:
                 if running == "move":
                     self.phase(job, f"starting {inst.name}")
                     launch = actions.plan_service(cfg, target, user_name=inst.user, db_name=inst.db, port=inst.port,
-                                                  host=inst.host, reload=inst.reload)
+                                                  host=inst.host, reload=inst.reload, on_demand=inst.on_demand)
                     key = instances.make_key(launch.service, launch.port)
                     self.install(cfg, job, launch.service, key, None, inst.name)
-                    actions.start_service(cfg, launch)
+                    actions.start_service(cfg, launch, awake=True)
 
         answer["job"] = self.run(REPO_KEY, "move" if running == "move" else "stop", "stopping", work).key
         return answer
@@ -377,6 +378,27 @@ class Jobs:
             return self.run(proxy.display_key(running), "stop", "stopping", lambda _job: actions.stop_proxy(running))
         inst = find(key)
         return self.run(inst.key, "stop", "stopping", lambda _job: actions.stop_service(inst))
+
+    def on_demand(self, key: str, on: bool) -> Job | None:
+        """Make an instance on demand or always on, right away; a job only when an asleep one has to start."""
+        inst = find(key)
+        if self.busy(inst.key):
+            raise actions.ActionError(_("{key} is busy.", key=inst.key))
+        cfg = Config.load()
+        if on or not inst.asleep:
+            actions.set_on_demand(cfg, inst, on)
+            self.on_change()
+            return None
+        return self.run(inst.key, "start", "starting", lambda _job: actions.set_on_demand(cfg, inst, on))
+
+    def sleep(self, key: str) -> Job:
+        """Stop a running instance now and keep it asleep until the proxy gets a request for it."""
+        inst = find(key)
+        if self.busy(inst.key):
+            raise actions.ActionError(_("{key} is busy.", key=inst.key))
+        if not inst.alive():
+            raise actions.ActionError(_("{key} is not running.", key=inst.key))
+        return self.run(inst.key, "stop", "stopping", lambda _job: actions.sleep_service(inst))
 
     def restart(
         self, key: str, *, user: str | None = None, db: str | None = None, install: bool | None = None,
@@ -465,7 +487,7 @@ class Jobs:
 
     def start(
         self, service: str, *, port: int | None = None, user: str | None = None, db: str | None = None,
-        install: bool | None = None, confirmed: bool = False,
+        install: bool | None = None, confirmed: bool = False, on_demand: bool | None = None,
     ) -> Job:
         """Start one service of the current repo in the background, like ``pdms run -b``. Without ``port`` it takes
         the next free one; a busy ``port``, a protected database or a stopped local ElasticMQ (for a consumer) are
@@ -480,6 +502,7 @@ class Jobs:
         actions.require(cfg.dbs, _("database"), db)
         launch = actions.plan_service(
             cfg, path, user_name=user, db_name=db, port=port or actions.suggested_port(cfg, cfg.defaults.host),
+            on_demand=on_demand,
         )
         actions.check_database(cfg, db, confirmed)
         key = instances.make_key(launch.service, launch.port)
@@ -718,7 +741,7 @@ class Jobs:
     def stop_all(self) -> Job | None:
         """Stop the frontend, the proxy, every background service and the local ElasticMQ; None when nothing runs."""
         current_frontend, running_proxy = frontend.running(), proxy.running_proxy()
-        live = [inst for inst in instances.load().values() if inst.alive()]
+        live = [inst for inst in instances.load().values() if inst.present()]  # asleep: else the proxy wakes them
         container = events.container_state()
         if not (current_frontend or running_proxy or live or (container and container["running"])):
             return None
@@ -982,7 +1005,8 @@ def repo_consumers(root: Path) -> list[str]:
 
 
 def save_stack(name: str, services: list[str], user: str, db: str, new: bool,
-               overrides: dict[str, dict[str, str]] | None = None, rename: str = "") -> str:
+               overrides: dict[str, dict[str, str]] | None = None, rename: str = "",
+               on_demand: str | None = None) -> str:
     """Create (``new``) or replace a stack, and give an existing one another name (``rename``); the services must
     exist in the current repo. Without ``overrides`` an existing stack keeps its own (for the services it still has).
     The stack's name afterwards."""
@@ -1001,7 +1025,10 @@ def save_stack(name: str, services: list[str], user: str, db: str, new: bool,
         raise actions.ActionError(_("Not services of the current repo: {names}", names=", ".join(unknown)))
     if overrides is None:
         overrides = {} if new else dict(cfg.stacks[name].overrides)
-    actions.save_stack(cfg, name, Stack(services=list(dict.fromkeys(services)), user=user, db=db, overrides=overrides))
+    if on_demand is None:  # an older page: what the stack had
+        on_demand = "" if new else cfg.stacks[name].on_demand
+    actions.save_stack(cfg, name, Stack(services=list(dict.fromkeys(services)), user=user, db=db, overrides=overrides,
+                                        on_demand=on_demand))
     return actions.rename_stack(cfg, name, rename) if not new and rename else name
 
 
@@ -1060,7 +1087,7 @@ def fix_frontend_api() -> dict:
 
 
 def forget_stopped() -> list[str]:
-    stopped = [i.key for i in instances.load().values() if not i.alive()]
+    stopped = [i.key for i in instances.load().values() if not i.present()]  # asleep ones are still there
     for key in stopped:
         instances.forget(key)
     return stopped

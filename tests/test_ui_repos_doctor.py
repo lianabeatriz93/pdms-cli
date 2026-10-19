@@ -113,7 +113,7 @@ def test_use_asks_what_to_do_with_what_runs_from_the_old_repo(ui, two_repos, mon
 
     monkeypatch.setattr(actions, "plan_service", plan_service)
     monkeypatch.setattr(actions, "needs_install", lambda *a, **k: False)
-    monkeypatch.setattr(actions, "start_service", lambda cfg, launch: None)
+    monkeypatch.setattr(actions, "start_service", lambda cfg, launch, **kw: None)
     status, data = post(port, "/api/repos/two/use", {"running": "move"})
     assert status == 200 and data["job"] == ui_jobs.REPO_KEY and cfg.current_repo == "two"
     wait_until(lambda: ui_jobs.REPO_KEY not in jobs.snapshot())

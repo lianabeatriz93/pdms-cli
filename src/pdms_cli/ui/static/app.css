@@ -95,6 +95,7 @@ td.num { font-variant-numeric: tabular-nums; }
 .st.starting, .st.error { color: var(--warn); background: var(--warn-soft); }
 .st.stopped { color: var(--bad); background: var(--bad-soft); }
 .st.off { color: var(--muted); background: var(--code); }
+.st.asleep { color: var(--accent); background: var(--accent-soft); }
 .st.outside { color: var(--warn); border: 1px dashed currentColor; padding: 0 .45rem; }
 .detail.quiet { color: var(--muted); }
 
@@ -831,3 +832,4 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 .data-aws-named li { overflow-wrap: anywhere; }
 .data-aws-buckets { display: flex; flex-wrap: wrap; gap: .3rem .8rem; }
 #data-aws-changed { white-space: pre-line; }
+.ibtn-group { display: contents; }

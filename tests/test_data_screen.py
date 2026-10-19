@@ -81,7 +81,7 @@ def test_migrations_are_applied_only_where_flyway_manages_them(cfg, monkeypatch)
 
 def test_restoring_a_snapshot_stops_and_starts_the_services_that_use_the_copy(cfg, monkeypatch) -> None:
     user = SimpleNamespace(key="lead-a@28100", service="/x/lead-a", user="agent", db="pdms-local", port=28100,
-                           host="0.0.0.0", reload=True, events="aws")
+                           host="0.0.0.0", reload=True, events="aws", on_demand=False)
     monkeypatch.setattr(localcopy, "snapshots", lambda: [{"name": "fresh"}])
     monkeypatch.setattr(localcopy, "using_copy", lambda c: [user.key])
     monkeypatch.setattr(ui_jobs, "find", lambda key: user)
@@ -89,7 +89,7 @@ def test_restoring_a_snapshot_stops_and_starts_the_services_that_use_the_copy(cf
     monkeypatch.setattr(actions, "stop_service", lambda inst: steps.append(("stop", inst.key)))
     monkeypatch.setattr(localcopy, "restore_snapshot", lambda name: steps.append(("restore", name)))
     monkeypatch.setattr(actions, "plan_service", lambda c, path, **kw: steps.append(("plan", kw["db_name"], kw["port"])) or "launch")
-    monkeypatch.setattr(actions, "start_service", lambda c, launch: steps.append(("start", launch)))
+    monkeypatch.setattr(actions, "start_service", lambda c, launch, **kw: steps.append(("start", launch)))
     jobs = ui_jobs.Jobs()
     with pytest.raises(actions.ActionError, match="no snapshot"):
         jobs.restore_snapshot("nope")

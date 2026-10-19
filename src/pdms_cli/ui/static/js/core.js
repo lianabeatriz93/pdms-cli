@@ -56,6 +56,7 @@ export function statusLabel(status) {
   if (status === "starting") return t("starting");
   if (status === "error") return t("error");
   if (status === "stopped") return t("stopped");
+  if (status === "asleep") return t("asleep");
   if (status === "off") return t("off");
   if (status === "outside") return t("outside pdms");
   return status;

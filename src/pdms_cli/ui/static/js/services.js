@@ -41,11 +41,13 @@ function rowActions(item, job) {
   cell.append(iconButton("logs", t("Logs"), () => openLogs(item.key, busy ? jobLog(job) : "current")));
   if (item.isFrontend && !busy) return frontendActions(cell, item);
   if (busy || item.isSns) return cell;
-  const alive = item.status !== "stopped";
+  const asleep = item.status === "asleep";
+  const alive = item.status !== "stopped" && !asleep;
   if (alive && !item.queue && !item.isProxy) cell.append(iconLink("open", t("Swagger (/docs)"), `http://localhost:${item.port}/docs`));
   if (alive && !item.isProxy) cell.append(iconButton("debug", t("Debug in VS Code"), () => debugInstance(item)));
-  if (!item.isProxy && !item.placeholder) cell.append(iconButton("restart", t("Restart"), () => openRestart(item)));
-  if (alive) {
+  if (!item.isProxy && !item.placeholder) cell.append(iconButton("restart", asleep ? t("Start now") : t("Restart"), () => openRestart(item)));
+  if (onDemandCapable(item)) cell.append(onDemandButton(item, alive));
+  if (alive || asleep) {
     cell.append(iconButton("stop", t("Stop"), () => act(`/api/instances/${encodeURIComponent(item.key)}/stop`), { class: "ibtn bad" }));
   } else if (!item.placeholder) {
     cell.append(iconButton("forget", t("Forget"), () => act(`/api/instances/${encodeURIComponent(item.key)}/forget`)));
@@ -63,6 +65,8 @@ function statusCell(item, job) {
     : { class: `st ${item.status}` }, statusLabel(item.status)));
   if (item.detail) cell.append(el("span", { class: item.status === "busy" ? "detail quiet" : "detail" }, item.detail));
   if (item.note) cell.append(el("span", { class: "detail quiet" }, item.note));
+  const sleepy = onDemandCapable(item) ? onDemandNote(item) : "";
+  if (sleepy) cell.append(el("span", { class: item.status === "asleep" && !state.proxy ? "detail" : "detail quiet" }, sleepy));
   if (item.traceback && item.traceback.length) {
     const open = servicesView.traces.has(item.key);
     cell.append(el("button", {
@@ -75,6 +79,31 @@ function statusCell(item, job) {
     cell.append(button(t("Dismiss"), () => act(`/api/instances/${encodeURIComponent(item.key)}/dismiss`), { class: "btn tiny" }));
   }
   return cell;
+}
+
+// An HTTP service pdms runs can be on demand: the proxy starts it with its first request and stops it when idle.
+function onDemandCapable(item) {
+  return !item.isProxy && !item.isSns && !item.isStray && !item.isFrontend && !item.placeholder && !item.queue
+    && item.status !== "stopped";
+}
+
+function onDemandButton(item, alive) {
+  const path = `/api/instances/${encodeURIComponent(item.key)}`;
+  if (!item.on_demand) {
+    return iconButton("sleep", t("On demand: sleep when idle"), () => act(`${path}/on-demand`, { on: true }));
+  }
+  const menu = [iconButton("awake", t("Always on"), () => act(`${path}/on-demand`, { on: false }))];
+  if (alive) menu.push(iconButton("sleep", t("Sleep now"), () => act(`${path}/sleep`)));
+  return el("span", { class: "ibtn-group" }, ...menu);
+}
+
+// Asleep, or on demand and running: say what wakes it, and when nothing will.
+function onDemandNote(item) {
+  if (item.status === "asleep") {
+    return state.proxy ? t("starts with its first request through the proxy")
+      : t("the proxy is not running: nothing will wake it");
+  }
+  return item.on_demand && item.status !== "stopped" ? t("on demand: sleeps when idle") : "";
 }
 
 // Hand a running instance over to VS Code: pdms stops it and writes its launch.json entry; F5 there starts it.
@@ -264,7 +293,8 @@ export function paintServices() {
   $("empty").hidden = items.length > 0;
   $("svc-none").hidden = !items.length || shown.length > 0;
   $("svc-count").textContent = items.length ? t("{shown} of {total}", { shown: shown.length, total: items.length }) : "";
-  const alive = state.instances.filter((i) => i.status !== "stopped");
+  const alive = state.instances.filter((i) => i.status !== "stopped" && i.status !== "asleep");
+  const asleep = state.instances.filter((i) => i.status === "asleep");
   const failing = state.instances.filter((i) => i.status === "error" || i.status === "stopped");
   $("count").textContent = alive.length || "";
   const broken = failing.length + (state.strays || []).length;
@@ -272,6 +302,7 @@ export function paintServices() {
   $("svc-badge").textContent = String(broken);
   $("svc-badge").title = t("{n} failing", { n: failing.length }) + ((state.strays || []).length ? ` · ${t("{n} outside pdms", { n: state.strays.length })}` : "");
   const parts = [t("{n} running", { n: alive.length }), t("{n} failing", { n: failing.length })];
+  if (asleep.length) parts.push(t("{n} asleep", { n: asleep.length }));
   if ((state.strays || []).length) parts.push(t("{n} outside pdms", { n: state.strays.length }));
   $("summary").textContent = parts.join(" · ");
   $("clean").hidden = !state.instances.some((i) => i.status === "stopped");
