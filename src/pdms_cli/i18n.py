@@ -1426,4 +1426,38 @@ ES: dict[str, str] = {
         '{service} es la Lambda {function} (Terraform de dev)',
     '☁  AWS (profile and buckets)':
         '☁  AWS (perfil y buckets)',
+    "Start it with the proxy's first request for it, and stop it again when idle (default: the on_demand setting); --always-on runs it now and keeps it running.":
+        "Arrancarlo con la primera petición que le llegue por el proxy y pararlo de nuevo cuando no se use (por defecto: el ajuste on_demand); --always-on lo arranca ya y lo mantiene encendido.",
+    "background, on demand":
+        "segundo plano, bajo demanda",
+    "on demand":
+        "bajo demanda",
+    "waking {key}":
+        "despertando {key}",
+    "{key} asleep after {minutes} min without requests":
+        "{key} dormido tras {minutes} min sin peticiones",
+    "{key} awake in {seconds} s":
+        "{key} despierto en {seconds} s",
+    "{key} exited while starting; see pdms logs {key}":
+        "{key} terminó mientras arrancaba; mira pdms logs {key}",
+    "{key} publishes to the local ElasticMQ, which is not running: start it with pdms events up":
+        "{key} publica en el ElasticMQ local, que no está corriendo: levántalo con pdms events up",
+    "{key} could not start: {error}":
+        "{key} no pudo arrancar: {error}",
+    "{key} is not answering {seconds} s after starting":
+        "{key} no responde {seconds} s después de arrancar",
+    "{key} waits asleep: the proxy starts it with the first request to one of its routes, and puts it back to sleep after a while without requests.":
+        "{key} espera dormido: el proxy lo arranca con la primera petición a una de sus rutas y lo vuelve a dormir tras un rato sin peticiones.",
+    "⚠ The proxy is not running, so nothing will wake it: start it with [bold]pdms proxy -b[/].":
+        "⚠ El proxy no está corriendo, así que nada lo despertará: arráncalo con [bold]pdms proxy -b[/].",
+    "[dim]Asleep ones start with the proxy's first request for them.[/]":
+        "[dim]Los dormidos arrancan con la primera petición que les llegue por el proxy.[/]",
+    "asleep":
+        "dormido",
+    "⚠ Some services are asleep and the proxy is not running, so nothing will wake them: start it with [bold]pdms proxy -b[/].":
+        "⚠ Hay servicios dormidos y el proxy no está corriendo, así que nada los despertará: arráncalo con [bold]pdms proxy -b[/].",
+    "{key} is not running.":
+        "{key} no está corriendo.",
+    "{key} reads a queue all the time: no request would wake it.":
+        "{key} lee una cola todo el tiempo: ninguna petición lo despertaría.",
 }

@@ -101,7 +101,7 @@ def test_the_editor_saves_and_renames_and_checks_the_name_before_saving(cfg) -> 
 def test_pdms_ui_hands_the_editor_the_running_services(cfg, monkeypatch) -> None:
     running(monkeypatch, cfg, ("lead/a", "supervisor", "local"))
     assert ui_jobs.stack_from_running() == {"services": ["lead/a"], "user": "supervisor", "db": "local",
-                                            "overrides": {}}
+                                            "overrides": {}, "on_demand": ""}
 
 
 def test_cli_saves_the_running_services_as_a_stack_and_renames_it(cfg, monkeypatch) -> None:

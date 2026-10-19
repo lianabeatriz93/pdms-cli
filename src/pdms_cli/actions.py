@@ -252,6 +252,7 @@ def send_message(cfg: Config, event_map: events.EventMap, queue: str, message: s
 
 # --------------------------------------------------------------------------- services
 
+MAX_IDLE_MINUTES = 24 * 60
 MAX_WARM_CONNECTIONS = 5  # the pool PDMS services keep (DB_PG_CONNECTION_POOL_SIZE); more would be closed again
 
 
@@ -271,6 +272,7 @@ class ServiceLaunch:
     cmd: list[str]
     queue: str = ""
     parallel: bool = False  # each request in its own thread (see sqs_patch/pdms_parallel.py)
+    on_demand: bool = False  # the proxy starts it with its first request and stops it when idle
 
     @property
     def is_consumer(self) -> bool:
@@ -289,6 +291,7 @@ def plan_service(
     events_mode: str | None = None,
     events_ready: EventsSetup | None = None,
     parallel: bool | None = None,
+    on_demand: bool | None = None,
 ) -> ServiceLaunch:
     """Decide how ``service`` runs. Raises :class:`PortBusy` or :class:`LocalEventsDown` for the user to answer.
 
@@ -314,6 +317,8 @@ def plan_service(
         service, user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], host, port, reload, setup, cmd,
         queue=consumer[0].name if consumer else "",
         parallel=not consumer and (cfg.defaults.parallel_requests if parallel is None else parallel),
+        # An SQS consumer reads its queue all the time: no request would ever wake it.
+        on_demand=not consumer and (cfg.defaults.on_demand if on_demand is None else on_demand),
     )
 
 
@@ -371,17 +376,71 @@ def service_env(cfg: Config, launch: ServiceLaunch) -> dict[str, str]:
 
 
 def start_service(
-    cfg: Config, launch: ServiceLaunch, install: Callable[[Path], None] | None = None
+    cfg: Config, launch: ServiceLaunch, install: Callable[[Path], None] | None = None, *, awake: bool = False,
 ) -> instances.Instance:
-    """Start the service in the background. ``install`` (the front end's, since it shows progress) runs first."""
+    """Start the service in the background. ``install`` (the front end's, since it shows progress) runs first.
+
+    An on-demand service is only registered, asleep, for the proxy to start with its first request; ``awake``
+    starts it now (a restart, or the proxy waking it), and it still goes back to sleep when idle.
+    """
     if install:
         install(launch.service)
+    if launch.on_demand and not awake:
+        return instances.register_asleep(
+            launch.service, host=launch.host, port=launch.port, user=launch.user_name, db=launch.db_name,
+            reload=launch.reload, events=launch.events.kind, parallel=launch.parallel,
+        )
     cmd, env = runner.direct(launch.service, launch.cmd, service_env(cfg, launch))
     return instances.start(
         launch.service, cmd, env, host=launch.host, port=launch.port,
         user=launch.user_name, db=launch.db_name, reload=launch.reload, deps=installed_parts(launch.service),
         events=launch.events.kind, queue=launch.queue, parallel=launch.parallel, commit=commit_of(cfg, launch.service),
+        on_demand=launch.on_demand,
     )
+
+
+def wake_service(cfg: Config, instance: instances.Instance) -> instances.Instance:
+    """Start an asleep instance as it was registered (same user, database and port, if still free), without
+    installing: the proxy does it for a request that waits meanwhile. Raises :class:`LocalEventsDown` when it
+    publishes to the local ElasticMQ and that is down."""
+    def plan(port: int) -> ServiceLaunch:
+        return plan_service(
+            cfg, Path(instance.service), user_name=instance.user, db_name=instance.db, port=port, host=instance.host,
+            reload=instance.reload, parallel=instance.parallel, on_demand=True,
+            events_mode="local" if instance.events == "local" else "aws",
+        )
+
+    instances.forget(instance.key)  # its port is kept for it while it is registered
+    try:
+        try:
+            launch = plan(instance.port)
+        except PortBusy as busy:  # someone else took it meanwhile
+            launch = plan(busy.free)
+        return start_service(cfg, launch, awake=True)
+    except Exception:
+        registry = instances.load()
+        registry.setdefault(instance.key, instance)  # asleep again: the next request tries once more
+        instances.save(registry)
+        raise
+
+
+def set_on_demand(cfg: Config, instance: instances.Instance, on: bool) -> instances.Instance:
+    """Make a service on demand (it keeps running, and sleeps once idle) or always on (an asleep one starts now)."""
+    if instance.is_consumer:
+        raise ActionError(_("{key} reads a queue all the time: no request would wake it.", key=instance.key))
+    if not on and instance.asleep:
+        instance = wake_service(cfg, instance)
+    return instances.set_on_demand(instance.key, on) or instance
+
+
+def sleep_service(instance: instances.Instance) -> instances.Instance:
+    """Stop a running service now and keep it asleep, on demand, until a request through the proxy wakes it."""
+    if instance.is_consumer:
+        raise ActionError(_("{key} reads a queue all the time: no request would wake it.", key=instance.key))
+    if not instance.alive():
+        raise ActionError(_("{key} is not running.", key=instance.key))
+    instance.on_demand = True
+    return instances.sleep(instance)
 
 
 def commit_of(cfg: Config, service: Path) -> str:
@@ -496,8 +555,9 @@ def restart_service(
     launch = plan_service(
         cfg, Path(instance.service), user_name=user_name, db_name=db_name, port=instance.port or None,
         host=instance.host, reload=instance.reload, events_mode="local" if instance.events == "local" else None,
+        on_demand=instance.on_demand,
     )
-    return start_service(cfg, launch, install)
+    return start_service(cfg, launch, install, awake=True)  # asked for: it runs now, and sleeps again when idle
 
 
 # --------------------------------------------------------------------------- debugging
@@ -572,10 +632,10 @@ def open_code(cfg: Config, path: str, line: int = 0) -> None:
 
 
 def running_by_service() -> dict[str, list[int]]:
-    """Ports of the live instances of each service (0 for SQS consumers)."""
+    """Ports of the live (or asleep) instances of each service (0 for SQS consumers)."""
     result: dict[str, list[int]] = {}
     for inst in instances.load().values():
-        if inst.alive():
+        if inst.present():
             result.setdefault(inst.service, []).append(inst.port)
     return result
 
@@ -609,6 +669,7 @@ class StackLaunch:
 
 def plan_stack(
     cfg: Config, name: str, root: Path, *, user_name: str, db_name: str, events_mode: str | None = None,
+    on_demand: bool | None = None,
 ) -> StackLaunch:
     """Plan every service of the stack that is not running yet, each on its own free port.
 
@@ -631,6 +692,7 @@ def plan_stack(
     host = cfg.defaults.host
     taken = set(instances.running_ports())
     port = cfg.defaults.port
+    on_demand = stack.runs_on_demand(cfg.defaults.on_demand) if on_demand is None else on_demand
     launches = []
     for path in pending:
         if not consumers[path]:
@@ -639,6 +701,7 @@ def plan_stack(
         service_user, service_db = stack.profile_of(_relative(path, root), user_name, db_name)
         launches.append(plan_service(
             cfg, path, user_name=service_user, db_name=service_db, port=port, host=host, events_ready=setup,
+            on_demand=on_demand,
         ))
     return StackLaunch(name, user_name, db_name, launches, running, setup)
 
@@ -706,9 +769,9 @@ def remove_setup(cfg: Config, name: str) -> None:
 
 
 def stack_instances(cfg: Config, name: str, root: Path) -> list[instances.Instance]:
-    """Live instances of the stack's services."""
+    """Live (or asleep) instances of the stack's services."""
     paths = {str(p) for p in stack_paths(cfg.stacks[require(cfg.stacks, _("stack"), name)], root)}
-    return [i for i in instances.load().values() if i.service in paths and i.alive()]
+    return [i for i in instances.load().values() if i.service in paths and i.present()]
 
 
 def save_stack(cfg: Config, name: str, stack: Stack) -> None:
@@ -1494,6 +1557,7 @@ def save_defaults(cfg: Config, defaults: Defaults) -> None:
         proxy_timeout=_number("proxy_timeout", defaults.proxy_timeout, 1, MAX_PROXY_TIMEOUT),
         warm_connections=_number("warm_connections", defaults.warm_connections, 0, MAX_WARM_CONNECTIONS),
         proxy_port=_number("proxy_port", defaults.proxy_port, 1, 65535),
+        idle_minutes=_number("idle_minutes", defaults.idle_minutes, 1, MAX_IDLE_MINUTES),
         theme=_one_of("theme", defaults.theme, THEMES),
         email_to=check_email_to(defaults.email_to),
         env=dict(defaults.env),
