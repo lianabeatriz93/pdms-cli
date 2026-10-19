@@ -18,6 +18,8 @@ SKIP_DIRS = {"node_modules", "__pycache__", "tests", "frontend", "infra", "templ
 # An active virtualenv (pdms under ``uv run`` or run from an activated venv) makes poetry use it instead of the
 # service's own: poetry install would fill pdms's environment and poetry run would start the service from it.
 ACTIVE_ENV = ("VIRTUAL_ENV", "CONDA_PREFIX")
+# Folders --reload never watches: their changes do not need a restart (and "tests" changes while tests run).
+RELOAD_SKIP = {"tests", "__pycache__", "node_modules"}
 
 
 def is_service(path: Path) -> bool:
@@ -96,12 +98,41 @@ def poetry_environ() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if key not in ACTIVE_ENV}
 
 
+def _in_project_python(service: Path) -> Path | None:
+    """The interpreter of ``<service>/.venv``: poetry always uses that virtualenv when it exists."""
+    venv = service / ".venv"
+    python = venv / "Scripts" / "python.exe" if WINDOWS else venv / "bin" / "python"
+    return python if python.exists() else None
+
+
 def poetry_python(service: Path) -> Path | None:
     """Interpreter of the service's poetry virtualenv, or None if it has not been created yet."""
-    result = subprocess.run([poetry(), "env", "info", "-e"], cwd=service, capture_output=True, text=True,
-                            env=poetry_environ())
+    if python := _in_project_python(service):
+        return python  # without asking poetry, which takes half a second
+    try:
+        result = subprocess.run([poetry(), "env", "info", "-e"], cwd=service, capture_output=True, text=True,
+                                env=poetry_environ())
+    except OSError:  # no poetry, or no such folder
+        return None
     python = Path(result.stdout.strip()) if result.returncode == 0 else None
     return python if python and python.exists() else None
+
+
+def direct(service: Path, cmd: list[str], env: dict[str, str]) -> tuple[list[str], dict[str, str]]:
+    """``poetry run <python|module> ...`` as a plain call to the service's interpreter, with the environment
+    ``poetry run`` would give it (the virtualenv first on the PATH).
+
+    Starting poetry costs every service half a second of CPU and ~60 MB, and on Windows, where it cannot exec,
+    ``poetry run`` stays alive as the parent of the service. Anything else, or a service without a virtualenv yet,
+    is returned as it was.
+    """
+    if cmd[:2] != [poetry(), "run"] or len(cmd) < 3 or not (python := poetry_python(service)):
+        return cmd, env
+    program, args = cmd[2], cmd[3:]
+    call = [str(python), *args] if program == "python" else [str(python), "-m", program, *args]
+    bin_dir = python.parent
+    path = env.get("PATH", os.environ.get("PATH", ""))
+    return call, {**env, "VIRTUAL_ENV": str(bin_dir.parent), "PATH": str(bin_dir) + os.pathsep + path}
 
 
 def poetry() -> str:
@@ -130,10 +161,30 @@ def install(service: Path, output: IO[str] | None = None) -> None:
                         *map(str, copied)], cwd=service, env=env, check=True, **redirect)
 
 
-def uvicorn_command(host: str, port: int, reload: bool) -> list[str]:
+def reload_dirs(service: Path) -> list[str]:
+    """The service's folders with Python code, for ``--reload-dir``.
+
+    Without watchfiles (PDMS services do not have it) uvicorn checks every ``*.py`` under the folders it watches
+    four times a second. Watching the whole service folder includes its ``.venv``: ~5,000 files and about two
+    thirds of a CPU core per service, all the time. Its own code is a few dozen files.
+    """
+    try:
+        return sorted(
+            path.name for path in service.iterdir()
+            if path.is_dir() and not path.name.startswith(".") and path.name not in RELOAD_SKIP
+            and next(path.rglob("*.py"), None) is not None
+        )
+    except OSError:
+        return []
+
+
+def uvicorn_command(host: str, port: int, reload: bool, watch: list[str] | None = None) -> list[str]:
+    """``uvicorn main:app``; with ``reload``, watching only the folders in ``watch`` (all of the service when empty)."""
     cmd = [poetry(), "run", "uvicorn", "main:app"]
     if reload:
         cmd.append("--reload")
+        for folder in watch or []:
+            cmd += ["--reload-dir", folder]
     return [*cmd, "--host", host, "--port", str(port)]
 
 

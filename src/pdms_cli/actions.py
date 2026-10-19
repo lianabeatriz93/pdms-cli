@@ -309,7 +309,7 @@ def plan_service(
         queue, handler = consumer
         cmd = events.poller_command(runner.poetry(), queue, handler, cfg.defaults.events_port)
     else:
-        cmd = runner.uvicorn_command(host, port, reload)
+        cmd = runner.uvicorn_command(host, port, reload, runner.reload_dirs(service) if reload else None)
     return ServiceLaunch(
         service, user_name, cfg.users[user_name], db_name, cfg.dbs[db_name], host, port, reload, setup, cmd,
         queue=consumer[0].name if consumer else "",
@@ -376,8 +376,9 @@ def start_service(
     """Start the service in the background. ``install`` (the front end's, since it shows progress) runs first."""
     if install:
         install(launch.service)
+    cmd, env = runner.direct(launch.service, launch.cmd, service_env(cfg, launch))
     return instances.start(
-        launch.service, launch.cmd, service_env(cfg, launch), host=launch.host, port=launch.port,
+        launch.service, cmd, env, host=launch.host, port=launch.port,
         user=launch.user_name, db=launch.db_name, reload=launch.reload, deps=installed_parts(launch.service),
         events=launch.events.kind, queue=launch.queue, parallel=launch.parallel, commit=commit_of(cfg, launch.service),
     )
@@ -391,7 +392,7 @@ def commit_of(cfg: Config, service: Path) -> str:
 
 def exec_service(cfg: Config, launch: ServiceLaunch) -> None:
     """Run the service in the foreground, replacing pdms (see :func:`runner.exec_server`)."""
-    runner.exec_server(launch.service, launch.cmd, service_env(cfg, launch))
+    runner.exec_server(launch.service, *runner.direct(launch.service, launch.cmd, service_env(cfg, launch)))
 
 
 def stop_service(instance: instances.Instance) -> None:
