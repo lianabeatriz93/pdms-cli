@@ -15,6 +15,7 @@ from ..config import Config, Stack
 from ..i18n import _
 from .common import EVENTS_HELP, app, console, fail, pick, settle, show_menu, stack_app
 from .run import (
+    ON_DEMAND_HELP,
     Profile,
     confirm_protected,
     ensure_installed,
@@ -180,6 +181,7 @@ def up(
         None, "--setup", help=_("A saved setup of pdms ui's Home: start its stack and make it the current setup."),
         autocompletion=completion.setups,
     ),
+    on_demand: Optional[bool] = typer.Option(None, "--on-demand/--always-on", help=ON_DEMAND_HELP),
 ) -> None:
     cfg = Config.load()
     if setup:
@@ -197,7 +199,7 @@ def up(
     user_name = pick(cfg.users, _("user"), user or stack.user or None, cfg.last_user)
     db_name = pick(cfg.dbs, _("database"), db or stack.db or None, cfg.last_db)
     plan = settle(lambda: actions.plan_stack(cfg, name, root, user_name=user_name, db_name=db_name,
-                                             events_mode=events_mode))
+                                             events_mode=events_mode, on_demand=on_demand))
 
     for path, ports in plan.running.items():
         console.print(_("[dim]· {name} already running on :{ports}, skipping.[/]",
@@ -211,7 +213,7 @@ def up(
     profile = Profile(first.service, user_name, first.user, db_name, first.db, first.host, first.port)
     print_summary(cfg, profile, {
         _("Services"): "\n".join(f"{s.service.name} → " + (f"sqs ← {s.queue}" if s.is_consumer else f":{s.port}")
-                                 for s in plan.services),
+                                 + (f" ({_('on demand')})" if s.on_demand else "") for s in plan.services),
         _("Events"): plan.events.label,
         _("Install"): install_label(cfg, install, each=True),
     }, show_service=False)
@@ -246,7 +248,7 @@ def down(name: Optional[str] = typer.Argument(None, help=_("Stack to stop."), au
 def stack_menu() -> None:
     prompts.require_tty()
     show_menu(_("Stacks:"), {
-        _("Start stack"): lambda: up(None, None, None, None, False, None, None),
+        _("Start stack"): lambda: up(None, None, None, None, False, None, None, None),
         _("Stop stack"): lambda: down(None),
         _("List"): stack_list,
         _("Create"): lambda: stack_add(None, False),

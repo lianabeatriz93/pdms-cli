@@ -13,7 +13,7 @@ import questionary
 import typer
 from rich.table import Table
 
-from .. import actions, awsenv, completion, instances, prompts, runner
+from .. import actions, awsenv, completion, instances, prompts, proxy, runner
 from ..config import Config, Database, DevUser
 from ..i18n import _
 from .common import EVENTS_HELP, add_db, add_user, app, console, fail, pick, print_endpoints, settle, yes_no
@@ -147,6 +147,7 @@ def do_run(
     background: Optional[bool] = None,
     events_mode: Optional[str] = None,
     parallel: Optional[bool] = None,
+    on_demand: Optional[bool] = None,
 ) -> None:
     cfg = Config.load()
     service = resolve_service(cfg, service_name, path)
@@ -157,6 +158,7 @@ def do_run(
     launch = settle(lambda: actions.plan_service(
         cfg, prof.service, user_name=prof.user_name, db_name=prof.db_name, port=prof.port or None, host=prof.host,
         reload=reload, events_mode=events_mode, parallel=parallel,
+        on_demand=on_demand if background else False,  # in the foreground it runs in this terminal, now
     ))
     warn_events(launch.events)
 
@@ -167,7 +169,8 @@ def do_run(
                              f"parallel={yes_no(launch.parallel)}  log={cfg.defaults.logging_level}"}
     print_summary(cfg, prof, {
         **what,
-        _("Mode"): _("background") if background else _("foreground"),
+        _("Mode"): (_("background, on demand") if launch.on_demand else _("background")) if background
+        else _("foreground"),
         _("Events"): launch.events.label,
         _("Install"): install_label(cfg, install),
     })
@@ -181,7 +184,23 @@ def do_run(
     wait_until_ready(actions.start_service(cfg, launch))
 
 
+ON_DEMAND_HELP = _("Start it with the proxy's first request for it, and stop it again when idle (default: the "
+                   "on_demand setting); --always-on runs it now and keeps it running.")
+
+
+def report_asleep(inst: instances.Instance) -> None:
+    console.print("[green]✓[/] " + _("{key} waits asleep: the proxy starts it with the first request to one of its "
+                                     "routes, and puts it back to sleep after a while without requests.",
+                                     key=inst.key))
+    if not proxy.running_proxy():
+        console.print("[yellow]" + _("⚠ The proxy is not running, so nothing will wake it: start it with "
+                                     "[bold]pdms proxy -b[/].") + "[/]")
+
+
 def wait_until_ready(inst: instances.Instance, timeout: float = 90) -> None:
+    if inst.asleep:
+        report_asleep(inst)
+        return
     deadline = time.monotonic() + timeout
     with console.status(_("Starting {key}...", key=inst.key)):
         while time.monotonic() < deadline:
@@ -239,8 +258,9 @@ def run(
         None, "--parallel/--no-parallel",
         help=_("Each request in its own thread, so a slow query only holds up its own (default: the parallel_requests setting)."),
     ),
+    on_demand: Optional[bool] = typer.Option(None, "--on-demand/--always-on", help=ON_DEMAND_HELP),
 ) -> None:
-    do_run(service, user, db, port, host, install, reload, yes, path, background, events_mode, parallel)
+    do_run(service, user, db, port, host, install, reload, yes, path, background, events_mode, parallel, on_demand)
 
 
 @app.command(help=_("Create/update the VS Code configuration (launch.json) to debug the service with breakpoints."))

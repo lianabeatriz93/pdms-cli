@@ -51,7 +51,7 @@ def handle_instances_of(switch: actions.RepoSwitch, new: str) -> None:
         if choice == "move":
             try:
                 do_run(user=inst.user, db=inst.db, port=inst.port, host=inst.host, reload=inst.reload,
-                       yes=True, path=target, background=True)
+                       yes=True, path=target, background=True, on_demand=inst.on_demand)
             except typer.Exit:
                 pass
 

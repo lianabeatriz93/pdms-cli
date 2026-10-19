@@ -101,6 +101,10 @@ class Defaults:
     proxy_timeout: int = 300
     # Port of pdms proxy (pdms proxy -p, pdms ui). Far from 8000, for the same reason.
     proxy_port: int = 28800
+    # Services started in the background wait asleep until the proxy gets a request for them, and go back to sleep
+    # after idle_minutes without requests: only what is used takes memory (pdms run --on-demand/--always-on).
+    on_demand: bool = False
+    idle_minutes: int = 15
     # Look of pdms ui: "system" (light or dark like the computer), "light" or "dark".
     theme: str = "system"
     # pdms ui tells the desktop when a service fails to load or stops by itself (while it runs, also in the tray).
@@ -134,6 +138,12 @@ class Stack:
     # Services that run with another user or database than the rest: path -> {"user": ..., "db": ...} (either may
     # be missing). Set from a partial restart with "Remember in the stack", or in the stack editor.
     overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Its services on demand: "on", "off" (always running) or "" (as defaults.on_demand says).
+    on_demand: str = ""
+
+    def runs_on_demand(self, default: bool) -> bool:
+        """Whether its services start on demand, ``default`` being defaults.on_demand."""
+        return {"on": True, "off": False}.get(self.on_demand, default)
 
     def profile_of(self, service: str, user: str, db: str) -> tuple[str, str]:
         """The user and database ``service`` starts with, given the stack's own (``user``, ``db``)."""
@@ -145,6 +155,7 @@ def _stack(data: dict[str, Any]) -> Stack:
     stack = _from_dict(Stack, data)
     # Service paths are stored with "/" on every OS (a config written on Windows may still use "\\").
     stack.services = [str(svc).replace("\\", "/") for svc in stack.services]
+    stack.on_demand = stack.on_demand if stack.on_demand in ("on", "off") else ""
     stack.overrides = {
         str(svc).replace("\\", "/"): {k: str(v) for k, v in own.items() if k in ("user", "db") and v}
         for svc, own in (stack.overrides or {}).items() if isinstance(own, dict)

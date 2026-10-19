@@ -17,6 +17,7 @@ import socketserver
 import sys
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -38,6 +39,8 @@ CORS_RESPONSE_HEADERS = {
     "access-control-allow-headers", "access-control-expose-headers", "access-control-max-age",
 }
 DOCS_PREFIX = "/_pdms/openapi/"
+WAKE_TIMEOUT = 180  # seconds a request waits for its asleep service to start
+IDLE_CHECK_EVERY = 30  # seconds between two looks for on-demand services to put to sleep
 KEY = "proxy"  # how pdms ps, stop and logs call it (shown as proxy@<port>)
 
 
@@ -136,8 +139,29 @@ def normalize(path: str) -> str:
 @dataclass
 class Target:
     kind: str  # local | remote | missing | other-repo
-    instance: instances.Instance | None = None
+    instance: instances.Instance | None = None  # local: may be asleep, see Gateway.awaken
     note: str = ""
+
+
+class WakeFailed(Exception):
+    """An asleep service could not be started for a request; the message says why."""
+
+
+def _wake(instance: instances.Instance) -> instances.Instance:
+    from . import actions  # actions imports this module
+
+    try:
+        return actions.wake_service(Config.load(), instance)
+    except actions.LocalEventsDown as exc:
+        raise WakeFailed(_("{key} publishes to the local ElasticMQ, which is not running: start it with "
+                           "pdms events up", key=instance.key)) from exc
+    except actions.ActionError as exc:
+        raise WakeFailed(exc.message) from exc
+
+
+def _idle_seconds() -> float:
+    """defaults.idle_minutes, read again each time: changing it in Settings applies to the running proxy."""
+    return Config.load().defaults.idle_minutes * 60
 
 
 @dataclass
@@ -152,14 +176,23 @@ class Gateway:
     # The background proxy also says when a request arrives (method, path, target, capture id), so pdms ui shows it
     # in progress; its line when answered carries the same id.
     log_start: Callable[..., None] = lambda *args: None
+    # On-demand services: how one is started for a request, how long it may stay without requests, and where the
+    # proxy says it woke or put one to sleep.
+    wake: Callable[[instances.Instance], instances.Instance] = _wake
+    wake_timeout: float = WAKE_TIMEOUT
+    idle_seconds: Callable[[], float] = _idle_seconds
+    note: Callable[[str], None] = lambda text: print(f"# {datetime.now():%H:%M:%S} {text}", flush=True)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _waking: dict[str, threading.Lock] = field(default_factory=dict)
+    _last_request: dict[str, float] = field(default_factory=dict)  # instance key -> time.monotonic()
+    _in_progress: Counter = field(default_factory=Counter)  # instance key -> requests it is answering
 
     # ------------------------------------------------------------------ targets
 
     def local_instances(self) -> dict[str, list[instances.Instance]]:
         found: dict[str, list[instances.Instance]] = {}
         for inst in instances.load().values():
-            if inst.alive() and not inst.is_consumer:  # event consumers have no HTTP API
+            if inst.present() and not inst.is_consumer:  # event consumers have no HTTP API
                 found.setdefault(str(Path(inst.service).resolve()), []).append(inst)
         return found
 
@@ -167,8 +200,8 @@ class Gateway:
         running = self.local_instances() if running is None else running
         if route is not None:
             service = str((self.backend / route.service).resolve())
-            if service in running:
-                return Target("local", min(running[service], key=lambda i: i.port))
+            if service in running:  # a running one before one that would have to wake up
+                return Target("local", min(running[service], key=lambda i: (i.asleep, i.port)))
             others = [i for path, items in running.items() if Path(path).name == Path(service).name for i in items]
             if others:
                 note = _("{service} is running from another repo ({key}); not mixing versions.",
@@ -184,8 +217,88 @@ class Gateway:
         for path, insts in sorted(self.local_instances().items()):
             if path.startswith(backend):
                 for inst in insts:
-                    items.append((inst.key, inst))
+                    if not inst.asleep:  # nothing answers for it to ask for its spec
+                        items.append((inst.key, inst))
         return items
+
+    # ------------------------------------------------------------------ on demand
+
+    def awaken(self, inst: instances.Instance) -> instances.Instance:
+        """The running instance of an asleep one, started for a request that waits meanwhile; requests that arrive
+        while it starts wait for the same start. Raises :class:`WakeFailed`."""
+        with self._lock:
+            lock = self._waking.setdefault(inst.service, threading.Lock())
+        with lock:
+            awake = next((i for i in instances.load().values()
+                          if i.service == inst.service and i.alive() and not i.is_consumer), None)
+            if awake:  # another request woke it while this one waited
+                return awake
+            self.note(_("waking {key}", key=inst.key))
+            started = time.monotonic()
+            try:
+                awake = self.wake(inst)
+            except WakeFailed:
+                raise
+            except Exception as exc:  # noqa: BLE001 - the request gets why, not a dropped connection
+                raise WakeFailed(_("{key} could not start: {error}", key=inst.key, error=exc)) from exc
+            self.used(awake.key)  # not idle while it starts
+            while time.monotonic() - started < self.wake_timeout:
+                health = instances.health(awake)
+                if health.state in ("ok", "busy"):
+                    self.note(_("{key} awake in {seconds} s", key=awake.key,
+                                seconds=f"{time.monotonic() - started:.1f}"))
+                    return awake
+                if health.state == "stopped":
+                    instances.forget(awake.key)
+                    instances.register_asleep(  # asleep again, for the next request to try (or for its log)
+                        Path(awake.service), host=awake.host, port=awake.port, user=awake.user, db=awake.db,
+                        reload=awake.reload, events=awake.events, parallel=awake.parallel,
+                    )
+                    raise WakeFailed(_("{key} exited while starting; see pdms logs {key}", key=awake.key))
+                if health.state == "error":
+                    raise WakeFailed(_("{key} failed to load: {detail}", key=awake.key, detail=health.detail))
+                time.sleep(0.25)
+            raise WakeFailed(_("{key} is not answering {seconds} s after starting", key=awake.key,
+                               seconds=f"{self.wake_timeout:g}"))
+
+    def used(self, key: str) -> None:
+        with self._lock:
+            self._last_request[key] = time.monotonic()
+
+    def sleepy(self, now: float | None = None) -> list[instances.Instance]:
+        """The on-demand services of this repo that answer no request and got none for ``idle_seconds``."""
+        now = time.monotonic() if now is None else now
+        idle = self.idle_seconds()
+        backend = self.backend.resolve()
+        found = []
+        for inst in instances.load().values():
+            if not inst.on_demand or inst.is_consumer or not inst.alive():
+                continue
+            if not Path(inst.service).resolve().is_relative_to(backend):
+                continue  # another repo's: this proxy would never wake it
+            with self._lock:
+                last = self._last_request.setdefault(inst.key, now)  # first seen: counts from now
+                if self._in_progress[inst.key] == 0 and now - last >= idle:
+                    found.append(inst)
+        return found
+
+    def put_idle_to_sleep(self, now: float | None = None) -> list[str]:
+        slept = []
+        for inst in self.sleepy(now):
+            instances.sleep(inst)
+            with self._lock:
+                self._last_request.pop(inst.key, None)
+            self.note(_("{key} asleep after {minutes} min without requests", key=inst.key,
+                        minutes=f"{self.idle_seconds() / 60:g}"))
+            slept.append(inst.key)
+        return slept
+
+    def watch_idle(self, stopped: threading.Event) -> None:
+        while not stopped.wait(IDLE_CHECK_EVERY):
+            try:
+                self.put_idle_to_sleep()
+            except Exception:  # noqa: BLE001 - a failed look must not stop the watch
+                pass
 
     def spec_for(self, key: str) -> dict | None:
         specs = dict(self.local_specs())
@@ -347,6 +460,14 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                 headers[trace.HEADER_NAME] = self.capture_id  # services log it and pass it on (sqs_patch/pdms_trace.py)
             if target.kind == "local":
                 inst = target.instance
+                if inst.asleep:
+                    try:
+                        inst = gateway.awaken(inst)
+                    except WakeFailed as exc:
+                        answer = self.reply_json(503, {"detail": f"pdms proxy: {exc}"}, label)
+                        self.done(started, path, 503, label, body, [("Content-Type", "application/json")], answer)
+                        return
+                    label = inst.key
                 host, port, scheme, base = "127.0.0.1", inst.port, "http", ""
                 if gateway.impersonate:
                     headers.update(dev_headers(gateway.impersonate))
@@ -359,6 +480,10 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                 headers["Content-Length"] = str(len(body))
             conn_class = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
             conn = conn_class(host, port, timeout=gateway.timeout)
+            busy = inst.key if target.kind == "local" else ""
+            if busy:
+                with gateway._lock:
+                    gateway._in_progress[busy] += 1
             try:
                 conn.request(self.command, base + path, body=body, headers=headers)
                 response = conn.getresponse()
@@ -371,6 +496,10 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                 return
             finally:
                 conn.close()
+                if busy:
+                    with gateway._lock:
+                        gateway._in_progress[busy] -= 1
+                    gateway.used(busy)
 
             answer_headers = [(k, v) for k, v in response.getheaders() if k.lower() != captures.QUERIES_HEADER]
             db = captures.query_detail(response.getheaders()) if target.kind == "local" else None
@@ -437,9 +566,12 @@ def serve(gateway: Gateway, host: str, port: int, info: dict) -> None:
     }), encoding="utf-8")
     if info.get("background"):
         print(f"# listening on :{port} (pid {os.getpid()})", flush=True)
+    stopped = threading.Event()
+    threading.Thread(target=gateway.watch_idle, args=(stopped,), daemon=True, name="pdms-idle").start()
     try:
         server.serve_forever()
     finally:
+        stopped.set()
         server.server_close()
         forget(os.getpid())
 

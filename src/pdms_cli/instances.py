@@ -155,6 +155,9 @@ class Instance:
     parallel: bool = False
     # Commit of its repo when it started ("" when unknown): what changed since, for pdms ui's Home.
     commit: str = ""
+    # Started by the proxy with the first request to one of its routes, and stopped again after a while without
+    # requests (defaults.idle_minutes). While stopped it is asleep: no process (pid 0), its port kept for it.
+    on_demand: bool = False
 
     @property
     def is_consumer(self) -> bool:
@@ -164,8 +167,16 @@ class Instance:
     def name(self) -> str:
         return Path(self.service).name
 
+    @property
+    def asleep(self) -> bool:
+        return self.on_demand and self.pid <= 0
+
     def alive(self) -> bool:
-        return process_alive(self.pid, self.created)
+        return self.pid > 0 and process_alive(self.pid, self.created)
+
+    def present(self) -> bool:
+        """Running, or asleep until a request wakes it: either way the service is there, on its port."""
+        return self.asleep or self.alive()
 
 
 # How far the creation time psutil reports may move for the same process. psutil adds the process's start (counted
@@ -208,7 +219,7 @@ def detach_options() -> dict:
 
 def kill_tree(pid: int, created: float = 0.0, timeout: float = 10) -> None:
     """Terminate ``pid`` and all its descendants, escalating to kill after ``timeout`` seconds."""
-    if not process_alive(pid, created):
+    if pid <= 0 or not process_alive(pid, created):
         return
     try:
         root = psutil.Process(pid)
@@ -266,7 +277,8 @@ def make_key(service: Path, port: int) -> str:
 
 
 def running_ports() -> set[int]:
-    return {i.port for i in load().values() if i.port and i.alive()}
+    """Ports of the running instances and of the asleep ones, which get theirs back when they wake."""
+    return {i.port for i in load().values() if i.port and i.present()}
 
 
 def spawn(cmd: list[str], cwd: Path, env: dict[str, str], log: Path) -> subprocess.Popen:
@@ -293,6 +305,7 @@ def spawn(cmd: list[str], cwd: Path, env: dict[str, str], log: Path) -> subproce
 def start(
     service: Path, cmd: list[str], env: dict[str, str], *, host: str, port: int, user: str, db: str, reload: bool,
     deps: dict[str, str] | None = None, events: str = "aws", queue: str = "", parallel: bool = False, commit: str = "",
+    on_demand: bool = False,
 ) -> Instance:
     key = make_key(service, port)
     log = log_path(key)
@@ -301,11 +314,49 @@ def start(
         key=key, pid=proc.pid, service=str(service), host=host, port=port, user=user, db=db,
         reload=reload, log=str(log), started_at=datetime.now().isoformat(timespec="seconds"),
         created=creation_time(proc.pid), deps=deps or {}, events=events, queue=queue,
-        parallel=parallel, commit=commit,
+        parallel=parallel, commit=commit, on_demand=on_demand,
     )
     instances = load()
     instances[key] = instance
     save(instances)
+    return instance
+
+
+def register_asleep(
+    service: Path, *, host: str, port: int, user: str, db: str, reload: bool, events: str = "aws",
+    parallel: bool = False,
+) -> Instance:
+    """An on-demand instance that starts asleep: the proxy starts it with the first request to one of its routes."""
+    key = make_key(service, port)
+    instance = Instance(
+        key=key, pid=0, service=str(service), host=host, port=port, user=user, db=db, reload=reload,
+        log=str(log_path(key)), started_at="", events=events, parallel=parallel, on_demand=True,
+    )
+    registry = load()
+    registry[key] = instance
+    save(registry)
+    return instance
+
+
+def sleep(instance: Instance, timeout: float = 10) -> Instance:
+    """Stop an on-demand instance and keep it registered, asleep, until a request wakes it again."""
+    kill_tree(instance.pid, instance.created, timeout)
+    registry = load()
+    current = registry.get(instance.key)
+    if current is None or current.pid != instance.pid:  # stopped or restarted meanwhile: not ours to change
+        return current or instance
+    current.pid, current.created, current.started_at, current.on_demand = 0, 0.0, "", True
+    save(registry)
+    return current
+
+
+def set_on_demand(key: str, on: bool) -> Instance | None:
+    """Mark a registered instance on demand or always on (it keeps running as it is); None when it is not there."""
+    registry = load()
+    instance = registry.get(key)
+    if instance is not None:
+        instance.on_demand = on
+        save(registry)
     return instance
 
 
@@ -537,7 +588,7 @@ EXCEPTION_LINE = re.compile(r"^[\w.]*(Error|Exception|Exit)\b.*")
 
 @dataclass
 class Health:
-    state: str  # ok | busy | starting | error | stopped
+    state: str  # ok | busy | starting | error | stopped | asleep
     detail: str = ""
 
 
@@ -612,6 +663,8 @@ POLLER_READY = "[pdms-poller] Polling"
 
 
 def health(instance: Instance) -> Health:
+    if instance.asleep:
+        return Health("asleep")
     if not instance.alive():
         return Health("stopped")
     if instance.is_consumer:  # no HTTP: ready once the poller listens on its queue

@@ -136,6 +136,27 @@ Services started by pdms (never in AWS) get, through a `sitecustomize` on their 
 
 They apply when a service starts. None makes a query faster: the round trip to the database still costs what it costs.
 
+### On demand
+
+On a computer with little memory, services can wait **asleep** until they are used: each one takes ~150 MB awake and
+nothing asleep.
+
+```bash
+pdms run lead-place-get -b --on-demand   # registered asleep, on its port
+pdms up tp --on-demand                   # the whole stack (or on_demand = "on" in the stack)
+pdms proxy -b                            # the proxy is what wakes them
+```
+
+- The **first request** through the proxy to one of its routes starts it (a few seconds) and waits for it; the next
+  ones go straight to it, and requests that arrive while it starts wait for the same start.
+- After **`idle_minutes`** (15) without requests through the proxy, and none in progress, the proxy stops it again.
+- `pdms ps` and pdms ui show it as **asleep**. `pdms restart` (or **Start now**) starts it right away, and it still
+  sleeps when idle; `--always-on` (or **Always on** in Services) keeps it running. `pdms stop` and `pdms down` forget it.
+- Only through the proxy: calling its port directly (`localhost:28101/docs`) while it is asleep finds nothing.
+  SQS consumers are never on demand, since they read their queue all the time.
+- `on_demand = true` in the defaults (Settings → **Services on demand**) makes it the default for `pdms run -b`,
+  `pdms up` and pdms ui; a stack can say `on_demand = "on"` or `"off"` whatever the default.
+
 ## Stacks
 
 ```bash
@@ -311,6 +332,8 @@ notify = true                # desktop notifications from pdms ui
 ui_at_login = false
 db_timeout = 15              # seconds for pdms db test
 proxy_timeout = 300          # seconds the proxy waits before a 502
+on_demand = false            # see "On demand"
+idle_minutes = 15
 
 [defaults.env]               # extra variables for every service
 
@@ -331,6 +354,7 @@ protected = false
 services = ["lead/lead-tp-list", "lead/lead-tp-details"]
 user = ""                    # empty: ask when starting
 db = ""
+on_demand = ""               # "on", "off" or "": as the default
 ```
 
 **Repos.** pdms works with several PDMS checkouts; the **current** one is where services, stacks and migrations come

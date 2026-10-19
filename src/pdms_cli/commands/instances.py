@@ -27,6 +27,7 @@ def status_text(state: str) -> str:
         "starting": f"[cyan]… {_('starting')}[/]",
         "error": "[yellow]⚠ error[/]",
         "stopped": f"[red]✗ {_('stopped')}[/]",
+        "asleep": f"[blue]☾ {_('asleep')}[/]",
     }[state]
 
 
@@ -58,8 +59,12 @@ def pick_instance(key: Optional[str], only_alive: bool = False, message: Optiona
     if len(items) == 1:
         return items[0]
     prompts.require_tty()
-    choices = [questionary.Choice(f"{i.key}  ({_('running') if i.alive() else _('stopped')})", i) for i in items]
+    choices = [questionary.Choice(f"{i.key}  ({state_word(i)})", i) for i in items]
     return questionary.select(message or _("Choose an instance:"), choices=choices).unsafe_ask()
+
+
+def state_word(inst: instances.Instance) -> str:
+    return _("asleep") if inst.asleep else _("running") if inst.alive() else _("stopped")
 
 
 @app.command(help=_("Show the endpoints (method and full URL) of background services."))
@@ -88,7 +93,7 @@ def urls(
 def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped instances."))) -> None:
     items = instances.load()
     if clean:
-        for inst in [i for i in items.values() if not i.alive()]:
+        for inst in [i for i in items.values() if not i.present()]:  # asleep ones are still there
             instances.forget(inst.key)
             items.pop(inst.key)
     running_proxy = proxy.running_proxy()
@@ -110,7 +115,7 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
         table.add_row(
             inst.key, status_text(state), f"sqs ← {inst.queue}" if inst.is_consumer else f"http://localhost:{inst.port}",
             f"[bold]{repo}[/]" if repo == cfg.current_repo else repo,
-            inst.user, inst.db, uptime(inst.started_at) if state != "stopped" else "",
+            inst.user, inst.db, uptime(inst.started_at) if inst.started_at and state not in ("stopped", "asleep") else "",
         )
     if running_proxy:
         port = running_proxy["port"]
@@ -134,13 +139,18 @@ def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped insta
     for key, health in healths.items():
         if health.state == "error":
             console.print(f"[yellow]⚠ {key}:[/] {health.detail}  [dim](pdms logs {key})[/]", highlight=False)
-    for key, changed in stale_dependencies([i for i in items.values() if healths[i.key].state != "stopped"]).items():
+    for key, changed in stale_dependencies([i for i in items.values()
+                                            if healths[i.key].state not in ("stopped", "asleep")]).items():
         names = ", ".join(_("the service itself") if n == installer.SERVICE_PART else n for n in changed)
         console.print(
             f"[yellow]⚠ {key}:[/] " + _("installed code changed since it started ({names}); --reload does not pick "
                                         "it up → pdms restart {key}", names=names, key=key),
             highlight=False,
         )
+    if any(h.state == "asleep" for h in healths.values()):
+        console.print(_("[dim]Asleep ones start with the proxy's first request for them.[/]") if running_proxy else
+                      "[yellow]" + _("⚠ Some services are asleep and the proxy is not running, so nothing will wake "
+                                     "them: start it with [bold]pdms proxy -b[/].") + "[/]")
     if any(h.state == "stopped" for h in healths.values()):
         console.print(_("[dim]Stopped ones keep their log (pdms logs <instance>). Remove them with pdms ps --clean.[/]"))
     if outside:
@@ -269,7 +279,7 @@ def logs(
                 _("Which instance do you want to see the logs of?"),
                 choices=[
                     questionary.Choice(_("All running instances"), everything),
-                    *[questionary.Choice(f"{i.key}  ({_('running') if i.alive() else _('stopped')})", i) for i in items],
+                    *[questionary.Choice(f"{i.key}  ({state_word(i)})", i) for i in items],
                 ],
             ).unsafe_ask()
             if choice == everything:
@@ -383,7 +393,7 @@ def stop(
     ),
     all_: bool = typer.Option(False, "--all", "-a", help=_("Stop all, the proxy and the frontend included.")),
 ) -> None:
-    running = [i for i in instances.load().values() if i.alive()]
+    running = [i for i in instances.load().values() if i.present()]  # asleep ones too: else the proxy wakes them
     running_proxy = proxy.running_proxy()
     running_frontend = frontend.running()
     stop_proxy = stop_frontend = False
