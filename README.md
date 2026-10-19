@@ -117,6 +117,10 @@ reloader. pdms asks before using a database marked as **protected**. `pdms ps` a
   lock: `pdms restart` reinstalls it.
 - **Outside pdms.** A service still running after pdms lost track of it is listed as *outside pdms*; `pdms adopt`
   manages it again (`--stop` stops it).
+- **Light on the machine.** A service starts with its virtualenv's Python (`python -m uvicorn`), without
+  `poetry run` in between, and `--reload` watches only the folders with its code: not its `.venv` (thousands of
+  files that uvicorn would otherwise check four times a second, about two thirds of a CPU core per service) nor
+  `tests`. A change to `main.py` alone needs `pdms restart`.
 
 ### Slow databases
 
