@@ -264,3 +264,20 @@ def test_a_service_python_loads_it_through_sitecustomize(tmp_path) -> None:
     result = subprocess.run([sys.executable, "-c", check], env=env, capture_output=True, text=True, timeout=60)
     assert result.stdout.strip() == "True", result.stderr
     assert "[pdms] requests run in parallel" in result.stderr
+
+
+def test_the_reloader_and_the_resource_tracker_are_left_alone(tmp_path) -> None:
+    """They never run the service's code: patching them would only load its libraries into them."""
+    fake = tmp_path / "starlette"
+    fake.mkdir()
+    (fake / "__init__.py").write_text("")
+    (fake / "applications.py").write_text("class Starlette:\n    pass\n")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("PDMS_", "PYTHONPATH"))}
+    env.update(PYTHONPATH=os.pathsep.join([str(events.PATCH_DIR), str(tmp_path)]), PDMS_PARALLEL_REQUESTS="1")
+    check = "import sys; print('starlette' in sys.modules)"
+    reloader = [sys.executable, "-c", check, "--reload"]
+    tracker = [sys.executable, "-c", check + "  # from multiprocessing.resource_tracker import main"]
+    for args in (reloader, tracker):
+        result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=60)
+        assert result.stdout.strip() == "False", result.stderr
+        assert "[pdms]" not in result.stderr

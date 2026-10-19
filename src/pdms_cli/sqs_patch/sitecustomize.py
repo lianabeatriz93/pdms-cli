@@ -221,28 +221,37 @@ def _patch() -> None:
     botocore.session.Session.create_client = create_client
 
 
-try:
-    _patch()
-except Exception:  # noqa: BLE001 - a broken patch must never stop the service from starting
-    pass
+def helper_process():
+    """Whether this is uvicorn --reload's file watcher or multiprocessing's resource tracker: they never run the
+    service's code, and patching them would only load botocore, Starlette and SQLAlchemy into each (~50 MB per
+    service). The worker uvicorn spawns runs the code, and is patched."""
+    argv = getattr(sys, "orig_argv", sys.argv)
+    return "--reload" in argv or any("multiprocessing.resource_tracker" in arg for arg in argv)
 
-try:
-    import pdms_parallel  # this folder: requests in parallel and connections opened at start (see that module)
 
-    pdms_parallel.install()
-except Exception:  # noqa: BLE001 - same as above
-    pass
+if not helper_process():
+    try:
+        _patch()
+    except Exception:  # noqa: BLE001 - a broken patch must never stop the service from starting
+        pass
 
-try:
-    import pdms_queries  # this folder: database time and queries of each request (see that module)
+    try:
+        import pdms_parallel  # this folder: requests in parallel and connections opened at start (see that module)
 
-    pdms_queries.install()  # after pdms_parallel: it measures around the thread a request runs in
-except Exception:  # noqa: BLE001 - same as above
-    pass
+        pdms_parallel.install()
+    except Exception:  # noqa: BLE001 - same as above
+        pass
 
-try:
-    import pdms_trace  # this folder: the request a service works for, through its logs and events (see that module)
+    try:
+        import pdms_queries  # this folder: database time and queries of each request (see that module)
 
-    pdms_trace.install()  # last: its id must be current around what the others measure
-except Exception:  # noqa: BLE001 - same as above
-    pass
+        pdms_queries.install()  # after pdms_parallel: it measures around the thread a request runs in
+    except Exception:  # noqa: BLE001 - same as above
+        pass
+
+    try:
+        import pdms_trace  # this folder: the request a service works for, through its logs and events (see that module)
+
+        pdms_trace.install()  # last: its id must be current around what the others measure
+    except Exception:  # noqa: BLE001 - same as above
+        pass
