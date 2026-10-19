@@ -35,7 +35,8 @@ export function openLaunch({ title, key, hint, user, db, path, go, after, broker
   Object.assign(launch, { path, after, run, service, confirmed: false, set: false, stack: "" });
   $("set-picker").hidden = $("set-change-label").hidden = $("set-remember-label").hidden = true;
   $("restart-user-label").hidden = $("restart-db-label").hidden = false;
-  $("run-picker").hidden = $("run-port-label").hidden = !run;
+  $("run-picker").hidden = $("run-port-label").hidden = $("run-on-demand-label").hidden = !run;
+  $("run-on-demand").checked = Boolean(state.on_demand);
   $("run-consumer").hidden = true;
   $("restart-broker-label").hidden = !broker;
   $("restart-broker").checked = true;
@@ -143,7 +144,7 @@ export async function openRun() {
     const radio = el("input", { type: "radio", name: "run-service", value: svc });
     radio.addEventListener("change", () => {
       const consumer = consumers.has(svc);
-      $("run-port-label").hidden = consumer;
+      $("run-port-label").hidden = $("run-on-demand-label").hidden = consumer;
       $("run-consumer").hidden = !consumer;
       resetConfirmation();
     });
@@ -204,6 +205,7 @@ export async function submitLaunch(event) {
     }
     body.service = picked.value;
     body.port = $("run-port-label").hidden || !$("run-port").value ? null : Number($("run-port").value);
+    body.on_demand = $("run-on-demand-label").hidden ? null : $("run-on-demand").checked;
   }
   $("restart-error").hidden = true;
   $("restart-go").disabled = true;

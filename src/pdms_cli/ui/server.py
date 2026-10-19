@@ -192,7 +192,10 @@ def run_options(body: dict) -> dict:
         raise actions.ActionError("service must be a service path of the current repo")
     if port is not None and (not isinstance(port, int) or isinstance(port, bool) or not 0 < port < 65536):
         raise actions.ActionError("port must be a number between 1 and 65535, or null for the next free one")
-    return {"service": service, "port": port, **launch_options(body)}
+    on_demand = body.get("on_demand")
+    if on_demand not in (None, True, False):
+        raise actions.ActionError("on_demand must be true, false or null (the on_demand setting)")
+    return {"service": service, "port": port, **launch_options(body), "on_demand": on_demand}
 
 
 def frontend_options(body: dict) -> dict:
@@ -662,6 +665,13 @@ def make_handler(
             if verb == "restart":
                 job = jobs.restart(key, **launch_options(body))
                 return 202, {"job": job.key}
+            if verb == "on-demand":
+                if not isinstance(body.get("on"), bool):
+                    raise actions.ActionError("on must be true or false")
+                job = jobs.on_demand(key, body["on"])
+                return (202, {"job": job.key}) if job else (200, {})
+            if verb == "sleep":
+                return 202, {"job": jobs.sleep(key).key}
             if verb == "debug":
                 return 200, jobs.debug(key)
             if verb == "forget":
@@ -720,8 +730,12 @@ def make_handler(
                 if rename.strip() and rename.strip() != name and jobs.busy(ui_jobs.stack_key(name)):
                     raise actions.ActionError(_("The stack {name} is starting or stopping: rename it afterwards.",
                                                 name=name))
+                on_demand = body.get("on_demand")
+                if on_demand not in (None, "", "on", "off"):
+                    raise actions.ActionError('on_demand must be "on", "off" or "" (as the on_demand setting)')
                 saved = ui_jobs.save_stack(name, services, str(body.get("user") or ""), str(body.get("db") or ""),
-                                           new=body.get("new") is True, overrides=overrides, rename=rename)
+                                           new=body.get("new") is True, overrides=overrides, rename=rename,
+                                           on_demand=on_demand)
                 return 200, {"name": saved}
             if verb == "remove":
                 ui_jobs.remove_stack(name)

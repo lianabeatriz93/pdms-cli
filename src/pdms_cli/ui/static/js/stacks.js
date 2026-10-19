@@ -170,10 +170,17 @@ export async function openEditor(stack = null, preset = null) {
   }));
   options($("editor-user"), ["", ...state.users], from ? from.user : "", (name) => name || ask());
   options($("editor-db"), ["", ...state.dbs.map((item) => item.name)], from ? from.db : "", (name) => name ? dbLabel(name) : ask());
+  options($("editor-on-demand"), ["", "on", "off"], from ? from.on_demand || "" : "", onDemandLabel);
   $("editor-error").hidden = true;
   editorCount();
   $("editor").showModal();
   (stack ? $("editor-filter") : $("editor-name")).focus();
+}
+
+function onDemandLabel(value) {
+  if (value === "on") return t("On demand: asleep until a request, asleep again when idle");
+  if (value === "off") return t("Always on");
+  return state.on_demand ? t("As in Settings (on demand)") : t("As in Settings (always on)");
 }
 
 function editorCount() {
@@ -192,6 +199,7 @@ export async function saveEditor(event) {
   const body = {
     services: editor.order.filter((svc) => editor.picked.has(svc)),
     user: $("editor-user").value, db: $("editor-db").value, new: !editor.name, rename: editor.name ? typed : "",
+    on_demand: $("editor-on-demand").value,
     overrides: Object.fromEntries(Object.entries(editor.overrides || {}).filter(([svc]) => editor.picked.has(svc))),
   };
   if (!body.services.length) {

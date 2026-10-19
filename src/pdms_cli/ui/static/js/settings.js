@@ -32,6 +32,8 @@ const DEFAULTS = [
   ["db_timeout", N_("Connection test timeout"), "number", N_("Seconds to wait when testing a database.")],
   ["proxy_port", N_("Proxy port"), "number", N_("Where pdms proxy listens (pdms proxy, Start everything); the next free one when it is busy.")],
   ["proxy_timeout", N_("Proxy timeout"), "number", N_("Seconds the proxy waits for a service or the remote API before answering 502. Slow databases need more; applies when the proxy starts.")],
+  ["on_demand", N_("Services on demand"), "check", N_("Services started in the background wait asleep until the proxy gets a request for them, and sleep again when idle: only what you use takes memory. A stack can say otherwise.")],
+  ["idle_minutes", N_("Minutes before an idle service sleeps"), "number", N_("For services on demand: minutes without requests through the proxy before it stops them. Applies to the running proxy.")],
   ["banner", N_("Show the PDMS banner"), "check", N_("When the interactive menu opens.")],
   ["update_check", N_("Tell me about new pdms versions"), "check", N_("Checked at most once a day.")],
   ["ui_at_login", N_("Open pdms ui when I log in"), "check", N_("In the tray, without its window. To have it in the app menu too: pdms ui --install.")],

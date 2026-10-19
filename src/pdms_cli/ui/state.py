@@ -32,6 +32,7 @@ def instance_state(cfg: Config, inst: instances.Instance, health: instances.Heal
         "key": inst.key, "name": inst.name, "service": inst.service, "repo": repos.repo_of(cfg, inst.service) or "",
         "host": inst.host, "port": inst.port, "queue": inst.queue, "user": inst.user, "db": inst.db,
         "events": inst.events, "reload": inst.reload, "parallel": inst.parallel, "started_at": inst.started_at,
+        "on_demand": inst.on_demand,
         "status": health.state, "detail": health.detail,
         "traceback": traceback_state(cfg, inst.log) if health.state == "error" else [],
     }
@@ -43,7 +44,7 @@ def stacks_state(cfg: Config, live: dict[str, list[str]]) -> list[dict]:
     root = backend.resolve() if backend and backend.is_dir() else None
     return [
         {
-            "name": name, "user": stack.user, "db": stack.db, "overrides": stack.overrides,
+            "name": name, "user": stack.user, "db": stack.db, "overrides": stack.overrides, "on_demand": stack.on_demand,
             "services": [
                 {"path": svc, "running": live.get(str(root / svc), []) if root else []} for svc in stack.services
             ],
@@ -199,6 +200,7 @@ def build_state(cfg: Config | None = None, jobs: dict[str, dict] | None = None, 
         "language": i18n.configured(cfg.defaults.language),
         "theme": cfg.defaults.theme,
         "notify": cfg.defaults.notify,
+        "on_demand": cfg.defaults.on_demand,
         "home": str(Path.home()),
         "repo": {"alias": cfg.current_repo, "root": str(root), "branch": repos.git_branch(root)} if root else None,
         "repos": [{"name": name, "path": str(repo.root)} for name, repo in cfg.repos.items()],
