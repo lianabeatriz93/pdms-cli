@@ -98,10 +98,13 @@ def confirm_protected(cfg: Config, prof: Profile, yes: bool) -> None:
     actions.remember_profile(cfg, prof.user_name, prof.db_name)
 
 
-def poetry_install(service: Path) -> None:
-    console.rule("poetry lock && poetry install")
+def poetry_install(service: Path, only: Optional[list[Path]] = None) -> None:
+    if only is None:
+        console.rule("poetry lock && poetry install")
+    elif only:
+        console.rule(_("Reinstalling {names} (only their code changed)", names=", ".join(p.name for p in only)))
     try:
-        actions.install_service(service)
+        actions.install_service(service, only=only)
     except actions.ActionError as exc:
         fail(exc.message)
 
@@ -117,7 +120,7 @@ def install_label(cfg: Config, install: Optional[bool], each: bool = False) -> s
 def ensure_installed(cfg: Config, service: Path, install: Optional[bool]) -> None:
     """Install according to the flag: True forces it, False skips it, None follows the settings (smart by default)."""
     if actions.needs_install(cfg, service, install):
-        poetry_install(service)
+        poetry_install(service, actions.quick_install(cfg, service, install))
     elif actions.install_wanted(cfg, install):
         console.print("[green]✓[/] " + _(
             "{name}: dependencies up to date (nothing changed since the last install), skipping.", name=service.name

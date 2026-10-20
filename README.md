@@ -112,7 +112,10 @@ reloader. pdms asks before using a database marked as **protected**. `pdms ps` a
 
 - **Smart install.** Services use `backend/common/*` as a copy (`develop = false`), so `pdms` runs
   `poetry lock && poetry install` before starting, but only when the service's `pyproject.toml`/`poetry.lock` or
-  the code of those libraries changed since the last install.
+  the code of those libraries changed since the last install. When only their code changed (the usual case after a
+  `git pull`), it skips poetry and reinstalls just those libraries with `pip`; `-i` forces the whole install.
+  `pdms up` installs several services at once (2 on a PC with 4 cores or less, or under 12 GB of memory; 3
+  otherwise), each with its output in its install log.
 - **Outdated code.** `pdms ps` (and pdms ui) says when a running service uses an old copy of `common/` or an old
   lock: `pdms restart` reinstalls it.
 - **Outside pdms.** A service still running after pdms lost track of it is listed as *outside pdms*; `pdms adopt`

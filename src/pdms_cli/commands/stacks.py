@@ -10,7 +10,7 @@ import typer
 from prompt_toolkit.keys import Keys
 from rich.table import Table
 
-from .. import actions, completion, prompts
+from .. import actions, completion, instances, prompts
 from ..config import Config, Stack
 from ..i18n import _
 from .common import EVENTS_HELP, app, console, fail, pick, settle, show_menu, stack_app
@@ -167,6 +167,25 @@ def stack_remove(name: Optional[str] = typer.Argument(None, autocompletion=compl
         console.print("[green]✓[/] " + _("'{name}' deleted.", name=name))
 
 
+def install_together(cfg: Config, plan: actions.StackLaunch, install: Optional[bool]) -> None:
+    """Install the stack's services several at once, each with its output in its install log."""
+    logs = {s.service: actions.install_log(instances.make_key(s.service, s.port)) for s in plan.services}
+    console.rule(_("Installing several services at once ({workers} at a time)", workers=actions.install_workers()))
+
+    def progress(event: str, service: Path) -> None:
+        if event == "installing":
+            console.print(_("[dim]· {name}: installing… (log: {log})[/]", name=service.name, log=logs[service]))
+        elif event == "retrying":
+            console.print(_("[yellow]· {name}: the install failed; trying it again on its own.[/]", name=service.name))
+        else:
+            console.print("[green]✓[/] " + _("{name}: installed.", name=service.name))
+
+    try:
+        actions.install_services(cfg, logs, install, progress)
+    except actions.ActionError as exc:
+        fail(exc.message)
+
+
 @app.command(help=_("Start all services of a stack in the background, each on a free port."))
 def up(
     name: Optional[str] = typer.Argument(None, help=_("Stack to start."), autocompletion=completion.stacks),
@@ -219,7 +238,11 @@ def up(
     }, show_service=False)
     confirm_protected(cfg, profile, yes)
 
-    started = actions.start_stack(cfg, plan, install=lambda path: ensure_installed(cfg, path, install))
+    if sum(actions.needs_install(cfg, s.service, install) for s in plan.services) > 1:
+        install_together(cfg, plan, install)
+        started = actions.start_stack(cfg, plan)
+    else:  # with its output in the terminal
+        started = actions.start_stack(cfg, plan, install=lambda path: ensure_installed(cfg, path, install))
     failed = 0
     for inst in started:
         try:

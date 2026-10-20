@@ -22,6 +22,15 @@ def touch(path: Path, text: str) -> None:
     os.utime(path, (later, later))
 
 
+def venv_python(service: Path) -> Path:
+    from pdms_cli import runner
+
+    python = service / ".venv" / ("Scripts/python.exe" if runner.WINDOWS else "bin/python")
+    python.parent.mkdir(parents=True)
+    python.write_text("")
+    return python
+
+
 def make_repo(tmp_path: Path) -> Path:
     backend = tmp_path / "backend"
     project(backend / "common" / "base")
@@ -115,12 +124,29 @@ def test_install_force_reinstalls_the_copied_dependencies(tmp_path: Path, monkey
     from pdms_cli import runner
 
     service = make_repo(tmp_path)
+    python = venv_python(service)
     calls = []
     monkeypatch.setattr(runner.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
     runner.install(service)
-    assert [c[1] for c in calls] == ["lock", "install", "run"]
+    assert [c[1] for c in calls] == ["lock", "install", "-m"]
+    assert calls[2][0] == str(python)  # the virtualenv's python, without starting poetry
     assert "--force-reinstall" in calls[2] and "--no-deps" in calls[2]
     assert [Path(p).name for p in calls[2][-2:]] == ["core", "base"]
+
+
+def test_install_with_only_skips_poetry(tmp_path: Path, monkeypatch) -> None:
+    from pdms_cli import runner
+
+    service = make_repo(tmp_path)
+    venv_python(service)
+    calls = []
+    monkeypatch.setattr(runner.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    runner.install(service, only=[tmp_path / "backend/common/base"])
+    assert len(calls) == 1 and calls[0][1:5] == ["-m", "pip", "install", "--quiet"]
+    assert calls[0][-1] == str(tmp_path / "backend/common/base")
+    calls.clear()
+    runner.install(service, only=[])
+    assert calls == []
 
 
 def test_poetry_never_uses_the_virtualenv_pdms_runs_in(tmp_path: Path, monkeypatch) -> None:
@@ -138,6 +164,48 @@ def test_poetry_never_uses_the_virtualenv_pdms_runs_in(tmp_path: Path, monkeypat
     runner.install(service)
     runner.poetry_python(service)
     envs.append(runner.build_env(Defaults(), DevUser("u1", "a@x.com"), Database("localhost")))
-    assert len(envs) == 5
+    assert len(envs) == 6  # lock, install, env info + pip, env info, the service
     for env in envs:
         assert "VIRTUAL_ENV" not in env and "CONDA_PREFIX" not in env and env["KEEP_ME"] == "1"
+
+
+def test_only_code_of_copied_libraries_changed(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    service = make_repo(tmp_path)
+    common = (tmp_path / "backend" / "common").resolve()
+    (service / "poetry.lock").write_text("# lock\n")
+    assert installer.code_only_changes(service) is None  # never installed
+    installer.remember(service)
+    assert installer.code_only_changes(service) == []
+
+    touch(tmp_path / "backend/common/base/base/utils.py", "y = 3\n")  # copied, transitive
+    touch(tmp_path / "backend/common/storage/storage/s3.py", "z = 3\n")  # editable: nothing to do
+    assert installer.code_only_changes(service) == [common / "base"]
+    touch(tmp_path / "backend/common/core/core/models.py", "x = 3\n")
+    assert installer.code_only_changes(service) == [common / "base", common / "core"]
+
+    touch(service / "poetry.lock", "# lock\n")  # rewritten, the same content: still only code
+    assert installer.code_only_changes(service) == [common / "base", common / "core"]
+
+
+def test_any_manifest_change_takes_a_whole_install(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    service = make_repo(tmp_path)
+    for changed in ("lead/svc/poetry.lock", "common/base/pyproject.toml", "common/storage/pyproject.toml"):
+        installer.remember(service)
+        touch(tmp_path / "backend/common/core/core/models.py", f"x = '{changed}'\n")
+        path = tmp_path / "backend" / changed
+        touch(path, (path.read_text() if path.exists() else "") + "\n# a new dependency\n")
+        assert installer.code_only_changes(service) is None, changed
+
+
+def test_records_of_older_versions_still_count(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    service = make_repo(tmp_path)
+    path = installer.fingerprints_path()
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({str(service): installer.fingerprint(service)}))
+    assert installer.is_up_to_date(service)
+    assert installer.code_only_changes(service) is None  # without parts: a whole install

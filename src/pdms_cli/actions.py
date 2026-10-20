@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import IO
 from urllib.parse import unquote, urlsplit
 
+import psutil
+
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
 from . import awsenv, captures, emails, health, trace, vscode
 from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
@@ -335,17 +337,81 @@ def needs_install(cfg: Config, service: Path, install: bool | None) -> bool:
                 and installer.is_up_to_date(service))
 
 
-def install_service(service: Path, output: IO[str] | None = None) -> None:
+def quick_install(cfg: Config, service: Path, install: bool | None) -> list[Path] | None:
+    """When following the settings (smart install) and only the code of copied packages changed, those packages:
+    reinstalling them is enough (see :func:`installer.code_only_changes`). None for a whole install."""
+    if install is not None or not cfg.defaults.smart_install or not runner.poetry_python(service):
+        return None
+    return installer.code_only_changes(service)
+
+
+def install_service(service: Path, output: IO[str] | None = None, only: list[Path] | None = None) -> None:
     """Install the service's dependencies (see :func:`runner.install`) and remember what got installed."""
     try:
         runner.ensure_poetry()
-        runner.install(service, output)
+        runner.install(service, output, only)
     except RuntimeError as exc:
         raise ActionError(str(exc)) from exc
     except subprocess.CalledProcessError as exc:
         raise ActionError(_("{cmd} failed (exit code {code}).", cmd=" ".join(map(str, exc.cmd)),
                             code=exc.returncode)) from exc
     installer.remember(service)
+
+
+def install_log(key: str) -> Path:
+    """Where the install of instance ``key`` writes its output (the service's own log is rotated when it starts)."""
+    return instances.log_path(key).with_suffix(".install.log")
+
+
+def install_workers() -> int:
+    """How many services install at once: 2 on a modest PC (4 cores or fewer, or under 12 GB of memory), else 3.
+    Most of an install is waiting for the package index and the disk, not the CPU."""
+    modest = (os.cpu_count() or 1) <= 4 or psutil.virtual_memory().total < 12 * 1024**3
+    return 2 if modest else 3
+
+
+def install_services(
+    cfg: Config, services: dict[Path, Path], install: bool | None,
+    progress: Callable[[str, Path], None] = lambda event, service: None,
+) -> None:
+    """Install the ``services`` that need it, several at once (:func:`install_workers`), each writing to its log
+    (``{service: log}``). ``progress`` gets ``("installing" | "installed" | "retrying", service)``.
+
+    One that fails is tried again on its own once the rest are done: poetry shares its download cache between
+    processes without locking it, so two installs downloading the same package can trip over each other. Raises
+    :class:`ActionError` naming the ones that still failed, after trying all of them.
+    """
+    pending = [service for service in services if needs_install(cfg, service, install)]
+
+    def one(service: Path, mode: str = "w") -> None:
+        only = quick_install(cfg, service, install)
+        log = services[service]
+        log.parent.mkdir(parents=True, exist_ok=True)
+        progress("installing" if mode == "w" else "retrying", service)
+        with open(log, mode, encoding="utf-8", errors="replace") as output:
+            if mode == "a":
+                output.write("\n$ # " + _("tried again on its own") + "\n")
+            install_service(service, output, only)
+        progress("installed", service)
+
+    failed: list[Path] = []
+    if len(pending) > 1:
+        with ThreadPoolExecutor(max_workers=min(install_workers(), len(pending))) as pool:
+            for service, future in [(s, pool.submit(one, s)) for s in pending]:
+                try:
+                    future.result()
+                except ActionError:
+                    failed.append(service)
+    elif pending:
+        one(pending[0])
+    errors = []
+    for service in failed:
+        try:
+            one(service, "a")
+        except ActionError as exc:
+            errors.append(f"{service.name}: {exc.message} ({services[service]})")
+    if errors:
+        raise ActionError(_("The install failed for:") + "\n" + "\n".join(errors))
 
 
 def installed_parts(service: Path) -> dict[str, str] | None:

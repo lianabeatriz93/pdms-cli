@@ -145,20 +145,29 @@ def ensure_poetry() -> None:
         raise RuntimeError(_("'poetry' was not found in PATH."))
 
 
-def install(service: Path, output: IO[str] | None = None) -> None:
-    """``poetry lock && poetry install``, printing to the terminal or, with ``output``, writing everything there."""
+def install(service: Path, output: IO[str] | None = None, only: list[Path] | None = None) -> None:
+    """``poetry lock && poetry install``, printing to the terminal or, with ``output``, writing everything there.
+
+    With ``only`` (see :func:`installer.code_only_changes`) just those copied packages are reinstalled, without poetry.
+    """
     redirect = {"stdout": output, "stderr": subprocess.STDOUT, "stdin": subprocess.DEVNULL} if output else {}
     env = poetry_environ()
-    for cmd in ([poetry(), "lock"], [poetry(), "install"]):
+
+    def run(cmd: list[str]) -> None:
         if output:
             output.write(f"$ {' '.join(cmd)}\n")
             output.flush()
-        subprocess.run(cmd, cwd=service, env=env, check=True, **redirect)
-    copied = installer.copied_dependencies(service)
+        call, call_env = direct(service, cmd, env)
+        subprocess.run(call, cwd=service, env=call_env, check=True, **redirect)
+
+    if only is None:
+        run([poetry(), "lock"])
+        run([poetry(), "install"])
+    # poetry keeps a copied path dependency whose version did not change, even if its code did
+    copied = installer.copied_dependencies(service) if only is None else only
     if copied:
-        # poetry keeps a copied path dependency whose version did not change, even if its code did
-        subprocess.run([poetry(), "run", "python", "-m", "pip", "install", "--quiet", "--no-deps", "--force-reinstall",
-                        *map(str, copied)], cwd=service, env=env, check=True, **redirect)
+        run([poetry(), "run", "python", "-m", "pip", "install", "--quiet", "--no-deps", "--force-reinstall",
+             *map(str, copied)])
 
 
 def reload_dirs(service: Path) -> list[str]:

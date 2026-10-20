@@ -578,3 +578,66 @@ def test_remove_repo_hands_the_current_one_to_the_next(cfg, tmp_path) -> None:
     assert actions.remove_repo(cfg, "pdms") == ""
     assert (cfg.repos, cfg.ignored_repos) == ({}, ["/elsewhere"])
     assert (tmp_path / "pdms" / "backend").is_dir()  # nothing deleted from disk
+
+
+def test_services_install_several_at_once_and_a_failure_is_tried_again_alone(cfg, monkeypatch, tmp_path) -> None:
+    import threading
+    import time
+
+    services = {tmp_path / name: tmp_path / "logs" / f"{name}.install.log" for name in ("a", "b", "c", "up-to-date")}
+    monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: service.name != "up-to-date")
+    monkeypatch.setattr(actions, "quick_install", lambda cfg, service, install: None)
+    monkeypatch.setattr(actions, "install_workers", lambda: 2)
+    lock, state = threading.Lock(), {"now": 0, "most": 0, "calls": []}
+
+    def install(service, output, only):
+        with lock:
+            state["now"] += 1
+            state["most"] = max(state["most"], state["now"])
+            state["calls"].append(service.name)
+            first_b = state["calls"].count("b") == 1
+        time.sleep(0.05)
+        with lock:
+            state["now"] -= 1
+        output.write(f"installing {service.name}\n")
+        if service.name == "b" and first_b:  # another install was downloading the same package
+            raise actions.ActionError("poetry install failed")
+
+    monkeypatch.setattr(actions, "install_service", install)
+    events = []
+    actions.install_services(cfg, services, None, lambda event, service: events.append((event, service.name)))
+    assert state["most"] == 2
+    assert sorted(state["calls"]) == ["a", "b", "b", "c"] and state["calls"][-1] == "b"
+    assert ("retrying", "b") in events and events[-1] == ("installed", "b")
+    assert "tried again on its own" in services[tmp_path / "b"].read_text()
+    assert not services[tmp_path / "up-to-date"].exists()
+
+
+def test_a_service_that_fails_twice_is_named_after_the_rest_install(cfg, monkeypatch, tmp_path) -> None:
+    services = {tmp_path / name: tmp_path / f"{name}.log" for name in ("a", "b")}
+    monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: True)
+    monkeypatch.setattr(actions, "quick_install", lambda cfg, service, install: None)
+    installed = []
+
+    def install(service, output, only):
+        if service.name == "a":
+            raise actions.ActionError("poetry lock failed (exit code 1).")
+        installed.append(service.name)
+
+    monkeypatch.setattr(actions, "install_service", install)
+    with pytest.raises(actions.ActionError) as error:
+        actions.install_services(cfg, services, None)
+    assert installed == ["b"]
+    assert "a: poetry lock failed" in error.value.message and str(services[tmp_path / "a"]) in error.value.message
+
+
+def test_quick_install_only_when_following_the_settings(cfg, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(actions.runner, "poetry_python", lambda service: tmp_path / "python")
+    monkeypatch.setattr(actions.installer, "code_only_changes", lambda service: [tmp_path / "core"])
+    assert actions.quick_install(cfg, tmp_path, None) == [tmp_path / "core"]
+    assert actions.quick_install(cfg, tmp_path, True) is None  # -i: a whole install
+    cfg.defaults.smart_install = False
+    assert actions.quick_install(cfg, tmp_path, None) is None
+    cfg.defaults.smart_install = True
+    monkeypatch.setattr(actions.runner, "poetry_python", lambda service: None)  # no virtualenv yet
+    assert actions.quick_install(cfg, tmp_path, None) is None
