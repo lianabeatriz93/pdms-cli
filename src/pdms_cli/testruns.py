@@ -161,9 +161,7 @@ def run_tests(cfg: Config, backend: Path, project: str, db_name: str, *, install
     begin = time.time()
     with open(paths["log"], "w", encoding="utf-8", errors="replace") as log:
         if actions.needs_install(cfg, path, install):
-            log.write("$ poetry lock && poetry install\n")
-            log.flush()
-            actions.install_service(path, log)
+            actions.install_service(path, log, actions.quick_install(cfg, path, install))
         if cancelled():
             log.write(_("Stopped from pdms ui.") + "\n")
             return None

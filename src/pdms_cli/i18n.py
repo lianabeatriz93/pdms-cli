@@ -232,6 +232,15 @@ ES: dict[str, str] = {
         "Forzar (-i) o saltar (-n) la instalación; por defecto solo si algo cambió.",
     "{name}: dependencies up to date (nothing changed since the last install), skipping.":
         "{name}: dependencias al día (nada cambió desde la última instalación), me la salto.",
+    "Reinstalling {names} (only their code changed)": "Reinstalando {names} (solo cambió su código)",
+    "tried again on its own": "intentado de nuevo a solas",
+    "The install failed for:": "La instalación falló en:",
+    "Installing several services at once ({workers} at a time)":
+        "Instalando varios servicios a la vez ({workers} a la vez)",
+    "[dim]· {name}: installing… (log: {log})[/]": "[dim]· {name}: instalando… (log: {log})[/]",
+    "[yellow]· {name}: the install failed; trying it again on its own.[/]":
+        "[yellow]· {name}: la instalación falló; la intento de nuevo a solas.[/]",
+    "{name}: installed.": "{name}: instalado.",
     "Connection test timeout (seconds):": "Timeout del test de conexión (segundos):",
     "Add/edit extra environment variables? (current: {current})":
         "¿Añadir/editar variables de entorno extra? (actuales: {current})",

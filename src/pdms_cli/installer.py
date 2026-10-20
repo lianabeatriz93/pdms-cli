@@ -1,4 +1,5 @@
-"""Smart install: skip ``poetry lock && poetry install`` when nothing that affects it has changed.
+"""Smart install: skip ``poetry lock && poetry install`` when nothing that affects it has changed, and only reinstall
+the copied packages whose code changed when that is all that did (see :func:`code_only_changes`).
 
 The fingerprint of a service covers its ``pyproject.toml`` and ``poetry.lock`` plus, recursively, its local path
 dependencies: the whole source tree of the ones installed as a copy (``develop = false``) and only the
@@ -10,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 from pathlib import Path
 
 import tomlkit
@@ -26,6 +28,7 @@ SKIP_DIRS = {
     "dist", "build", "tests",
 }
 SKIP_SUFFIXES = (".pyc", ".pyo", ".log")
+_records_lock = threading.Lock()  # several services may finish installing at once
 
 
 def fingerprints_path() -> Path:
@@ -113,13 +116,10 @@ def _hash_tree(digest: "hashlib._Hash", root: Path) -> None:
 SERVICE_PART = "(service)"  # the service's own pyproject.toml + poetry.lock
 
 
-def dependency_fingerprints(service: Path) -> dict[str, str]:
-    """One digest per part that affects the install: the service itself and each local path dependency."""
-    parts: dict[str, str] = {}
-    digest = hashlib.sha256()
-    for name in ("pyproject.toml", "poetry.lock"):
-        _hash_file_meta(digest, service / name, service)
-    parts[SERVICE_PART] = digest.hexdigest()
+def _walk(service: Path) -> list[tuple[str, Path, bool]]:
+    """``(part name, directory, develop)`` of every local path dependency, transitive ones included."""
+    found: list[tuple[str, Path, bool]] = []
+    names: set[str] = {SERVICE_PART}
     seen: set[Path] = set()
     pending = path_dependencies(service)
     while pending:
@@ -127,21 +127,55 @@ def dependency_fingerprints(service: Path) -> dict[str, str]:
         if directory in seen or not directory.is_dir():
             continue
         seen.add(directory)
+        name = directory.name if directory.name not in names else str(directory)
+        names.add(name)
+        found.append((name, directory, develop))
+        pending.extend(path_dependencies(directory))
+    return found
+
+
+def dependency_fingerprints(service: Path) -> dict[str, str]:
+    """One digest per part that affects the install: the service itself and each local path dependency."""
+    parts: dict[str, str] = {}
+    digest = hashlib.sha256()
+    for name in ("pyproject.toml", "poetry.lock"):
+        _hash_file_meta(digest, service / name, service)
+    parts[SERVICE_PART] = digest.hexdigest()
+    for name, directory, develop in _walk(service):
         digest = hashlib.sha256(f"develop={develop}\n".encode())
         if develop:
             _hash_file_meta(digest, directory / "pyproject.toml", directory)
         else:
             _hash_tree(digest, directory)
-        parts[directory.name if directory.name not in parts else str(directory)] = digest.hexdigest()
-        pending.extend(path_dependencies(directory))
+        parts[name] = digest.hexdigest()
     return parts
 
 
-def fingerprint(service: Path) -> str:
+def manifests_digest(service: Path) -> str:
+    """The content of what decides which packages get installed: the service's ``pyproject.toml`` and
+    ``poetry.lock`` and every local path dependency's ``pyproject.toml``, with how it is installed. While it stays the
+    same, whatever changed is only code."""
     digest = hashlib.sha256()
-    for name, value in sorted(dependency_fingerprints(service).items()):
+    files = [("", service / "pyproject.toml"), ("", service / "poetry.lock")]
+    files += [(f"{name}|develop={develop}", directory / "pyproject.toml") for name, directory, develop in _walk(service)]
+    for label, path in files:
+        try:
+            content = path.read_bytes()
+        except OSError:
+            content = b"-"
+        digest.update(f"{label}|{path.name}|{len(content)}\n".encode() + content)
+    return digest.hexdigest()
+
+
+def _combine(parts: dict[str, str]) -> str:
+    digest = hashlib.sha256()
+    for name, value in sorted(parts.items()):
         digest.update(f"{name}={value}\n".encode())
     return digest.hexdigest()
+
+
+def fingerprint(service: Path) -> str:
+    return _combine(dependency_fingerprints(service))
 
 
 def changed_parts(recorded: dict[str, str] | None, service: Path) -> list[str] | None:
@@ -153,21 +187,51 @@ def changed_parts(recorded: dict[str, str] | None, service: Path) -> list[str] |
     return [n for n in names if recorded.get(n) != current.get(n)]
 
 
-def _load() -> dict[str, str]:
+def _load() -> dict[str, dict | str]:
     try:
         return json.loads(fingerprints_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
+def _record(service: Path) -> dict:
+    """What :func:`remember` kept for the service (only the fingerprint, as older versions of pdms kept it)."""
+    value = _load().get(str(service))
+    if isinstance(value, str):
+        return {"fingerprint": value}
+    return value if isinstance(value, dict) else {}
+
+
 def is_up_to_date(service: Path) -> bool:
-    return _load().get(str(service)) == fingerprint(service)
+    return _record(service).get("fingerprint") == fingerprint(service)
+
+
+def code_only_changes(service: Path) -> list[Path] | None:
+    """The copied path dependencies to reinstall when nothing changed since the last install but their code, or
+    None when something else did (or pdms does not know): then it takes a whole ``poetry lock && poetry install``.
+
+    It is what usually changes after a ``git pull``, and ``pip install --no-deps --force-reinstall`` of those
+    packages is all it needs; poetry would not even pick that change up.
+    """
+    record = _record(service)
+    if not isinstance(record.get("parts"), dict) or record.get("manifests") != manifests_digest(service):
+        return None
+    current = dependency_fingerprints(service)
+    copied = {name: directory for name, directory, develop in _walk(service) if not develop}
+    changed = [name for name in sorted(set(record["parts"]) | set(current))
+               if record["parts"].get(name) != current.get(name) and name != SERVICE_PART]
+    if any(name not in copied for name in changed):
+        return None
+    return [copied[name] for name in changed]
 
 
 def remember(service: Path) -> None:
-    """Record the fingerprint after a successful install (``poetry lock`` may have rewritten the lock file)."""
-    data = _load()
-    data[str(service)] = fingerprint(service)
-    path = fingerprints_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    """Record what got installed (``poetry lock`` may have rewritten the lock file)."""
+    parts = dependency_fingerprints(service)
+    record = {"fingerprint": _combine(parts), "parts": parts, "manifests": manifests_digest(service)}
+    with _records_lock:
+        data = _load()
+        data[str(service)] = record
+        path = fingerprints_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")

@@ -46,9 +46,7 @@ class LeftRunning(actions.Decision):
         self.switch = switch
 
 
-def install_log(key: str) -> Path:
-    """Where the install a restart runs writes its output (the service's own log is rotated when it starts)."""
-    return instances.log_path(key).with_suffix(".install.log")
+install_log = actions.install_log
 
 
 @dataclass
@@ -525,7 +523,7 @@ class Jobs:
         log.parent.mkdir(parents=True, exist_ok=True)
         self.phase(job, f"installing {label}".strip(), installed=True, log_key=key)
         with open(log, "w", encoding="utf-8", errors="replace") as output:
-            actions.install_service(service, output)
+            actions.install_service(service, output, actions.quick_install(cfg, service, install))
 
     # ------------------------------------------------------------------ stacks
 
@@ -546,9 +544,23 @@ class Jobs:
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
+            keys = {launch.service: instances.make_key(launch.service, launch.port) for launch in plan.services}
+            installing: list[Path] = []  # at once
+            lock = threading.Lock()
+
+            def progress(event: str, service: Path) -> None:
+                with lock:
+                    if event == "installed":
+                        installing.remove(service)
+                    else:
+                        installing.append(service)
+                    now = list(installing)
+                if now:
+                    self.phase(job, f"installing {', '.join(path.name for path in now)}", installed=True,
+                               log_key=keys[now[-1]])
+
+            actions.install_services(cfg, {path: install_log(key) for path, key in keys.items()}, install, progress)
             for launch in plan.services:
-                key = instances.make_key(launch.service, launch.port)
-                self.install(cfg, job, launch.service, key, install, launch.service.name)
                 self.phase(job, f"starting {launch.service.name}")
                 actions.start_service(cfg, launch)
 

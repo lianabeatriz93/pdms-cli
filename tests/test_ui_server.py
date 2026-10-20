@@ -241,7 +241,7 @@ def test_restart_asks_before_a_protected_database_and_logs_the_install(ui, machi
         calls.append((inst.key, user_name, db_name, confirmed))
         return inst
 
-    def install_service(service, output):
+    def install_service(service, output, only=None):
         output.write("Installing dependencies from lock file\n")
 
     monkeypatch.setattr(actions, "restart_service", restart_service)
@@ -401,7 +401,7 @@ def test_up_asks_before_a_protected_database_and_installs_each_service(ui, repo,
     started = []
     monkeypatch.setattr(actions, "start_service", lambda cfg, launch, install=None: started.append(launch))
     monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: service.name == "lead-get")
-    monkeypatch.setattr(actions, "install_service", lambda service, output: output.write(f"installed {service.name}\n"))
+    monkeypatch.setattr(actions, "install_service", lambda service, output, only=None: output.write(f"installed {service.name}\n"))
 
     status, data = post(port, "/api/stacks/leads/up", {"db": "shared"})
     assert status == 409 and data == {"decision": "protected_database", "name": "shared"} and not started
@@ -416,7 +416,7 @@ def test_up_asks_before_a_protected_database_and_installs_each_service(ui, repo,
     assert log.read_text(encoding="utf-8") == "installed lead-get\n"
 
 
-    def failing(service, output):
+    def failing(service, output, only=None):
         output.write("Because lead-get depends on boto3 (^9), version solving failed.\n")
         raise actions.ActionError("poetry lock failed (exit code 1).")
 
@@ -426,7 +426,7 @@ def test_up_asks_before_a_protected_database_and_installs_each_service(ui, repo,
     wait_until(lambda: jobs.snapshot().get("stack:leads", {}).get("error"))
     job = jobs.snapshot()["stack:leads"]
     assert job["error"] == "poetry lock failed (exit code 1)." and job["log_key"].startswith("lead-get@")
-    assert [launch.service.name for launch in started] == ["lead-list"]  # stopped at the failing service
+    assert started == []  # everything installs first: nothing starts while part of the stack cannot
     _response, raw, _conn = request(port, f"/api/logs?key={job['log_key']}&which=install", cookie(port))
     assert json.loads(raw)["lines"] == ["Because lead-get depends on boto3 (^9), version solving failed."]
 
@@ -457,7 +457,7 @@ def test_start_one_service_asks_first_and_logs_the_install(ui, repo, machine, mo
     started = []
     monkeypatch.setattr(actions, "start_service", lambda cfg, launch, install=None: started.append(launch))
     monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: install is True)
-    monkeypatch.setattr(actions, "install_service", lambda service, output: output.write("installed\n"))
+    monkeypatch.setattr(actions, "install_service", lambda service, output, only=None: output.write("installed\n"))
     monkeypatch.setattr(actions, "port_available", lambda host, port, taken=None: port != 9100)
     monkeypatch.setattr(actions.runner, "next_free_port", lambda host, port, taken=None: 9101)
 
