@@ -1,3 +1,20 @@
+## v0.4.5 (2026-10-21)
+
+### Feat
+
+- **ui**: services on demand in pdms ui
+- **services**: services on demand, started by the proxy and stopped when idle
+
+### Fix
+
+- **ci**: download the Flyway image again when the cache misses
+
+### Perf
+
+- **install**: reinstall only the changed libraries, and several services at once
+- **services**: leave the reloader and the resource tracker unpatched
+- **services**: watch only the service's code and start it without poetry run
+
 ## v0.4.4 (2026-10-05)
 
 ### Feat
