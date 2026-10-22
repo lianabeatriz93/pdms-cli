@@ -474,10 +474,19 @@ def _orphaned(proc: psutil.Process) -> bool:
         return True
 
 
+def _launches(parent: psutil.Process, proc: psutil.Process) -> bool:
+    """Whether ``parent`` only launched ``proc``: ``poetry run``, or a Windows virtualenv's python.exe, which runs the
+    same command with its base Python as a child (the one uv installs does; its own working directory differs)."""
+    if parent.name().lower().startswith("poetry"):
+        return True
+    args = proc.cmdline()
+    return len(args) > 1 and parent.cmdline()[1:] == args[1:]
+
+
 def _top(proc: psutil.Process) -> psutil.Process:
-    """The process pdms would have started: ``poetry run`` stays as the parent where it cannot exec (Windows)."""
+    """The process pdms would have started, above the ones that only launched the service."""
     try:
-        while (parent := proc.parent()) and parent.name().lower().startswith("poetry"):
+        while (parent := proc.parent()) and _launches(parent, proc):
             proc = parent
     except psutil.Error:
         pass

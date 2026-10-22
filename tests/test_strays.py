@@ -15,8 +15,15 @@ from pdms_cli import actions, instances
 from pdms_cli.config import Config, Database, DevUser, Repo
 
 WINDOWS = sys.platform == "win32"
-# Stands in for uvicorn: it only waits, under the name pdms looks for.
-FAKE_SERVER = "import time\nprint('Application startup complete.', flush=True)\ntime.sleep(60)\n"
+# Stands in for uvicorn: it only waits, under the name pdms looks for. With FAKE_LAUNCHER it is first the python.exe
+# of a Windows virtualenv made by uv: it runs the same command as a child, which works in the service's folder.
+FAKE_SERVER = """
+import os, subprocess, sys, time
+if cwd := os.environ.pop("FAKE_LAUNCHER", ""):
+    sys.exit(subprocess.call([sys.executable, *sys.argv], cwd=cwd))
+print('Application startup complete.', flush=True)
+time.sleep(60)
+"""
 # Starts the fake server detached, as pdms does, and exits at once: like a pdms whose registry lost the instance.
 LAUNCHER = """
 import subprocess, sys
@@ -84,14 +91,25 @@ def python_processes() -> str:
 @pytest.fixture
 def orphan(repo):
     """A fake service on port 28155 whose parent already exited, writing to its pdms log."""
-    service = service_of(repo)
+    yield from start_orphan(service_of(repo))
+
+
+@pytest.fixture
+def launched_orphan(repo):
+    """The same, started through a launcher that works in another folder."""
+    yield from start_orphan(service_of(repo), launcher_in=repo)
+
+
+def start_orphan(service: Path, launcher_in: Path | None = None):
     log = instances.log_path("lead-tp-list@28155")
     log.parent.mkdir(parents=True, exist_ok=True)
     launcher = service.parent / "launcher.py"
     launcher.write_text(LAUNCHER)
     env = {**os.environ, "DEV_USER_ID": "u2", "DEV_USERNAME": "a@x.com",
            "DB_PG_CONNECTION_STR": "postgresql+psycopg2://pdm:old-one@localhost:5432/pdm"}
-    out = subprocess.run([sys.executable, str(launcher), str(log), str(service), sys.executable, str(service / "uvicorn"), "main:app",
+    if launcher_in:
+        env["FAKE_LAUNCHER"] = str(service)
+    out = subprocess.run([sys.executable, str(launcher), str(log), str(launcher_in or service), sys.executable, str(service / "uvicorn"), "main:app",
                           "--reload", "--host", "0.0.0.0", "--port", "28155"], capture_output=True, text=True,
                          env=env, check=True)
     pid = int(out.stdout)
@@ -122,6 +140,16 @@ def test_a_service_whose_pdms_exited_is_found_with_its_user_db_and_log(cfg, repo
     assert (stray.user, stray.db, stray.repo) == ("agent", "local", "pdms")
     if not WINDOWS:
         assert stray.process.log == str(instances.log_path("lead-tp-list@28155"))
+
+
+def test_a_service_started_through_a_launcher_is_found_by_the_launcher(cfg, repo, launched_orphan) -> None:
+    """A Windows virtualenv's python.exe (uv's) runs the service as a child: the launcher is what pdms started."""
+    [stray] = wait_for(lambda: actions.strays(cfg), "the orphan")
+    assert (stray.key, stray.process.pid) == ("lead-tp-list@28155", launched_orphan)
+    assert Path(stray.process.service) == service_of(repo).resolve()
+    [child] = psutil.Process(launched_orphan).children()
+    assert actions.stop_strays(cfg) == ["lead-tp-list@28155"]
+    wait_for(lambda: not psutil.pid_exists(child.pid), "the service to stop")
 
 
 def test_a_service_of_an_unregistered_repo_is_left_alone(cfg, orphan) -> None:
