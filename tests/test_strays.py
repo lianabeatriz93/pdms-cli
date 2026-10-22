@@ -57,7 +57,28 @@ def wait_for(condition, what: str, timeout: float = 15):
         if found := condition():
             return found
         time.sleep(0.1)
-    raise AssertionError(f"timed out waiting for {what}")
+    raise AssertionError(f"timed out waiting for {what}\n{python_processes()}")
+
+
+def python_processes() -> str:
+    """What pdms sees of the Python processes, to tell why a stray was not found."""
+    lines = []
+    for proc in psutil.process_iter(["pid", "ppid", "name", "exe", "cmdline", "create_time"]):
+        if "python" not in (proc.info["name"] or "").lower():
+            continue
+        try:
+            parent = proc.parent()
+            parent = f"{parent.pid} {parent.name()} {parent.create_time()}" if parent else "none"
+        except psutil.Error as error:
+            parent = repr(error)
+        try:
+            cwd = proc.cwd()
+        except psutil.Error as error:
+            cwd = repr(error)
+        lines.append(f"{proc.info['pid']} ppid={proc.info['ppid']} parent=[{parent}] created={proc.info['create_time']}"
+                     f" exe={proc.info['exe']} cwd={cwd} launch={instances.launch_of(proc.info['cmdline'] or [])}"
+                     f" cmdline={proc.info['cmdline']}")
+    return "\n".join(lines)
 
 
 @pytest.fixture
