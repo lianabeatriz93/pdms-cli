@@ -1,3 +1,9 @@
+## v0.4.6 (2026-10-22)
+
+### Fix
+
+- **strays**: find services started through a Windows virtualenv's python.exe
+
 ## v0.4.5 (2026-10-21)
 
 ### Feat
