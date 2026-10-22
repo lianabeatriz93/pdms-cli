@@ -147,9 +147,10 @@ def test_a_service_started_through_a_launcher_is_found_by_the_launcher(cfg, repo
     [stray] = wait_for(lambda: actions.strays(cfg), "the orphan")
     assert (stray.key, stray.process.pid) == ("lead-tp-list@28155", launched_orphan)
     assert Path(stray.process.service) == service_of(repo).resolve()
-    [child] = psutil.Process(launched_orphan).children()
+    below = psutil.Process(launched_orphan).children(recursive=True)  # on Windows, each venv python.exe launches too
+    assert below
     assert actions.stop_strays(cfg) == ["lead-tp-list@28155"]
-    wait_for(lambda: not psutil.pid_exists(child.pid), "the service to stop")
+    wait_for(lambda: not any(proc.is_running() for proc in below), "the service to stop")
 
 
 def test_a_service_of_an_unregistered_repo_is_left_alone(cfg, orphan) -> None:
