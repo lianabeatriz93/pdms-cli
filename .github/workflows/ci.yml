@@ -34,6 +34,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       PYTHONUTF8: "0"  # run with each platform's default encoding, like users do
+      UV_PYTHON_PREFERENCE: only-managed  # the Python uv downloads, as the installers get on a PC without one
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
