@@ -18,6 +18,8 @@ LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 # Where services publish SQS events (see ``Defaults.events``).
 EVENTS_MODES = ("auto", "local", "aws")
 THEMES = ("system", "light", "dark")  # pdms ui: like the system, or always light or dark
+# The known front of each environment but production (infra/infra_auto/environments/*/terraform.tfvars of pdms_v2).
+FRONT_HOSTS = ("dev-pdm.alivi.com", "qa-pdm.alivi.com", "uat-pdm.alivi.com")
 
 
 def config_path() -> Path:
@@ -124,6 +126,9 @@ class Defaults:
     # Where the emails services send through SES go (see emails.py): empty, nowhere (pdms ui shows them); an
     # address, to that one only, whoever they were for.
     email_to: str = ""
+    # The browser extension of pdms (browser.py) sends front_redirect_hosts to the frontend pdms runs, while it runs.
+    front_redirect: bool = False
+    front_redirect_hosts: list[str] = field(default_factory=lambda: list(FRONT_HOSTS))
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 

@@ -27,7 +27,7 @@ from urllib.parse import unquote, urlsplit
 import psutil
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
-from . import awsenv, captures, emails, health, trace, vscode
+from . import awsenv, browser, captures, emails, health, trace, vscode
 from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -1429,6 +1429,46 @@ def check_email_to(value: str) -> str:
     return value
 
 
+def check_front_hosts(hosts: Iterable[str]) -> list[str]:
+    """The known fronts the browser extension redirects (``https://dev-pdm.alivi.com/`` → ``dev-pdm.alivi.com``)."""
+    found: list[str] = []
+    for given in hosts:
+        host = given.strip().lower()
+        host = (urlsplit(host).hostname or "") if "://" in host else host.split("/", 1)[0]
+        if not browser.HOST.fullmatch(host):
+            raise InvalidValue("front_redirect_hosts", _(
+                "'{host}' is not a host of alivi.com (the extension only redirects those)", host=given.strip()))
+        if host not in found:
+            found.append(host)
+    if not found:
+        raise InvalidValue("front_redirect_hosts", _("Give at least one host"))
+    return found
+
+
+def set_front_redirect(cfg: Config, on: bool) -> None:
+    """Turn on or off sending the known front to the frontend pdms runs (the browser extension follows in 30 s)."""
+    cfg.defaults.front_redirect = on
+    cfg.save()
+
+
+def set_front_hosts(cfg: Config, hosts: Iterable[str]) -> list[str]:
+    cfg.defaults.front_redirect_hosts = check_front_hosts(hosts)
+    cfg.save()
+    return cfg.defaults.front_redirect_hosts
+
+
+def install_extension(key: str) -> tuple[browser.Browser, Path, bool]:
+    """Write the extension's folder and open the extensions page of browser ``key``: the browser, the folder to load
+    there, and whether the page opened."""
+    found = browser.BY_KEY.get(key)
+    if not found:
+        raise ActionError(_("Unknown browser '{key}'. Available: {keys}", key=key, keys=", ".join(browser.BY_KEY)))
+    if key not in browser.installed() and not browser.executable(found):
+        raise ActionError(_("{name} is not installed on this computer.", name=found.name))
+    folder = browser.write_extension()
+    return found, folder, browser.open_page(found)
+
+
 def _one_of(field: str, value: str, choices: Iterable[str]) -> str:
     if value not in choices:
         raise InvalidValue(field, _("Must be one of: {choices}", choices=", ".join(choices)))
@@ -1626,6 +1666,7 @@ def save_defaults(cfg: Config, defaults: Defaults) -> None:
         idle_minutes=_number("idle_minutes", defaults.idle_minutes, 1, MAX_IDLE_MINUTES),
         theme=_one_of("theme", defaults.theme, THEMES),
         email_to=check_email_to(defaults.email_to),
+        front_redirect_hosts=check_front_hosts(defaults.front_redirect_hosts),
         env=dict(defaults.env),
     )
     cfg.save()

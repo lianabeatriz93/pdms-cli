@@ -1388,6 +1388,8 @@ def defaults_from(body: dict, current: Defaults) -> Defaults:
             ok, expected = isinstance(value, (int, str)) and not isinstance(value, bool), "a number"
         elif kind is dict:
             ok, expected = isinstance(value, dict) and all(isinstance(v, str) for v in value.values()), "texts by name"
+        elif kind is list:
+            ok, expected = isinstance(value, list) and all(isinstance(v, str) for v in value), "a list of texts"
         else:
             ok, expected = isinstance(value, str), "a text"
         if not ok:

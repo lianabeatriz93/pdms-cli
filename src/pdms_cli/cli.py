@@ -13,6 +13,7 @@ import typer
 from . import __version__
 from .commands import (  # noqa: F401 - importing them registers their commands
     aws,
+    browser,
     dbs,
     doctor,
     events,
