@@ -38,7 +38,8 @@ def test_the_id_comes_from_the_key_of_the_manifest() -> None:
     digest = hashlib.sha256(base64.b64decode(manifest["key"])).hexdigest()[:32]
     assert "".join(chr(ord("a") + int(c, 16)) for c in digest) == browser.EXTENSION_ID
     assert manifest["version"] == browser.version()
-    assert sorted(path.name for path in browser.SOURCE.iterdir() if path.is_file()) == sorted(browser.FILES)
+    files = [path.name for path in browser.SOURCE.iterdir() if path.is_file() and path.name != browser.XPI]
+    assert sorted(files) == sorted(browser.FILES)
 
 
 def test_the_folder_is_written_once_and_refreshed_only_when_there() -> None:
@@ -161,3 +162,86 @@ def test_the_command_turns_it_on_with_other_fronts(cfg, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     assert "chrome://extensions" in result.output and str(browser.extension_dir()) in result.output
     assert "Google Chrome" in CliRunner().invoke(cli.app, ["browser"]).output
+
+
+def test_firefox_gets_its_own_manifest(tmp_path) -> None:
+    folder = browser.write_firefox_source(tmp_path / "firefox")
+    manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    assert "key" not in manifest and manifest["background"] == {"scripts": ["background.js"]}
+    assert manifest["browser_specific_settings"]["gecko"]["id"] == browser.GECKO_ID
+    assert manifest["version"] == browser.version()
+    assert sorted(path.name for path in folder.iterdir()) == sorted(browser.FILES)
+
+
+def packaged(monkeypatch, tmp_path, xpi: bytes | None):
+    """The package's extension folder, with or without the signed file release.yml puts there."""
+    source = tmp_path / "package"
+    source.mkdir()
+    for name in browser.FILES:
+        (source / name).write_bytes(browser.SOURCE.joinpath(name).read_bytes())
+    if xpi is not None:
+        (source / browser.XPI).write_bytes(xpi)
+    monkeypatch.setattr(browser, "SOURCE", source)
+
+
+def test_firefox_opens_the_signed_file_that_came_with_pdms(cfg, monkeypatch, tmp_path) -> None:
+    packaged(monkeypatch, tmp_path, b"signed")
+    monkeypatch.setattr(browser, "installed", lambda: {"firefox": "/usr/bin/firefox"})
+    opened = []
+    monkeypatch.setattr(browser, "open_page", lambda found, target="": opened.append((found.key, target)) or True)
+    found, xpi, ok = actions.install_extension("firefox")
+    assert (found.name, ok, xpi.read_bytes()) == ("Firefox", True, b"signed")
+    assert xpi.name == f"pdms-front-redirect-{browser.version()}.xpi" and opened == [("firefox", str(xpi))]
+
+
+def test_a_snap_firefox_gets_it_in_downloads(cfg, monkeypatch, tmp_path) -> None:
+    packaged(monkeypatch, tmp_path, b"signed")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(browser.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    monkeypatch.setattr(browser, "installed", lambda: {"firefox": "/snap/bin/firefox"})
+    assert browser.firefox_xpi().parent == tmp_path / "home" / "Downloads"
+
+
+class Answer:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        pass
+
+    def read(self, *args) -> bytes:
+        return self.body
+
+
+def test_a_checkout_downloads_it_from_the_latest_release(cfg, monkeypatch, tmp_path) -> None:
+    packaged(monkeypatch, tmp_path, None)
+    monkeypatch.setattr(browser, "installed", lambda: {"firefox": "/usr/bin/firefox"})
+    release = {"assets": [{"name": "pdms_cli-0.4.7-py3-none-any.whl", "browser_download_url": "https://x/whl"},
+                          {"name": "pdms-front-redirect-1.0.0.xpi", "browser_download_url": "https://x/xpi"}]}
+    asked = []
+
+    def urlopen(request, timeout=None):
+        url = request if isinstance(request, str) else request.full_url
+        asked.append(url)
+        return Answer(json.dumps(release).encode() if url.endswith("/latest") else b"downloaded")
+
+    monkeypatch.setattr(browser.urllib.request, "urlopen", urlopen)
+    xpi = browser.firefox_xpi()
+    assert (xpi.name, xpi.read_bytes()) == ("pdms-front-redirect-1.0.0.xpi", b"downloaded")
+    assert asked[-1] == "https://x/xpi"
+    release["assets"] = release["assets"][:1]
+    with pytest.raises(actions.ActionError, match="no signed extension"):
+        actions.install_extension("firefox")
+
+
+def test_an_older_firefox_extension_asks_for_the_new_file(cfg, monkeypatch) -> None:
+    monkeypatch.setattr(browser, "installed", lambda: {"firefox": "/usr/bin/firefox"})
+    browser.record_seen("firefox", "0.9.0")
+    browser.record_seen("chrome", "0.9.0")  # Chromium browsers load the new files by themselves
+    rows = {row["key"]: row for row in browser.status(Config.load())["browsers"]}
+    assert rows["firefox"]["outdated"] and not rows["chrome"]["outdated"]
+    browser.record_seen("firefox", browser.version())
+    assert not browser.status(Config.load())["browsers"][-1]["outdated"]

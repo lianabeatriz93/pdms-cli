@@ -40,6 +40,10 @@ pdmsw = "pdms_cli.launcher:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+# Git-ignored: release.yml puts the signed Firefox extension there before building.
+artifacts = ["src/pdms_cli/browser_extension/firefox.xpi"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pdms_cli"]
 

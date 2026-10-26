@@ -1485,8 +1485,6 @@ ES: dict[str, str] = {
         "En {page}, activa el Modo de desarrollador.",
     "Install it in:":
         "Instalarla en:",
-    "No Chrome, Edge, Brave or Chromium found on this computer.":
-        "No se encontró Chrome, Edge, Brave ni Chromium en este ordenador.",
     "Open the browser's extensions page to load the extension (once).":
         "Abre la página de extensiones del navegador para cargar la extensión (una vez).",
     "Redirect: {state} · {hosts} → the frontend pdms runs":
@@ -1507,8 +1505,6 @@ ES: dict[str, str] = {
         "Navegador desconocido '{key}'. Disponibles: {keys}",
     "Whether the redirect is on, and where the extension is installed.":
         "Si la redirección está activa y dónde está instalada la extensión.",
-    "chrome, edge, brave or chromium (asked if omitted).":
-        "chrome, edge, brave o chromium (se pregunta si se omite).",
     "connected":
         "conectada",
     "installed, last seen {when}":
@@ -1525,4 +1521,20 @@ ES: dict[str, str] = {
         "{hosts} abren el frontend que corre pdms, mientras corra (en menos de medio minuto).",
     "{name} is not installed on this computer.":
         "{name} no está instalado en este ordenador.",
+    "Could not get the signed extension for Firefox: {error}":
+        "No se pudo obtener la extensión firmada para Firefox: {error}",
+    "Could not open Firefox: open {file} in it.":
+        "No se pudo abrir Firefox: abre {file} en él.",
+    "Firefox asks whether to add pdms front redirect: click Add.":
+        "Firefox pregunta si añadir pdms front redirect: pulsa Añadir.",
+    "No Chrome, Edge, Brave, Chromium or Firefox found on this computer.":
+        "No se encontró Chrome, Edge, Brave, Chromium ni Firefox en este ordenador.",
+    "Signed extension: {file}":
+        "Extensión firmada: {file}",
+    "Then turn the redirect on (pdms browser redirect on, or the Frontend tile of pdms ui).":
+        "Después activa la redirección (pdms browser redirect on, o la tarjeta Frontend de pdms ui).",
+    "an older version: pdms browser install {key}":
+        "una versión anterior: pdms browser install {key}",
+    "chrome, edge, brave, chromium or firefox (asked if omitted).":
+        "chrome, edge, brave, chromium o firefox (se pregunta si se omite).",
 }
