@@ -27,7 +27,7 @@ from urllib.parse import unquote, urlsplit
 import psutil
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
-from . import awsenv, browser, captures, emails, health, trace, vscode
+from . import awsenv, browser, captures, emails, health, pythons, trace, vscode
 from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -70,6 +70,16 @@ class LocalEventsDown(Decision):
     def __init__(self, port: int) -> None:
         super().__init__(f"the local ElasticMQ is not running on port {port}")
         self.port = port
+
+
+class PythonMismatch(Decision):
+    """Services whose virtualenv runs a Python their project no longer accepts (answer: ``python=True`` to make it
+    again on an accepted one before installing, ``python=False`` to keep it as it is)."""
+
+    def __init__(self, items: list[pythons.Mismatch]) -> None:
+        super().__init__(", ".join(f"{item.service.name} ({pythons.show(item.have)}, wants {item.wants})"
+                                   for item in items))
+        self.items = items
 
 
 class PointFrontend(Decision):
@@ -329,6 +339,26 @@ def install_wanted(cfg: Config, install: bool | None) -> bool:
     return install is True or (install is None and cfg.defaults.install)
 
 
+def check_pythons(cfg: Config, services: Iterable[Path], install: bool | None, python: bool | None) -> dict[Path, str]:
+    """The services to install on another Python, ``{service: interpreter}``, when their virtualenv runs one their
+    project no longer accepts. ``python`` is the user's answer: None raises :class:`PythonMismatch` for them to
+    decide, True recreates (:class:`ActionError` when no accepted Python is installed), False keeps them. Nothing
+    happens without an install (``install`` False, or installs off in the settings)."""
+    if python is False or not install_wanted(cfg, install):
+        return {}
+    found = [item for service in dict.fromkeys(services) if (item := pythons.mismatch(service))]
+    if not found:
+        return {}
+    if python is None:
+        raise PythonMismatch(found)
+    missing = [item for item in found if item.use is None]
+    if missing:
+        raise ActionError(_("No installed Python meets {spec} ({services}). Install one, e.g.: uv python install {version}",
+                            spec=missing[0].wants, services=", ".join(item.service.name for item in missing),
+                            version=pythons.suggested(missing[0].wants)))
+    return {item.service: item.use[1] for item in found if item.use}
+
+
 def needs_install(cfg: Config, service: Path, install: bool | None) -> bool:
     """Whether to run ``poetry lock && poetry install`` now; by default (smart) only if something changed."""
     if not install_wanted(cfg, install):
@@ -345,11 +375,13 @@ def quick_install(cfg: Config, service: Path, install: bool | None) -> list[Path
     return installer.code_only_changes(service)
 
 
-def install_service(service: Path, output: IO[str] | None = None, only: list[Path] | None = None) -> None:
-    """Install the service's dependencies (see :func:`runner.install`) and remember what got installed."""
+def install_service(service: Path, output: IO[str] | None = None, only: list[Path] | None = None,
+                    python: str | None = None) -> None:
+    """Install the service's dependencies (see :func:`runner.install`), first on interpreter ``python`` when given,
+    and remember what got installed."""
     try:
         runner.ensure_poetry()
-        runner.install(service, output, only)
+        runner.install(service, output, only, python)
     except RuntimeError as exc:
         raise ActionError(str(exc)) from exc
     except subprocess.CalledProcessError as exc:
@@ -372,7 +404,7 @@ def install_workers() -> int:
 
 def install_services(
     cfg: Config, services: dict[Path, Path], install: bool | None,
-    progress: Callable[[str, Path], None] = lambda event, service: None,
+    progress: Callable[[str, Path], None] = lambda event, service: None, recreate: dict[Path, str] | None = None,
 ) -> None:
     """Install the ``services`` that need it, several at once (:func:`install_workers`), each writing to its log
     (``{service: log}``). ``progress`` gets ``("installing" | "installed" | "retrying", service)``.
@@ -381,17 +413,21 @@ def install_services(
     processes without locking it, so two installs downloading the same package can trip over each other. Raises
     :class:`ActionError` naming the ones that still failed, after trying all of them.
     """
-    pending = [service for service in services if needs_install(cfg, service, install)]
+    recreate = recreate or {}
+    pending = [service for service in services if service in recreate or needs_install(cfg, service, install)]
 
     def one(service: Path, mode: str = "w") -> None:
-        only = quick_install(cfg, service, install)
+        only = None if service in recreate else quick_install(cfg, service, install)
         log = services[service]
         log.parent.mkdir(parents=True, exist_ok=True)
         progress("installing" if mode == "w" else "retrying", service)
         with open(log, mode, encoding="utf-8", errors="replace") as output:
             if mode == "a":
                 output.write("\n$ # " + _("tried again on its own") + "\n")
-            install_service(service, output, only)
+            if service in recreate:  # a new virtualenv on another Python first
+                install_service(service, output, None, recreate[service])
+            else:
+                install_service(service, output, only)
         progress("installed", service)
 
     failed: list[Path] = []

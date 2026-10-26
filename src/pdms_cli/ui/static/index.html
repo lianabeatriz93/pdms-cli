@@ -1033,6 +1033,20 @@
   </form>
 </dialog>
 
+<dialog id="python-dialog">
+  <form method="dialog">
+    <h2>Another Python for these services?</h2>
+    <p>Their virtualenv runs a Python their project no longer accepts. pdms can make it again on an accepted one and install their dependencies there: the first install takes longer, since the packages download again.</p>
+    <ul class="python-list" id="python-list"></ul>
+    <p class="error" id="python-missing" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" value="cancel">Cancel</button>
+      <button class="btn" value="keep">Keep their Python</button>
+      <button class="btn primary" value="recreate" id="python-recreate">Recreate and install</button>
+    </div>
+  </form>
+</dialog>
+
 <div class="toasts" id="toasts" aria-live="polite"></div>
 </body>
 </html>

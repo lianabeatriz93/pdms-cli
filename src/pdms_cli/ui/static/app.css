@@ -846,3 +846,8 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 #browser-steps-list code { overflow-wrap: anywhere; }
 .tile .redirect { display: inline-flex; gap: .35rem; align-items: center; }
 .tile dd:has(.redirect) { font-family: inherit; }
+
+/* The Python of services' virtualenvs (python.js) */
+#python-dialog { width: min(36rem, calc(100vw - 32px)); }
+.python-list { margin: 0 0 .8rem; padding-left: 1.1rem; display: grid; gap: .3rem; font-size: .85rem; }
+.python-list code { font-size: .78rem; }

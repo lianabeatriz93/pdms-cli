@@ -13,10 +13,12 @@ import questionary
 import typer
 from rich.table import Table
 
-from .. import actions, awsenv, completion, instances, prompts, proxy, runner
+from .. import actions, awsenv, completion, instances, prompts, proxy, pythons, runner
 from ..config import Config, Database, DevUser
 from ..i18n import _
-from .common import EVENTS_HELP, add_db, add_user, app, console, fail, pick, print_endpoints, settle, yes_no
+from .common import (
+    EVENTS_HELP, add_db, add_user, app, console, fail, interactive_terminal, pick, print_endpoints, settle, yes_no,
+)
 from .services import resolve_service
 
 
@@ -117,9 +119,57 @@ def install_label(cfg: Config, install: Optional[bool], each: bool = False) -> s
     return _("poetry lock && poetry install (each)") if each else "poetry lock && poetry install"
 
 
-def ensure_installed(cfg: Config, service: Path, install: Optional[bool]) -> None:
-    """Install according to the flag: True forces it, False skips it, None follows the settings (smart by default)."""
-    if actions.needs_install(cfg, service, install):
+def python_answer(cfg: Config, services: list[Path], install: Optional[bool]) -> Optional[bool]:
+    """Ask whether to recreate the virtualenvs that run a Python their project no longer accepts (see
+    :func:`actions.check_pythons`): True or False, or None when there are none. Without a terminal they stay."""
+    try:
+        actions.check_pythons(cfg, services, install, None)
+        return None
+    except actions.PythonMismatch as mismatch:
+        console.print("[yellow]" + _("⚠ The virtualenv of these services runs a Python their project no longer accepts:")
+                      + "[/]")
+        for item in mismatch.items:
+            use = _("{version} ({program})", version=pythons.show(item.use[0]), program=item.use[1]) if item.use \
+                else _("none installed: uv python install {version}", version=pythons.suggested(item.wants))
+            console.print(f"  · {item.service.name}: " + _("Python {have}, it asks for {wants} → {use}",
+                          have=pythons.show(item.have), wants=item.wants, use=use), highlight=False)
+        if not interactive_terminal():
+            console.print("[yellow]" + _("They keep their Python (no terminal to ask): run it again from a terminal "
+                                         "to recreate them.") + "[/]")
+            return False
+        return questionary.confirm(_("Recreate their virtualenv with that Python and install again?"),
+                                   default=True).unsafe_ask()
+    except actions.ActionError as exc:
+        fail(exc.message)
+    return None
+
+
+def recreations(cfg: Config, services: list[Path], install: Optional[bool], answer: Optional[bool]) -> dict[Path, str]:
+    """``{service: python}`` to recreate, after :func:`python_answer`."""
+    if answer is None:
+        return {}
+    try:
+        return actions.check_pythons(cfg, services, install, answer)
+    except actions.ActionError as exc:
+        fail(exc.message)
+    return {}
+
+
+def ensure_installed(cfg: Config, service: Path, install: Optional[bool], python: Optional[bool] = None,
+                     recreate: Optional[dict[Path, str]] = None) -> None:
+    """Install according to the flag: True forces it, False skips it, None follows the settings (smart by default).
+    A virtualenv on a Python the project no longer accepts is recreated if the user says so (``python``, asked when
+    None); ``recreate`` is what a stack already decided."""
+    if recreate is None:
+        recreate = recreations(cfg, [service], install, python if python is not None
+                               else python_answer(cfg, [service], install))
+    if service in recreate:
+        console.rule(_("{name}: a new virtualenv on {python}", name=service.name, python=recreate[service]))
+        try:
+            actions.install_service(service, python=recreate[service])
+        except actions.ActionError as exc:
+            fail(exc.message)
+    elif actions.needs_install(cfg, service, install):
         poetry_install(service, actions.quick_install(cfg, service, install))
     elif actions.install_wanted(cfg, install):
         console.print("[green]✓[/] " + _(
@@ -151,6 +201,7 @@ def do_run(
     events_mode: Optional[str] = None,
     parallel: Optional[bool] = None,
     on_demand: Optional[bool] = None,
+    python: Optional[bool] = None,
 ) -> None:
     cfg = Config.load()
     service = resolve_service(cfg, service_name, path)
@@ -178,7 +229,7 @@ def do_run(
         _("Install"): install_label(cfg, install),
     })
     confirm_protected(cfg, prof, yes)
-    ensure_installed(cfg, launch.service, install)
+    ensure_installed(cfg, launch.service, install, python)
 
     if not background:
         console.rule(launch.queue if launch.is_consumer else f"uvicorn :{launch.port}")

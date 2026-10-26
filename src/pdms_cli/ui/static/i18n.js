@@ -24,6 +24,13 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "Another Python for these services?": "¿Otro Python para estos servicios?",
+    "Install an accepted Python first (for example: uv python install 3.12), or keep theirs for now.": "Instala antes un Python aceptado (por ejemplo: uv python install 3.12), o mantén el suyo por ahora.",
+    "Keep their Python": "Mantener su Python",
+    "Python {have}, it asks for {wants} → {use}": "Python {have}, pide {wants} → {use}",
+    "Python {have}, it asks for {wants}: no accepted Python installed": "Python {have}, pide {wants}: no hay un Python aceptado instalado",
+    "Recreate and install": "Recrear e instalar",
+    "Their virtualenv runs a Python their project no longer accepts. pdms can make it again on an accepted one and install their dependencies there: the first install takes longer, since the packages download again.": "Su virtualenv usa un Python que su proyecto ya no acepta. pdms puede crearlo de nuevo con uno aceptado e instalar ahí sus dependencias: la primera instalación tarda más, porque los paquetes se descargan otra vez.",
     "Firefox asks whether to add pdms front redirect: click Add.": "Firefox pregunta si añadir pdms front redirect: pulsa Añadir.",
     "Firefox opened the signed extension. There:": "Firefox abrió la extensión firmada. Allí:",
     "No Chrome, Edge, Brave, Chromium or Firefox found on this computer.": "No se encontró Chrome, Edge, Brave, Chromium ni Firefox en este ordenador.",

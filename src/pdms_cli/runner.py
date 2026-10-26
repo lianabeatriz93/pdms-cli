@@ -145,10 +145,12 @@ def ensure_poetry() -> None:
         raise RuntimeError(_("'poetry' was not found in PATH."))
 
 
-def install(service: Path, output: IO[str] | None = None, only: list[Path] | None = None) -> None:
+def install(service: Path, output: IO[str] | None = None, only: list[Path] | None = None,
+            python: str | None = None) -> None:
     """``poetry lock && poetry install``, printing to the terminal or, with ``output``, writing everything there.
 
     With ``only`` (see :func:`installer.code_only_changes`) just those copied packages are reinstalled, without poetry.
+    With ``python`` the virtualenv is first made again on that interpreter (see :mod:`pythons`).
     """
     redirect = {"stdout": output, "stderr": subprocess.STDOUT, "stdin": subprocess.DEVNULL} if output else {}
     env = poetry_environ()
@@ -160,6 +162,13 @@ def install(service: Path, output: IO[str] | None = None, only: list[Path] | Non
         call, call_env = direct(service, cmd, env)
         subprocess.run(call, cwd=service, env=call_env, check=True, **redirect)
 
+    if python:
+        if output:
+            output.write(f"$ rm -rf {service / '.venv'}\n")
+            output.flush()
+        shutil.rmtree(service / ".venv", ignore_errors=True)
+        run([poetry(), "env", "use", python])
+        only = None
     if only is None:
         run([poetry(), "lock"])
         run([poetry(), "install"])

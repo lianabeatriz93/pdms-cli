@@ -125,6 +125,14 @@ reloader. pdms asks before using a database marked as **protected**. `pdms ps` a
   files that uvicorn would otherwise check four times a second, about two thirds of a CPU core per service) nor
   `tests`. A change to `main.py` alone needs `pdms restart`.
 
+### Python of the services
+
+Poetry keeps using a service's `.venv` after its project moves to another Python (`python = ">=3.12,<3.14"`), so it
+would keep running on the old one. When pdms is about to install a service whose virtualenv runs a Python its project
+no longer accepts, it says so and asks: recreate it on the lowest installed Python the project accepts (the one the
+Lambdas run) and install again, or keep it this time. `pdms doctor` counts the services still on the old one and
+says which Python pdms would use, or which to install (`uv python install 3.12`).
+
 ### Slow databases
 
 PDMS services query the database synchronously inside `async` endpoints, so one slow query holds the whole service.

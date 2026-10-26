@@ -154,6 +154,11 @@ def decision_body(decision: actions.Decision) -> dict:
                 "error": "The local ElasticMQ is not running: start it with pdms events up."}
     if isinstance(decision, actions.PortBusy):
         return {"decision": "port_busy", "port": decision.port, "free": decision.free}
+    if isinstance(decision, actions.PythonMismatch):
+        return {"decision": "python_mismatch", "services": [item.describe() for item in decision.items],
+                "error": _("The virtualenv of {names} runs a Python its project no longer accepts: start or restart "
+                           "it from Services to choose whether to recreate it.",
+                           names=", ".join(item.service.name for item in decision.items))}
     if isinstance(decision, actions.PointFrontend):
         return {"decision": "point_frontend", "url": decision.url}
     if isinstance(decision, images.Missing):
@@ -176,12 +181,14 @@ def _body_text(body: dict, key: str) -> str:
 
 def launch_options(body: dict) -> dict:
     """The user, database, install choice and confirmation of a restart or a stack's up."""
-    install = body.get("install")
+    install, python = body.get("install"), body.get("python")
     if install not in (None, True, False):
         raise actions.ActionError("install must be true, false or null")
+    if python not in (None, True, False):
+        raise actions.ActionError("python must be true (recreate), false (keep) or null (ask)")
     return {
         "user": str(body.get("user") or "") or None, "db": str(body.get("db") or "") or None,
-        "install": install, "confirmed": body.get("confirmed") is True,
+        "install": install, "confirmed": body.get("confirmed") is True, "python": python,
     }
 
 
@@ -652,7 +659,8 @@ def make_handler(
             if path in ("/api/home/start", "/api/home/stop"):
                 if path.endswith("start"):
                     options = launch_options(body)
-                    job = jobs.start_all(install=options["install"], confirmed=options["confirmed"])
+                    job = jobs.start_all(install=options["install"], confirmed=options["confirmed"],
+                                         python=options["python"])
                 else:
                     job = jobs.stop_all()
                 return (202, {"job": job.key}) if job else (200, {"job": None})

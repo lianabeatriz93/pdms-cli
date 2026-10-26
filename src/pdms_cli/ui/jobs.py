@@ -400,7 +400,7 @@ class Jobs:
 
     def restart(
         self, key: str, *, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False,
+        confirmed: bool = False, python: bool | None = None,
     ) -> Job:
         """Restart on the same port; raises the decisions before stopping anything, like ``pdms restart``."""
         inst = find(key)
@@ -414,11 +414,12 @@ class Jobs:
             raise actions.LocalEventsDown(cfg.defaults.events_port)
         if self.busy(inst.key):
             raise actions.ActionError(_("{key} is busy.", key=inst.key))
+        recreate = actions.check_pythons(cfg, [Path(inst.service)], install, python)
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
             def install_step(service: Path) -> None:
-                self.install(cfg, job, service, inst.key, install)
+                self.install(cfg, job, service, inst.key, install, recreate=recreate)
                 self.phase(job, "starting")
 
             actions.restart_service(cfg, inst, user_name=user, db_name=db, confirmed=True, install=install_step)
@@ -427,7 +428,7 @@ class Jobs:
 
     def restart_many(
         self, keys: list[str], *, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False, stack: str | None = None, remember: bool = False,
+        confirmed: bool = False, stack: str | None = None, remember: bool = False, python: bool | None = None,
     ) -> list[Job]:
         """Restart several instances on their ports, one after the other (each its own job, waiting its turn).
 
@@ -450,6 +451,7 @@ class Jobs:
         busy = [inst.key for inst in found if self.busy(inst.key)]
         if busy:
             raise actions.ActionError(_("{key} is busy.", key=", ".join(busy)))
+        recreate = actions.check_pythons(cfg, [Path(inst.service) for inst in found], install, python)
         if remember:
             if not stack or not (user or db):
                 raise actions.ActionError("remember needs a stack and a user or a database")
@@ -466,7 +468,7 @@ class Jobs:
                     self.phase(job, "stopping")
 
                     def install_step(service: Path) -> None:
-                        self.install(cfg, job, service, inst.key, install)
+                        self.install(cfg, job, service, inst.key, install, recreate=recreate)
                         self.phase(job, "starting")
 
                     actions.restart_service(cfg, inst, user_name=user or inst.user, db_name=db or inst.db,
@@ -485,7 +487,7 @@ class Jobs:
 
     def start(
         self, service: str, *, port: int | None = None, user: str | None = None, db: str | None = None,
-        install: bool | None = None, confirmed: bool = False, on_demand: bool | None = None,
+        install: bool | None = None, confirmed: bool = False, on_demand: bool | None = None, python: bool | None = None,
     ) -> Job:
         """Start one service of the current repo in the background, like ``pdms run -b``. Without ``port`` it takes
         the next free one; a busy ``port``, a protected database or a stopped local ElasticMQ (for a consumer) are
@@ -506,30 +508,37 @@ class Jobs:
         key = instances.make_key(launch.service, launch.port)
         if self.busy(key):
             raise actions.ActionError(_("{key} is busy.", key=key))
+        recreate = actions.check_pythons(cfg, [launch.service], install, python)
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
-            self.install(cfg, job, launch.service, key, install)
+            self.install(cfg, job, launch.service, key, install, recreate=recreate)
             self.phase(job, "starting")
             actions.start_service(cfg, launch)
 
         return self.run(key, "start", "starting", work)
 
-    def install(self, cfg: Config, job: Job, service: Path, key: str, install: bool | None, label: str = "") -> None:
-        """Install ``service`` if needed, writing the output to the install log of instance ``key``."""
-        if not actions.needs_install(cfg, service, install):
+    def install(self, cfg: Config, job: Job, service: Path, key: str, install: bool | None, label: str = "",
+                recreate: dict[Path, str] | None = None) -> None:
+        """Install ``service`` if needed, writing the output to the install log of instance ``key``; first on
+        another Python when it is in ``recreate`` (see :func:`actions.check_pythons`)."""
+        python = (recreate or {}).get(service)
+        if not python and not actions.needs_install(cfg, service, install):
             return
         log = install_log(key)
         log.parent.mkdir(parents=True, exist_ok=True)
         self.phase(job, f"installing {label}".strip(), installed=True, log_key=key)
         with open(log, "w", encoding="utf-8", errors="replace") as output:
-            actions.install_service(service, output, actions.quick_install(cfg, service, install))
+            if python:  # a new virtualenv on another Python first
+                actions.install_service(service, output, None, python)
+            else:
+                actions.install_service(service, output, actions.quick_install(cfg, service, install))
 
     # ------------------------------------------------------------------ stacks
 
     def up(
         self, name: str, *, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False,
+        confirmed: bool = False, python: bool | None = None,
     ) -> Job | None:
         """Start what is not running of the stack, like ``pdms up``; None when all of it already runs."""
         cfg = Config.load()
@@ -541,6 +550,7 @@ class Jobs:
         if not plan.services:
             return None
         actions.check_database(cfg, db, confirmed)
+        recreate = actions.check_pythons(cfg, [launch.service for launch in plan.services], install, python)
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
@@ -559,7 +569,8 @@ class Jobs:
                     self.phase(job, f"installing {', '.join(path.name for path in now)}", installed=True,
                                log_key=keys[now[-1]])
 
-            actions.install_services(cfg, {path: install_log(key) for path, key in keys.items()}, install, progress)
+            actions.install_services(cfg, {path: install_log(key) for path, key in keys.items()}, install, progress,
+                                     recreate)
             for launch in plan.services:
                 self.phase(job, f"starting {launch.service.name}")
                 actions.start_service(cfg, launch)
@@ -648,7 +659,7 @@ class Jobs:
 
     # ------------------------------------------------------------------ Home
 
-    def start_all(self, *, install: bool | None = None, confirmed: bool = False) -> Job | None:
+    def start_all(self, *, install: bool | None = None, confirmed: bool = False, python: bool | None = None) -> Job | None:
         """Start what is not running of the saved setup, in order: the local events, the stack, the proxy (pointing
         the frontend to it) and the frontend. A protected database or a busy frontend port are raised first; the
         proxy takes the next free port by itself. None when everything already runs."""
@@ -696,6 +707,9 @@ class Jobs:
             frontend_plan = actions.plan_frontend(cfg, mode=setup.frontend_mode, install=install)
         if event_map is None and not stack_name and proxy_plan is None and frontend_plan is None:
             return None
+        starting = [path for path in actions.stack_paths(cfg.stacks[stack_name], backend(cfg))
+                    if str(path) not in actions.running_by_service()] if stack_name else []
+        recreate = actions.check_pythons(cfg, [*starting, *([broker] if broker else [])], install, python)
         if stack_name or broker:
             actions.remember_profile(cfg, user, db)
 
@@ -705,14 +719,15 @@ class Jobs:
                 actions.start_events(cfg, event_map.queues)
             if broker is not None:
                 launch = actions.plan_service(cfg, broker, user_name=user, db_name=db, events_mode="local")
-                self.install(cfg, job, broker, instances.make_key(launch.service, launch.port), install, broker.name)
+                self.install(cfg, job, broker, instances.make_key(launch.service, launch.port), install, broker.name,
+                             recreate)
                 self.phase(job, f"starting {broker.name}")
                 actions.start_service(cfg, launch)
             if stack_name:
                 plan = actions.plan_stack(cfg, stack_name, backend(cfg), user_name=user, db_name=db)
                 for launch in plan.services:
                     key = instances.make_key(launch.service, launch.port)
-                    self.install(cfg, job, launch.service, key, install, launch.service.name)
+                    self.install(cfg, job, launch.service, key, install, launch.service.name, recreate)
                     self.phase(job, f"starting {launch.service.name}")
                     actions.start_service(cfg, launch)
             if proxy_plan is not None:
@@ -778,7 +793,7 @@ class Jobs:
 
     def events_up(
         self, *, broker: bool = True, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False,
+        confirmed: bool = False, python: bool | None = None,
     ) -> Job:
         """Start the local ElasticMQ with every queue of the repo and, with ``broker``, the broker, like
         ``pdms events up``; a protected database for the broker is asked before anything starts."""
@@ -795,6 +810,8 @@ class Jobs:
             actions.require(cfg.users, _("user"), user)
             actions.require(cfg.dbs, _("database"), db)
             actions.check_database(cfg, db, confirmed)
+        recreate = actions.check_pythons(cfg, [service] if service else [], install, python)
+        if service:
             actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
@@ -802,7 +819,7 @@ class Jobs:
             if service and user and db:
                 launch = actions.plan_service(cfg, service, user_name=user, db_name=db, events_mode="local")
                 key = instances.make_key(launch.service, launch.port)
-                self.install(cfg, job, service, key, install, service.name)
+                self.install(cfg, job, service, key, install, service.name, recreate)
                 self.phase(job, f"starting {service.name}")
                 actions.start_service(cfg, launch)
 
