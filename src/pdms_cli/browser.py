@@ -88,6 +88,15 @@ def version() -> str:
     return json.loads(SOURCE.joinpath("manifest.json").read_text(encoding="utf-8"))["version"]
 
 
+def folder_version() -> str:
+    """The version in :func:`extension_dir`, which Chromium browsers load: what the extension compares itself with
+    to reload (the package's own while there is no folder)."""
+    try:
+        return str(json.loads((extension_dir() / "manifest.json").read_text(encoding="utf-8"))["version"])
+    except (OSError, ValueError, KeyError):
+        return version()
+
+
 def write_extension() -> Path:
     """Copy the extension to :func:`extension_dir` (only the files that changed); the folder to load."""
     target = extension_dir()
@@ -267,7 +276,7 @@ def answer(cfg: Config) -> dict:
     where = target()
     return {"pdms": "front-redirect", "active": cfg.defaults.front_redirect and bool(where), "target": where,
             "redirect": cfg.defaults.front_redirect, "hosts": list(cfg.defaults.front_redirect_hosts),
-            "version": version(), "language": i18n.configured(cfg.defaults.language)}
+            "version": folder_version(), "language": i18n.configured(cfg.defaults.language)}
 
 
 def status(cfg: Config) -> dict:

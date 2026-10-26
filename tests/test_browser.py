@@ -267,3 +267,13 @@ def test_an_older_firefox_extension_asks_for_the_new_file(cfg, monkeypatch) -> N
     assert rows["firefox"]["outdated"] and not rows["chrome"]["outdated"]
     browser.record_seen("firefox", browser.version())
     assert not browser.status(Config.load())["browsers"][-1]["outdated"]
+
+
+def test_it_reloads_only_once_the_folder_has_the_new_files(cfg) -> None:
+    assert browser.answer(Config.load())["version"] == browser.version()  # no folder yet
+    folder = browser.write_extension()
+    manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    (folder / "manifest.json").write_text(json.dumps({**manifest, "version": "0.9.0"}), encoding="utf-8")
+    assert browser.answer(Config.load())["version"] == "0.9.0"  # pdms changed, the folder not yet: no reload
+    browser.refresh_extension()
+    assert browser.answer(Config.load())["version"] == browser.version()
