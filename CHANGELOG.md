@@ -1,3 +1,16 @@
+## v0.4.7 (2026-10-26)
+
+### Feat
+
+- **browser**: the extension's icon and panel say what it is doing
+- **browser**: the extension in Firefox, signed by Mozilla on each new version
+- **ui**: install the browser extension and turn the redirect on from pdms ui
+- **browser**: extension that opens the local frontend from the known front
+
+### Fix
+
+- **browser**: the extension reloads when its folder has new files, not before
+
 ## v0.4.6 (2026-10-22)
 
 ### Fix
