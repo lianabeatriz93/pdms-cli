@@ -15,6 +15,7 @@ import { currentView } from "./router.js";
 import { paintStatus } from "./status.js";
 import { syncTests, watchStartDb } from "./tests.js";
 import { syncData } from "./data.js";
+import { paintBrowser } from "./browser.js";
 
 export let state = null;
 
@@ -66,7 +67,8 @@ export function paint(next) {
   // Defaults for what an older pdms ui server does not send yet (its page files may already be newer).
   state = {
     jobs: {}, users: [], dbs: [], stacks: [], health: { dbs: [], running: false, slow_ms: 0 },
-    tests: { running: [], queued: [], failing: 0, version: 0, error: "" }, ...next,
+    tests: { running: [], queued: [], failing: 0, version: 0, error: "" },
+    browser: { redirect: false, hosts: [], folder: "", browsers: [] }, ...next,
   };
   const relabel = useLanguage(state.language);
   if (themePreview === state.theme) themePreview = ""; // saved, or picked back
@@ -93,6 +95,7 @@ export function paint(next) {
   if (wasUp !== undefined && wasUp !== eventsView.up && currentView() === "events") showEventsTab(eventsView.tab);
   if (logs.sources.length) paintDock();
   syncSettings();
+  paintBrowser();
   if (relabel) repaintTexts();
 }
 

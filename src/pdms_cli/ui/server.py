@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, emails, events, frontend, health, i18n, images, instances, proxy, testruns
+from .. import actions, browser, emails, events, frontend, health, i18n, images, instances, proxy, testruns
 from ..config import Config
 from ..i18n import _
 from ..logview import LogFollower
@@ -410,8 +410,27 @@ def make_handler(
             self.reply_json(200, {})
             return True
 
+        def extension_request(self) -> bool:
+            """The browser extension asking what to redirect (browser.py). Only an extension sends its ``Origin``,
+            so it needs no cookie; it learns no more than the hosts and the local frontend's URL."""
+            if urlsplit(self.path).path != browser.STATE_PATH:
+                return False
+            if self.headers.get("Host", "") not in self.own_hosts() or not browser.is_extension(
+                    self.headers.get("Origin", "")):
+                self.reply(403, "text/plain", b"pdms ui: only the pdms browser extension asks this\n")
+                return True
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                body = json.loads(self.rfile.read(min(length, MAX_BODY)) or b"{}")
+            except ValueError:
+                body = {}
+            if isinstance(body, dict):
+                browser.record_seen(body.get("browser"), body.get("version"))
+            self.reply_json(200, browser.answer(Config.load()))
+            return True
+
         def do_POST(self) -> None:  # noqa: N802
-            if self.show_request():
+            if self.show_request() or self.extension_request():
                 return
             if not self.allowed(origin_required=True):
                 return
@@ -629,6 +648,19 @@ def make_handler(
                     job = jobs.stop_all()
                 return (202, {"job": job.key}) if job else (200, {"job": None})
 
+            if path == "/api/browser/install":
+                found, folder, opened = actions.install_extension(_body_text(body, "browser"))
+                return 200, {"name": found.name, "page": found.page, "folder": str(folder), "opened": opened}
+            if path == "/api/browser/redirect":
+                if not isinstance(body.get("on"), bool):
+                    raise actions.ActionError("on must be true or false")
+                actions.set_front_redirect(Config.load(), body["on"])
+                return 200, {}
+            if path == "/api/browser/hosts":
+                hosts = body.get("hosts")
+                if not isinstance(hosts, list) or not all(isinstance(host, str) for host in hosts):
+                    raise actions.ActionError("hosts must be a list of host names")
+                return 200, {"hosts": actions.set_front_hosts(Config.load(), hosts)}
             if path == "/api/defaults/save":
                 ui_jobs.save_defaults(body)
                 return 200, {}

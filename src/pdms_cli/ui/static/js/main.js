@@ -26,6 +26,7 @@ import {
   paintImport, paintUsers, readImport, saveDb, saveDefaults, saveUser, settingsView, showSettingsTab, submitExport,
   submitImport, submitUserImport, testDbForm, toggleDbPassword, usersCount,
 } from "./settings.js";
+import { hostsEdited, saveHosts, setRedirect } from "./browser.js";
 import { openFrontendStart, paintFrontendMode, resetFrontendPort, submitFrontendStart } from "./frontend.js";
 import { saveSetup, startAll, stopAll, submitSaveSetup } from "./home.js";
 import { UPDATE_JOB, checkNow, copyCommand, openUpdate, submitUpdate } from "./updates.js";
@@ -151,6 +152,9 @@ window.addEventListener("hashchange", route);
 route();
 $("restart-cancel").addEventListener("click", () => $("restart").close());
 for (const tab of $("settings-tabs").children) tab.addEventListener("click", () => showSettingsTab(tab.dataset.tab));
+$("browser-redirect").addEventListener("change", (event) => setRedirect(event.target.checked));
+$("browser-hosts-form").addEventListener("submit", saveHosts);
+$("browser-hosts").addEventListener("input", hostsEdited);
 $("db-filter").addEventListener("input", paintDbs);
 $("db-protected").addEventListener("change", paintDbs);
 $("db-new").addEventListener("click", () => openDb());

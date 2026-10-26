@@ -833,3 +833,16 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 .data-aws-buckets { display: flex; flex-wrap: wrap; gap: .3rem .8rem; }
 #data-aws-changed { white-space: pre-line; }
 .ibtn-group { display: contents; }
+
+/* Settings → Browser */
+.browser-card { display: grid; gap: .6rem; padding: .8rem .9rem; }
+.browser-card p { margin: 0; }
+.browser-card .bar { margin: 0; }
+#browser-hosts {
+  flex: 1 1 18rem; min-width: 0; font: inherit; font-family: var(--mono); font-size: .82rem; padding: .3rem .5rem;
+  border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+#browser-steps-list { margin: 0; padding-left: 1.3rem; display: grid; gap: .35rem; }
+#browser-steps-list code { overflow-wrap: anywhere; }
+.tile .redirect { display: inline-flex; gap: .35rem; align-items: center; }
+.tile dd:has(.redirect) { font-family: inherit; }
