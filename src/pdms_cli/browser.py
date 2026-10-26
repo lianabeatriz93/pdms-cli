@@ -31,13 +31,14 @@ from datetime import datetime
 from importlib import resources
 from pathlib import Path
 
-from . import frontend, instances
+from . import frontend, i18n, instances
 from .config import Config
 
 SOURCE = resources.files("pdms_cli") / "browser_extension"
-FILES = ("manifest.json", "background.js", "icon.png")
+FILES = ("manifest.json", "background.js", "texts.js", "icon.png", "popup.html", "popup.js", "popup.css")
 EXTENSION_ID = "ppmcicngmcaokmhnkgcgelkconeimaka"  # from the key of its manifest
 STATE_PATH = "/extension/state"
+REDIRECT_PATH = "/extension/redirect"  # its panel turns the redirect on or off
 # The extension may only redirect pages of alivi.com (its host permissions).
 HOST = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+alivi\.com$")
 CONNECTED_FOR = 90  # seconds: the extension asks every 30
@@ -109,7 +110,7 @@ def firefox_manifest() -> dict:
     """The manifest Firefox gets: its own id, an event page instead of a service worker, no Chrome key."""
     manifest = json.loads(SOURCE.joinpath("manifest.json").read_text(encoding="utf-8"))
     manifest.pop("key", None)
-    manifest["background"] = {"scripts": ["background.js"]}
+    manifest["background"] = {"scripts": ["texts.js", "background.js"]}
     manifest["browser_specific_settings"] = {"gecko": {
         "id": GECKO_ID, "strict_min_version": "140.0", "data_collection_permissions": {"required": ["none"]},
     }}
@@ -261,10 +262,12 @@ def target() -> str:
 
 
 def answer(cfg: Config) -> dict:
-    """What the extension does now: redirect ``hosts`` to ``target`` while ``active``."""
-    where = target() if cfg.defaults.front_redirect else ""
-    return {"pdms": "front-redirect", "active": bool(where), "target": where,
-            "hosts": list(cfg.defaults.front_redirect_hosts), "version": version()}
+    """What the extension does now: redirect ``hosts`` to ``target`` while ``active``. Its icon and panel also show
+    whether the redirect is on (``redirect``) when the frontend is not running, in pdms' language."""
+    where = target()
+    return {"pdms": "front-redirect", "active": cfg.defaults.front_redirect and bool(where), "target": where,
+            "redirect": cfg.defaults.front_redirect, "hosts": list(cfg.defaults.front_redirect_hosts),
+            "version": version(), "language": i18n.configured(cfg.defaults.language)}
 
 
 def status(cfg: Config) -> dict:

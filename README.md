@@ -227,7 +227,9 @@ You load the extension once: turn on Developer mode on the extensions page, clic
 folder pdms prints. Firefox only takes extensions Mozilla signed, so there pdms opens the signed file that comes with
 each release and Firefox asks whether to add it. When pdms brings a newer version, Settings → Browser offers to
 update it. It asks pdms ui every half a minute what to do, so it only redirects while pdms ui and the
-frontend run. Otherwise the known front opens as always. After a pdms update it reloads its own files. The local app
+frontend run. Otherwise the known front opens as always. Its icon in the toolbar says which: **ON** (redirecting), **OFF** (the
+redirect is off), **…** (on, but the frontend is not running) or **!** (pdms ui is not open). Click it to see where it
+redirects, turn the redirect on or off, or check right away. After a pdms update it reloads its own files. The local app
 keeps its own login, so you sign in there once.
 
 ## Databases, tests and migrations
