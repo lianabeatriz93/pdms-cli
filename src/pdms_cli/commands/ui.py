@@ -14,6 +14,7 @@ from rich.markup import escape
 from rich.text import Text
 
 from .. import actions, desktop, instances, repos
+from .. import browser as extension
 from ..config import Config
 from ..i18n import _
 from .common import app, console, fail, settle
@@ -92,6 +93,10 @@ def ui_cmd(
     relaunch = [str(desktop.pdms_executable(gui=detached)), "ui", "--port", str(port),
                 *(["--window"] if window else ["--no-browser"]), *(["--detached"] if detached else [])]
     control = ui_control.Control(url, token, relaunch)
+    try:
+        extension.refresh_extension()  # after an update the extension loads the new files by itself
+    except OSError:
+        pass
     hub, jobs = ui_server.make_app()
     server = ui_server.make_server("127.0.0.1", port, token, hub, jobs, control)
     ui_instance.remember(port, token, window)

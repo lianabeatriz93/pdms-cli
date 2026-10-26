@@ -1469,4 +1469,60 @@ ES: dict[str, str] = {
         "{key} no está corriendo.",
     "{key} reads a queue all the time: no request would wake it.":
         "{key} lee una cola todo el tiempo: ninguna petición lo despertaría.",
+    "'{host}' is not a host of alivi.com (the extension only redirects those)":
+        "'{host}' no es un host de alivi.com (la extensión solo redirige esos)",
+    "A known front to redirect (repeat it; replaces the saved ones).":
+        "Un front conocido que redirigir (repítelo; reemplaza los guardados).",
+    "Click Load unpacked and choose the folder {folder}":
+        "Pulsa Cargar descomprimida y elige la carpeta {folder}",
+    "Could not open {name}: open {page} in it.":
+        "No se pudo abrir {name}: abre {page} en él.",
+    "Extension written to {folder}":
+        "Extensión escrita en {folder}",
+    "Give at least one host":
+        "Indica al menos un host",
+    "In {page}, turn on Developer mode.":
+        "En {page}, activa el Modo de desarrollador.",
+    "Install it in:":
+        "Instalarla en:",
+    "No Chrome, Edge, Brave or Chromium found on this computer.":
+        "No se encontró Chrome, Edge, Brave ni Chromium en este ordenador.",
+    "Open the browser's extensions page to load the extension (once).":
+        "Abre la página de extensiones del navegador para cargar la extensión (una vez).",
+    "Redirect: {state} · {hosts} → the frontend pdms runs":
+        "Redirección: {state} · {hosts} → el frontend que corre pdms",
+    "Say on or off.":
+        "Indica on u off.",
+    "The browser extension that opens the frontend pdms runs when you go to the known front (dev-pdm.alivi.com...).":
+        "La extensión del navegador que abre el frontend que corre pdms cuando vas al front conocido (dev-pdm.alivi.com...).",
+    "The extension asks pdms ui every half a minute: it redirects only while pdms ui runs.":
+        "La extensión pregunta a pdms ui cada medio minuto: solo redirige mientras pdms ui corre.",
+    "The known front opens as always (within half a minute).":
+        "El front conocido abre como siempre (en menos de medio minuto).",
+    "Turn on or off sending the known front to the frontend pdms runs.":
+        "Activa o desactiva enviar el front conocido al frontend que corre pdms.",
+    "Turn the redirect on (pdms browser redirect on, or the Frontend tile of pdms ui).":
+        "Activa la redirección (pdms browser redirect on, o la tarjeta Frontend de pdms ui).",
+    "Unknown browser '{key}'. Available: {keys}":
+        "Navegador desconocido '{key}'. Disponibles: {keys}",
+    "Whether the redirect is on, and where the extension is installed.":
+        "Si la redirección está activa y dónde está instalada la extensión.",
+    "chrome, edge, brave or chromium (asked if omitted).":
+        "chrome, edge, brave o chromium (se pregunta si se omite).",
+    "connected":
+        "conectada",
+    "installed, last seen {when}":
+        "instalada, vista por última vez {when}",
+    "not installed: pdms browser install {key}":
+        "no instalada: pdms browser install {key}",
+    "off":
+        "desactivada",
+    "on":
+        "activada",
+    "on or off.":
+        "on u off.",
+    "{hosts} open the frontend pdms runs, while it runs (within half a minute).":
+        "{hosts} abren el frontend que corre pdms, mientras corra (en menos de medio minuto).",
+    "{name} is not installed on this computer.":
+        "{name} no está instalado en este ordenador.",
 }

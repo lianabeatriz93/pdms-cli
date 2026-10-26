@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "pdms front redirect",
+  "version": "1.0.0",
+  "description": "Opens the PDMS web app that pdms runs on this computer when you go to the known front (pdms ui, Settings → Browser).",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwBPpnqfo9Jhmh1vsZLr6JMNOgJCoiHN+M+uH1qYuahUgg1NHYn/5lYJT/dAzLtqBw6oVGrYKB4H3qTAIPSF6AEBCjSupT1rbeP3Qp1Zuj/05t6kTgq7nYnqazVtlHA4ssZz6HaCLY7vj0FqAnu0sxw8EtHqsxEyOFIbvVHNd8xN1Ds1oEM+u/lx8bP+wJB5AMTLdOcBKQ1mCPDiFWiFbqznIq+8Kvvf/AAg4AEZpmQtszMRw7jr8lRDo+9RuAmH1tqVAozm8UwT+FDCok8uts02LJkU5bv/qyu3DsEgeddni6vXpzPZcsR1qqUZ1pL/OjyTjUIkEgUHbnCAxmA/zjQIDAQAB",
+  "icons": {"128": "icon.png"},
+  "permissions": ["declarativeNetRequestWithHostAccess", "alarms", "storage"],
+  "host_permissions": ["https://*.alivi.com/*", "http://127.0.0.1/*"],
+  "background": {"service_worker": "background.js"}
+}
