@@ -4,3 +4,4 @@ __pycache__/
 dist/
 junit.xml
 pdms-cli.code-workspace
+src/pdms_cli/browser_extension/firefox.xpi

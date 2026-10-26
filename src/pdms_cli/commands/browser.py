@@ -32,9 +32,11 @@ def browser_status() -> None:
     console.print(_("Redirect: {state} · {hosts} → the frontend pdms runs", state=state,
                     hosts=", ".join(info["hosts"])), highlight=False)
     if not info["browsers"]:
-        console.print("  " + _("No Chrome, Edge, Brave or Chromium found on this computer."))
+        console.print("  " + _("No Chrome, Edge, Brave, Chromium or Firefox found on this computer."))
     for row in info["browsers"]:
-        if row["connected"]:
+        if row["outdated"]:
+            mark, text = "[yellow]~[/]", _("an older version: pdms browser install {key}", key=row["key"])
+        elif row["connected"]:
             mark, text = "[green]✓[/]", _("connected")
         elif row["seen"]:
             mark, text = "[yellow]~[/]", _("installed, last seen {when}", when=row["seen"].replace("T", " "))
@@ -47,19 +49,28 @@ def browser_status() -> None:
 
 @browser_app.command("install", help=_("Open the browser's extensions page to load the extension (once)."))
 def browser_install(
-    name: Optional[str] = typer.Argument(None, help=_("chrome, edge, brave or chromium (asked if omitted)."),
+    name: Optional[str] = typer.Argument(None, help=_("chrome, edge, brave, chromium or firefox (asked if omitted)."),
                                          show_default=False),
 ) -> None:
     if name is None:
         found = [item for item in browser.BROWSERS if item.key in browser.installed()]
         if not found:
-            fail(_("No Chrome, Edge, Brave or Chromium found on this computer."))
+            fail(_("No Chrome, Edge, Brave, Chromium or Firefox found on this computer."))
         if len(found) == 1 or not interactive_terminal():
             name = found[0].key
         else:
             name = questionary.select(_("Install it in:"), choices=[
                 questionary.Choice(item.name, item.key) for item in found]).unsafe_ask()
     chosen, folder, opened = settle(lambda: actions.install_extension(str(name)))
+    if chosen.key == "firefox":
+        console.print("[green]✓[/] " + _("Signed extension: {file}", file=escape(str(folder))), highlight=False)
+        if opened:
+            console.print("  " + _("Firefox asks whether to add pdms front redirect: click Add."))
+        else:
+            console.print("[yellow]" + _("Could not open Firefox: open {file} in it.", file=escape(str(folder))) + "[/]",
+                          highlight=False)
+        console.print("  " + _("Then turn the redirect on (pdms browser redirect on, or the Frontend tile of pdms ui)."))
+        return
     console.print("[green]✓[/] " + _("Extension written to {folder}", folder=escape(str(folder))), highlight=False)
     if not opened:
         console.print("[yellow]" + _("Could not open {name}: open {page} in it.", name=chosen.name, page=chosen.page)

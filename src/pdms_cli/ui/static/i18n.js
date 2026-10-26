@@ -24,6 +24,12 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "Firefox asks whether to add pdms front redirect: click Add.": "Firefox pregunta si añadir pdms front redirect: pulsa Añadir.",
+    "Firefox opened the signed extension. There:": "Firefox abrió la extensión firmada. Allí:",
+    "No Chrome, Edge, Brave, Chromium or Firefox found on this computer.": "No se encontró Chrome, Edge, Brave, Chromium ni Firefox en este ordenador.",
+    "Open this file in Firefox (drag it to a window). There:": "Abre este archivo en Firefox (arrástralo a una ventana). Allí:",
+    "Update": "Actualizar",
+    "an older version": "una versión anterior",
     "Browser": "Navegador",
     "Click Load unpacked and choose this folder:": "Pulsa Cargar descomprimida y elige esta carpeta:",
     "Done: the extension is connected.": "Listo: la extensión está conectada.",
@@ -35,7 +41,6 @@ const CATALOG = {
     "Known front": "Front conocido",
     "Known fronts": "Fronts conocidos",
     "Known fronts saved.": "Fronts conocidos guardados.",
-    "No Chrome, Edge, Brave or Chromium found on this computer.": "No se encontró Chrome, Edge, Brave ni Chromium en este ordenador.",
     "Open {page} in {name}. There:": "Abre {page} en {name}. Allí:",
     "Send the known fronts to the local frontend": "Enviar los fronts conocidos al frontend local",
     "The extension asks pdms ui every half a minute, and redirects only while pdms ui and the frontend run: otherwise the known front opens as always. In the local app you log in again, since each address keeps its own session.": "La extensión pregunta a pdms ui cada medio minuto y solo redirige mientras pdms ui y el frontend corren: si no, el front conocido abre como siempre. En la app local inicias sesión de nuevo, porque cada dirección guarda su propia sesión.",

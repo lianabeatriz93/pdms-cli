@@ -1458,13 +1458,19 @@ def set_front_hosts(cfg: Config, hosts: Iterable[str]) -> list[str]:
 
 
 def install_extension(key: str) -> tuple[browser.Browser, Path, bool]:
-    """Write the extension's folder and open the extensions page of browser ``key``: the browser, the folder to load
-    there, and whether the page opened."""
+    """Write the extension's folder and open the extensions page of browser ``key`` (Firefox: open the signed file,
+    and it asks whether to add it): the browser, the folder or file, and whether the browser opened."""
     found = browser.BY_KEY.get(key)
     if not found:
         raise ActionError(_("Unknown browser '{key}'. Available: {keys}", key=key, keys=", ".join(browser.BY_KEY)))
     if key not in browser.installed() and not browser.executable(found):
         raise ActionError(_("{name} is not installed on this computer.", name=found.name))
+    if key == "firefox":
+        try:
+            xpi = browser.firefox_xpi()
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise ActionError(_("Could not get the signed extension for Firefox: {error}", error=exc)) from exc
+        return found, xpi, browser.open_page(found, str(xpi))
     folder = browser.write_extension()
     return found, folder, browser.open_page(found)
 

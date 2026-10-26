@@ -9,6 +9,11 @@ of an email or of the backend opens the local app. Without pdms ui it does nothi
 Chrome, Edge, Brave and Chromium load it unpacked from a folder of pdms' state (``extension_dir``): pdms opens the
 browser's extensions page and the user loads the folder there, once. The ``key`` in its manifest keeps its id the
 same everywhere. Each request it sends says which browser it runs in, so pdms ui knows where it is installed.
+
+Firefox only installs extensions Mozilla signed. The release workflow signs this one (unlisted on addons.mozilla.org,
+with ``firefox_manifest``) whenever its version changes, puts it in the wheel (``firefox.xpi``) and in the GitHub
+release; pdms opens that file in Firefox, which asks whether to add it. A checkout has no signed file: pdms downloads
+the one of the latest release.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from importlib import resources
@@ -37,6 +43,9 @@ HOST = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+alivi\.com$")
 CONNECTED_FOR = 90  # seconds: the extension asks every 30
 FOUND_FOR = 60  # seconds a look for installed browsers is kept
 SEEN_KEYS = ("chrome", "edge", "brave", "chromium", "firefox")
+GECKO_ID = "pdms-front-redirect@alivi.com"  # its id in Firefox (addons.mozilla.org)
+XPI = "firefox.xpi"  # the signed extension for Firefox, put in the package by release.yml
+XPI_NAME = re.compile(r"^pdms-front-redirect-\d+(?:\.\d+)*\.xpi$")  # as the GitHub release has it
 WINDOWS = sys.platform == "win32"
 MAC = sys.platform == "darwin"
 
@@ -61,6 +70,7 @@ BROWSERS = (
             "brave.exe", ("BraveSoftware/Brave-Browser/Application",), "Brave Browser"),
     Browser("chromium", "Chromium", "chrome://extensions", ("chromium", "chromium-browser"),
             "chromium.exe", ("Chromium/Application",), "Chromium"),
+    Browser("firefox", "Firefox", "about:addons", ("firefox",), "firefox.exe", ("Mozilla Firefox",), "Firefox"),
 )
 BY_KEY = {browser.key: browser for browser in BROWSERS}
 
@@ -95,6 +105,63 @@ def refresh_extension() -> None:
         write_extension()
 
 
+def firefox_manifest() -> dict:
+    """The manifest Firefox gets: its own id, an event page instead of a service worker, no Chrome key."""
+    manifest = json.loads(SOURCE.joinpath("manifest.json").read_text(encoding="utf-8"))
+    manifest.pop("key", None)
+    manifest["background"] = {"scripts": ["background.js"]}
+    manifest["browser_specific_settings"] = {"gecko": {
+        "id": GECKO_ID, "strict_min_version": "140.0", "data_collection_permissions": {"required": ["none"]},
+    }}
+    return manifest
+
+
+def write_firefox_source(target: Path) -> Path:
+    """The extension as Firefox gets it, in ``target``: what release.yml signs (``python -m pdms_cli.browser``)."""
+    target.mkdir(parents=True, exist_ok=True)
+    for name in FILES:
+        if name != "manifest.json":
+            (target / name).write_bytes(SOURCE.joinpath(name).read_bytes())
+    (target / "manifest.json").write_text(json.dumps(firefox_manifest(), indent=2) + "\n", encoding="utf-8")
+    return target
+
+
+def download_xpi(timeout: float = 60) -> Path:
+    """The signed extension of the latest release, downloaded to :func:`extension_dir`."""
+    from .update import API_RELEASES
+
+    request = urllib.request.Request(f"{API_RELEASES}/latest", headers={"Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        assets = json.load(response).get("assets") or []
+    for asset in assets:
+        name = str(asset.get("name", ""))
+        if XPI_NAME.match(name):
+            target = extension_dir() / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with urllib.request.urlopen(str(asset["browser_download_url"]), timeout=timeout) as response:
+                target.write_bytes(response.read())
+            return target
+    raise RuntimeError("the latest release has no signed extension for Firefox")
+
+
+def firefox_xpi() -> Path:
+    """The signed extension for Firefox, as a file Firefox can open: the one that came with pdms, else the latest
+    release's. A snap's Firefox cannot read hidden folders, so it gets it in ~/Downloads."""
+    packaged = SOURCE.joinpath(XPI)
+    if packaged.is_file():
+        xpi = extension_dir() / f"pdms-front-redirect-{version()}.xpi"
+        xpi.parent.mkdir(parents=True, exist_ok=True)
+        xpi.write_bytes(packaged.read_bytes())
+    else:
+        xpi = download_xpi()
+    program = installed().get("firefox") or ""
+    if "/snap/" in program:
+        downloads = Path.home() / "Downloads"
+        downloads.mkdir(parents=True, exist_ok=True)
+        xpi = Path(shutil.copy(xpi, downloads / xpi.name))
+    return xpi
+
+
 # --------------------------------------------------------------------------- browsers on this computer
 
 
@@ -124,8 +191,9 @@ def executable(browser: Browser) -> str | None:
         return _windows_exe(browser)
     if MAC:
         for apps in (Path("/Applications"), Path.home() / "Applications"):
-            if (path := apps / f"{browser.app}.app" / "Contents" / "MacOS" / browser.app).is_file():
-                return str(path)
+            for name in (browser.app, browser.app.lower()):  # Firefox.app/Contents/MacOS/firefox
+                if (path := apps / f"{browser.app}.app" / "Contents" / "MacOS" / name).is_file():
+                    return str(path)
         return None
     return next((path for command in browser.commands if (path := shutil.which(command))), None)
 
@@ -143,13 +211,13 @@ def installed() -> dict[str, str]:
     return found
 
 
-def open_page(browser: Browser) -> bool:
-    """Open the browser's extensions page (a page cannot link to it); False when it could not."""
+def open_page(browser: Browser, target: str = "") -> bool:
+    """Open the browser's extensions page (a page cannot link to it), or ``target``; False when it could not."""
     program = installed().get(browser.key) or executable(browser)
     if not program:
         return False
     try:
-        subprocess.Popen([program, browser.page], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        subprocess.Popen([program, target or browser.page], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, **instances.detach_options())
     except OSError:
         return False
@@ -204,15 +272,27 @@ def status(cfg: Config) -> dict:
     found, last = installed(), seen()
     now = time.time()
     rows = []
-    for key in (*BY_KEY, "firefox"):
+    for key in BY_KEY:
         if key not in found and key not in last:
             continue
         at = float(last.get(key, {}).get("at") or 0)
         rows.append({
-            "key": key, "name": BY_KEY[key].name if key in BY_KEY else "Firefox", "found": key in found, "seen": datetime.fromtimestamp(at).isoformat(timespec="seconds") if at else "",
+            "key": key, "name": BY_KEY[key].name, "found": key in found,
+            # Firefox does not load newer files by itself: it needs the new signed file.
+            "outdated": key == "firefox" and bool(at) and last[key].get("version") != version(), "seen": datetime.fromtimestamp(at).isoformat(timespec="seconds") if at else "",
             "connected": bool(at) and now - at < CONNECTED_FOR,
         })
     return {
         "redirect": cfg.defaults.front_redirect, "hosts": list(cfg.defaults.front_redirect_hosts),
         "folder": str(extension_dir()), "browsers": rows,
     }
+
+
+if __name__ == "__main__":
+    # release.yml: python -m pdms_cli.browser firefox-source <folder> | version
+    if sys.argv[1:2] == ["version"]:
+        print(version())
+    elif sys.argv[1:2] == ["firefox-source"] and len(sys.argv) == 3:
+        write_firefox_source(Path(sys.argv[2]))
+    else:
+        sys.exit("usage: python -m pdms_cli.browser version | firefox-source <folder>")

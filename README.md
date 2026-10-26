@@ -213,7 +213,7 @@ was made with, so pdms builds again only when that, `yarn.lock` or the code chan
 
 ### Opening the local frontend from the known front
 
-With the pdms extension in Chrome, Edge, Brave or Chromium, going to `https://dev-pdm.alivi.com/...` (also `qa-pdm`
+With the pdms extension in Chrome, Edge, Brave, Chromium or Firefox, going to `https://dev-pdm.alivi.com/...` (also `qa-pdm`
 and `uat-pdm`, never production unless you add it) opens `https://localhost:3000/...` with the same path and query.
 Links in emails and redirects from the backend then land in your local app.
 
@@ -224,7 +224,9 @@ pdms browser               # the redirect, and the browsers where the extension 
 ```
 
 You load the extension once: turn on Developer mode on the extensions page, click **Load unpacked** and choose the
-folder pdms prints. It asks pdms ui every half a minute what to do, so it only redirects while pdms ui and the
+folder pdms prints. Firefox only takes extensions Mozilla signed, so there pdms opens the signed file that comes with
+each release and Firefox asks whether to add it. When pdms brings a newer version, Settings → Browser offers to
+update it. It asks pdms ui every half a minute what to do, so it only redirects while pdms ui and the
 frontend run. Otherwise the known front opens as always. After a pdms update it reloads its own files. The local app
 keeps its own login, so you sign in there once.
 
@@ -450,3 +452,8 @@ git push origin main v0.4.2
 `--files-only` updates `pyproject.toml`, `uv.lock` and `CHANGELOG.md` without committing or tagging, since a plain
 `cz bump` makes a lightweight tag that `git push --follow-tags` leaves behind. The tag runs `release.yml`: it checks
 the version, runs the tests and publishes the wheel, both installers and the changelog as a GitHub release.
+
+The browser extension for Firefox is signed in the same workflow, as an unlisted add-on on addons.mozilla.org, with
+the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets of the repo. Mozilla signs each version once: change `version` in
+`browser_extension/manifest.json` whenever the extension changes, and releases in between reuse the signed file of an
+earlier release.

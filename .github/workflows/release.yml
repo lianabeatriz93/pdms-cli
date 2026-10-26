@@ -26,6 +26,36 @@ jobs:
         run: |
           uv sync --locked
           uv run pytest -q
+      - name: Signed extension for Firefox
+        # Mozilla signs each version of the extension once (unlisted on addons.mozilla.org): take it from an earlier
+        # release while its version is the same, else sign it. Without it pdms still releases, minus Firefox.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          XPI="pdms-front-redirect-$(uv run python -m pdms_cli.browser version).xpi"
+          mkdir -p xpi
+          for tag in $(gh release list --limit 30 --json tagName --jq '.[].tagName'); do
+            if gh release download "$tag" --pattern "$XPI" --dir xpi 2>/dev/null; then
+              echo "$XPI comes from $tag"
+              break
+            fi
+          done
+          if [ ! -f "xpi/$XPI" ]; then
+            if [ -z "$AMO_JWT_ISSUER" ] || [ -z "$AMO_JWT_SECRET" ]; then
+              echo "::warning::No AMO_JWT_ISSUER / AMO_JWT_SECRET secrets: this release has no extension for Firefox."
+              exit 0
+            fi
+            uv run python -m pdms_cli.browser firefox-source firefox-source
+            if ! npx --yes web-ext@8 sign --source-dir firefox-source --artifacts-dir signed --channel unlisted \
+                --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"; then
+              echo "::warning::Mozilla did not sign $XPI: this release has no extension for Firefox."
+              exit 0
+            fi
+            mv signed/*.xpi "xpi/$XPI"
+          fi
+          cp "xpi/$XPI" src/pdms_cli/browser_extension/firefox.xpi
       - name: Build
         run: uv build
       - name: Release notes from CHANGELOG.md
@@ -57,6 +87,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp installer/install.sh installer/install.ps1 dist/
+          cp xpi/*.xpi dist/ 2>/dev/null || true  # pdms installed from a checkout downloads it from here
           PRERELEASE=""
           case "$GITHUB_REF_NAME" in
             *a[0-9]*|*b[0-9]*|*rc[0-9]*) PRERELEASE="--prerelease" ;;  # alpha/beta/rc: not "latest"
