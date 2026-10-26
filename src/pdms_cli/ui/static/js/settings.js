@@ -70,7 +70,7 @@ export function syncSettings() {
 
 export function paintSettings() {
   for (const tab of $("settings-tabs").children) tab.setAttribute("aria-selected", String(tab.dataset.tab === settingsView.tab));
-  for (const name of ["repos", "dbs", "users", "defaults"]) $(`settings-${name}`).hidden = name !== settingsView.tab;
+  for (const name of ["repos", "dbs", "users", "browser", "defaults"]) $(`settings-${name}`).hidden = name !== settingsView.tab;
   const data = settingsView.data;
   if (!data) return;
   const dbs = data.dbs.length;

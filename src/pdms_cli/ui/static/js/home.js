@@ -14,7 +14,8 @@ import {
 import { UPDATE_JOB, offerText, offerTitle, openUpdate, updateOffer } from "./updates.js";
 import { HOME_COVERS, fixButton } from "./doctor.js";
 import { openSetting } from "./repos.js";
-import { openDb } from "./settings.js";
+import { openDb, showSettingsTab } from "./settings.js";
+import { setRedirect } from "./browser.js";
 import { lineCheck, measureNow, roundTrip } from "./status.js";
 
 export const HOME_JOB = "home";
@@ -161,6 +162,7 @@ function frontendTile() {
   if (front.mode === "build" && front.build) {
     rows.push([t("Built"), t("{when} · commit {commit}", { when: new Date(front.build.built_at).toLocaleString(), commit: front.build.commit || "-" })]);
   }
+  rows.push([t("Known front"), redirectSwitch()]);
   let actions;
   if (busy) actions = [button(t("Logs"), () => showLogs("frontend", jobLog(job)))];
   else if (front.running) {
@@ -179,6 +181,20 @@ function frontendTile() {
     rows, hint: job && job.error ? failedText(job) : front.stale ? staleText(front) : problem ? apiProblemTitle(problem) : front.detail,
     actions: problem && !busy ? [...apiFixButtons(problem), ...actions] : actions,
   });
+}
+
+// The browser extension sends the known front (dev-pdm.alivi.com...) to this frontend while it runs (Settings → Browser).
+function redirectSwitch() {
+  const info = state.browser;
+  const input = el("input", { type: "checkbox" });
+  input.checked = info.redirect;
+  input.addEventListener("change", () => setRedirect(input.checked));
+  const title = t("Going to {hosts} opens this app, with the same path (the pdms browser extension).", { hosts: info.hosts.join(", ") });
+  const label = el("label", { class: "redirect", title }, input, t("open it here"));
+  if (info.redirect && !info.browsers.some((row) => row.connected)) {
+    return el("span", {}, label, " ", el("a", { href: "#settings", class: "muted", onclick: () => showSettingsTab("browser") }, t("install the extension")));
+  }
+  return label;
 }
 
 function eventsTile() {

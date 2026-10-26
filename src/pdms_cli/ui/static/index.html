@@ -508,6 +508,7 @@
     <button type="button" role="tab" data-tab="repos">Repos</button>
     <button type="button" role="tab" data-tab="dbs">Databases</button>
     <button type="button" role="tab" data-tab="users">Users</button>
+    <button type="button" role="tab" data-tab="browser">Browser</button>
     <button type="button" role="tab" data-tab="defaults">Defaults</button>
   </div>
 
@@ -561,6 +562,30 @@
       <p class="empty" id="user-empty" hidden></p>
     </div>
     <p class="muted note">Services run as one of these users (the <code>DEV_*</code> variables). <b>Import from a database</b> brings them from its <code>pdms_user</code> table, like <code>pdms user import</code>.</p>
+  </div>
+
+  <div class="panel" id="settings-browser" hidden>
+    <div class="card browser-card">
+      <p>With the pdms extension in your browser, going to a known front opens the frontend pdms runs on this computer, with the same path: links of emails and of the backend open your local app.</p>
+      <label class="inline"><input type="checkbox" id="browser-redirect"> Send the known fronts to the local frontend</label>
+      <form class="bar" id="browser-hosts-form" autocomplete="off">
+        <input id="browser-hosts" aria-label="Known fronts" placeholder="dev-pdm.alivi.com, qa-pdm.alivi.com" spellcheck="false">
+        <button class="btn" id="browser-hosts-save" type="submit" disabled>Save</button>
+      </form>
+      <p class="error" id="browser-hosts-error" hidden></p>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Browser</th><th>Extension</th><th></th></tr></thead>
+        <tbody id="browser-rows"></tbody>
+      </table>
+      <p class="empty" id="browser-empty" hidden>No Chrome, Edge, Brave or Chromium found on this computer.</p>
+    </div>
+    <div class="card browser-card" id="browser-steps" hidden>
+      <b id="browser-steps-title"></b>
+      <ol id="browser-steps-list"></ol>
+    </div>
+    <p class="muted note">The extension asks pdms ui every half a minute, and redirects only while pdms ui and the frontend run: otherwise the known front opens as always. In the local app you log in again, since each address keeps its own session.</p>
   </div>
 
   <div class="panel" id="settings-defaults" hidden>
