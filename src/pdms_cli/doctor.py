@@ -12,16 +12,16 @@ import shutil
 import stat
 import subprocess
 import sys
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import __version__, actions, awsenv, events, frontend, health, images, instances, installer, migrations, proxy, repos, routes, runner, update
+from . import __version__, actions, awsenv, events, frontend, health, images, instances, installer, migrations, proxy, pythons, repos, routes, runner, update
 from .config import Config, config_path
 from .i18n import _
 
 OK, WARN, FAIL = "ok", "warn", "fail"
-SERVICE_PYTHONS = ("3.10", "3.11")  # PDMS services declare python = ">=3.10,<3.12"
 
 
 @dataclass
@@ -92,27 +92,6 @@ def check_shell() -> list[Check]:
 # ---------------------------------------------------------------------- tools for the services
 
 
-def python_versions_available() -> list[str]:
-    """Python versions (major.minor) that Poetry could use for the services."""
-    found = set()
-    for version in SERVICE_PYTHONS:
-        if shutil.which(f"python{version}"):
-            found.add(version)
-    if shutil.which("pyenv"):
-        code, out = _run(["pyenv", "versions", "--bare"])
-        if code == 0:
-            found |= {v for v in SERVICE_PYTHONS for line in out.splitlines() if line.strip().startswith(v + ".")}
-    if shutil.which("uv"):
-        code, out = _run(["uv", "python", "list", "--only-installed"])
-        if code == 0:
-            found |= {v for v in SERVICE_PYTHONS if re.search(rf"cpython-{re.escape(v)}\.\d+", out)}
-    if sys.platform == "win32" and shutil.which("py"):
-        code, out = _run(["py", "--list"])
-        if code == 0:
-            found |= {v for v in SERVICE_PYTHONS if f"-{v}" in out or f":{v}" in out}
-    return sorted(found)
-
-
 def check_tools() -> list[Check]:
     section = _("Tools")
     checks = []
@@ -132,12 +111,34 @@ def check_tools() -> list[Check]:
                         "" if docker_ok else _("Install Docker and start it: https://docs.docker.com/get-docker/")))
     if docker_ok:
         checks.extend(check_images())
-    pythons = python_versions_available()
-    checks.append(Check(
-        section, _("Python for the services"), OK if pythons else WARN,
-        ", ".join(pythons) if pythons else _("no Python 3.10 / 3.11 found"),
-        "" if pythons else _("Services need Python 3.10 or 3.11, e.g.: uv python install 3.11"),
-    ))
+    return checks
+
+
+def check_service_pythons(cfg: Config) -> list[Check]:
+    """A Python the current repo's services accept (most of them ask for the same), and their virtualenvs still
+    running one their project no longer accepts (pdms asks before recreating each, see :mod:`pythons`)."""
+    section = _("Tools")
+    root = repos.active_backend(cfg)
+    services = runner.find_services_below(root) if root and root.is_dir() else []
+    specs = Counter(spec for service in services if (spec := pythons.wanted(service)))
+    if not specs:
+        return []
+    spec = specs.most_common(1)[0][0]
+    best = pythons.best_for(spec)
+    checks = [Check(
+        section, _("Python for the services"), OK if best else WARN,
+        _("{version} ({program}) for {spec}", version=pythons.show(best[0]), program=best[1], spec=spec) if best
+        else _("none installed meets {spec}", spec=spec),
+        "" if best else _("Install one, e.g.: uv python install {version}", version=pythons.suggested(spec)),
+    )]
+    old = [item for service in services if (item := pythons.mismatch(service))]
+    if old:
+        have = ", ".join(sorted({pythons.show(item.have) for item in old}))
+        checks.append(Check(
+            section, _("Virtualenvs of the services"), WARN,
+            _("{n} run Python {have}, which their project no longer accepts", n=len(old), have=have),
+            _("pdms asks whether to recreate each one when it starts or restarts."), "services",
+        ))
     return checks
 
 
@@ -409,7 +410,7 @@ def check_aws(cfg: Config) -> list[Check]:
 
 
 def run_all(cfg: Config, *, databases: bool = True, timeout: int = 5) -> list[Check]:
-    checks = check_pdms() + check_tools() + check_config(cfg)
+    checks = check_pdms() + check_tools() + check_service_pythons(cfg) + check_config(cfg)
     if databases:
         checks += check_databases(cfg, timeout)
     checks += check_network(cfg)

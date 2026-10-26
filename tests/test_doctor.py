@@ -28,9 +28,6 @@ def test_missing_poetry_is_a_failure(monkeypatch):
     assert checks["Poetry"] == doctor.FAIL
 
 
-def test_python_for_services_is_found_by_name(monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/" + name if name == "python3.11" else None)
-    assert doctor.python_versions_available() == ["3.11"]
 
 
 def test_config_checks(home):

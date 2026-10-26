@@ -16,7 +16,7 @@ from .. import actions, completion, emails, events, frontend, installer, instanc
 from ..config import Config
 from ..i18n import _
 from .common import app, console, fail, pick, print_endpoints, print_restored, settle, show_menu
-from .run import Profile, confirm_protected, do_run
+from .run import Profile, confirm_protected, do_run, python_answer
 from .services import backend_root, stack_paths
 
 
@@ -480,6 +480,7 @@ def restart(
         profile_user = user or changing.user
         confirm_protected(cfg, Profile(Path(changing.service), profile_user, cfg.users[profile_user], db, cfg.dbs[db],
                                        changing.host, changing.port), False)
+    python = python_answer(cfg, [Path(inst.service) for inst in chosen], install)  # before stopping them
     if remember:
         root = backend_root(cfg)
         for inst in chosen:
@@ -494,7 +495,7 @@ def restart(
         do_run(
             user=user or inst.user, db=db or inst.db, port=inst.port, host=inst.host, install=install,
             reload=inst.reload, yes=True, path=Path(inst.service), background=True,
-            events_mode="local" if inst.events == "local" else None,
+            events_mode="local" if inst.events == "local" else None, python=python,
         )
 
 

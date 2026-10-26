@@ -16,6 +16,7 @@ import { HOME_COVERS, fixButton } from "./doctor.js";
 import { openSetting } from "./repos.js";
 import { openDb, showSettingsTab } from "./settings.js";
 import { setRedirect } from "./browser.js";
+import { askPython } from "./python.js";
 import { lineCheck, measureNow, roundTrip } from "./status.js";
 
 export const HOME_JOB = "home";
@@ -391,15 +392,18 @@ export function paintHome() {
   $("home-attn-count").className = `st ${items.some((item) => item[0] === "bad") ? "fail" : "warn"}`;
 }
 
-export async function startAll(confirmed = false) {
+export async function startAll(confirmed = false, python = null) {
   $("home-error").hidden = true;
   $("home-start").disabled = true;
   try {
-    const { status, data } = await post("/api/home/start", { confirmed });
+    const { status, data } = await post("/api/home/start", { confirmed, python });
     if (status === 200 && !data.job) toast(t("Everything in your setup is already running."), "info");
-    else if (status === 409 && data.decision === "protected_database") {
+    else if (status === 409 && data.decision === "python_mismatch") {
+      const answer = await askPython(data.services);
+      if (answer !== null) startAll(confirmed, answer);
+    } else if (status === 409 && data.decision === "protected_database") {
       if (await confirmDialog(t("'{name}' is a protected database. Use it anyway?", { name: data.name }),
-        t("The stack's services will run against it."), t("Use it"))) startAll(true);
+        t("The stack's services will run against it."), t("Use it"))) startAll(true, python);
     } else if (status === 409 && data.decision === "port_busy") {
       toast(t("Port {port} is in use, so the frontend cannot start there. Free it, or start the frontend on another port from its tile.", { port: data.port }));
     } else if (status >= 400) {

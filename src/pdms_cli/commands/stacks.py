@@ -21,6 +21,8 @@ from .run import (
     ensure_installed,
     install_label,
     print_summary,
+    python_answer,
+    recreations,
     wait_until_ready,
     warn_events,
 )
@@ -167,7 +169,8 @@ def stack_remove(name: Optional[str] = typer.Argument(None, autocompletion=compl
         console.print("[green]✓[/] " + _("'{name}' deleted.", name=name))
 
 
-def install_together(cfg: Config, plan: actions.StackLaunch, install: Optional[bool]) -> None:
+def install_together(cfg: Config, plan: actions.StackLaunch, install: Optional[bool],
+                     recreate: Optional[dict[Path, str]] = None) -> None:
     """Install the stack's services several at once, each with its output in its install log."""
     logs = {s.service: actions.install_log(instances.make_key(s.service, s.port)) for s in plan.services}
     console.rule(_("Installing several services at once ({workers} at a time)", workers=actions.install_workers()))
@@ -181,7 +184,7 @@ def install_together(cfg: Config, plan: actions.StackLaunch, install: Optional[b
             console.print("[green]✓[/] " + _("{name}: installed.", name=service.name))
 
     try:
-        actions.install_services(cfg, logs, install, progress)
+        actions.install_services(cfg, logs, install, progress, recreate)
     except actions.ActionError as exc:
         fail(exc.message)
 
@@ -237,12 +240,15 @@ def up(
         _("Install"): install_label(cfg, install, each=True),
     }, show_service=False)
     confirm_protected(cfg, profile, yes)
+    paths = [s.service for s in plan.services]
+    recreate = recreations(cfg, paths, install, python_answer(cfg, paths, install))
 
-    if sum(actions.needs_install(cfg, s.service, install) for s in plan.services) > 1:
-        install_together(cfg, plan, install)
+    if sum(s.service in recreate or actions.needs_install(cfg, s.service, install) for s in plan.services) > 1:
+        install_together(cfg, plan, install, recreate)
         started = actions.start_stack(cfg, plan)
     else:  # with its output in the terminal
-        started = actions.start_stack(cfg, plan, install=lambda path: ensure_installed(cfg, path, install))
+        started = actions.start_stack(cfg, plan, install=lambda path: ensure_installed(cfg, path, install,
+                                                                                       recreate=recreate))
     failed = 0
     for inst in started:
         try:

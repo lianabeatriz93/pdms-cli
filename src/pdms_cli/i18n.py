@@ -787,9 +787,6 @@ ES: dict[str, str] = {
     "PDMS services need Poetry 1.2 or newer (dependency groups).":
         "Los servicios de PDMS necesitan Poetry 1.2 o superior (grupos de dependencias).",
     "Python for the services": "Python para los servicios",
-    "no Python 3.10 / 3.11 found": "no encontré Python 3.10 / 3.11",
-    "Services need Python 3.10 or 3.11, e.g.: uv python install 3.11":
-        "Los servicios necesitan Python 3.10 o 3.11, p. ej.: uv python install 3.11",
     "Configuration": "Configuración",
     "File": "Fichero",
     "{path} does not exist yet": "{path} aún no existe",
@@ -1537,4 +1534,34 @@ ES: dict[str, str] = {
         "una versión anterior: pdms browser install {key}",
     "chrome, edge, brave, chromium or firefox (asked if omitted).":
         "chrome, edge, brave, chromium o firefox (se pregunta si se omite).",
+    "Install one, e.g.: uv python install {version}":
+        "Instala uno, p. ej.: uv python install {version}",
+    "No installed Python meets {spec} ({services}). Install one, e.g.: uv python install {version}":
+        "Ningún Python instalado cumple {spec} ({services}). Instala uno, p. ej.: uv python install {version}",
+    "Python {have}, it asks for {wants} → {use}":
+        "Python {have}, pide {wants} → {use}",
+    "Recreate their virtualenv with that Python and install again?":
+        "¿Recrear su virtualenv con ese Python e instalar de nuevo?",
+    "The virtualenv of {names} runs a Python its project no longer accepts: start or restart it from Services to choose whether to recreate it.":
+        "El virtualenv de {names} usa un Python que su proyecto ya no acepta: arráncalo o reinícialo desde Servicios para elegir si recrearlo.",
+    "They keep their Python (no terminal to ask): run it again from a terminal to recreate them.":
+        "Se quedan con su Python (no hay terminal para preguntar): vuelve a ejecutarlo desde una terminal para recrearlos.",
+    "Virtualenvs of the services":
+        "Virtualenvs de los servicios",
+    "none installed meets {spec}":
+        "ninguno instalado cumple {spec}",
+    "none installed: uv python install {version}":
+        "ninguno instalado: uv python install {version}",
+    "pdms asks whether to recreate each one when it starts or restarts.":
+        "pdms pregunta si recrear cada uno al arrancarlo o reiniciarlo.",
+    "{name}: a new virtualenv on {python}":
+        "{name}: un virtualenv nuevo con {python}",
+    "{n} run Python {have}, which their project no longer accepts":
+        "{n} usan Python {have}, que su proyecto ya no acepta",
+    "{version} ({program})":
+        "{version} ({program})",
+    "{version} ({program}) for {spec}":
+        "{version} ({program}) para {spec}",
+    "⚠ The virtualenv of these services runs a Python their project no longer accepts:":
+        "⚠ El virtualenv de estos servicios usa un Python que su proyecto ya no acepta:",
 }
