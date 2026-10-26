@@ -211,6 +211,23 @@ It checks Node and yarn and runs `yarn install` when `node_modules` is out of da
 AWS CodeArtifact: if they fail to download, run `./codeartifact-login.sh` in `frontend/`. A build keeps the API URL it
 was made with, so pdms builds again only when that, `yarn.lock` or the code changed.
 
+### Opening the local frontend from the known front
+
+With the pdms extension in Chrome, Edge, Brave or Chromium, going to `https://dev-pdm.alivi.com/...` (also `qa-pdm`
+and `uat-pdm`, never production unless you add it) opens `https://localhost:3000/...` with the same path and query.
+Links in emails and redirects from the backend then land in your local app.
+
+```bash
+pdms browser install       # writes the extension and opens the browser's extensions page (or Settings → Browser)
+pdms browser redirect on   # or the "Known front" switch on the Frontend tile; --host to choose the fronts
+pdms browser               # the redirect, and the browsers where the extension is connected
+```
+
+You load the extension once: turn on Developer mode on the extensions page, click **Load unpacked** and choose the
+folder pdms prints. It asks pdms ui every half a minute what to do, so it only redirects while pdms ui and the
+frontend run. Otherwise the known front opens as always. After a pdms update it reloads its own files. The local app
+keeps its own login, so you sign in there once.
+
 ## Databases, tests and migrations
 
 ```bash
@@ -337,6 +354,8 @@ db_timeout = 15              # seconds for pdms db test
 proxy_timeout = 300          # seconds the proxy waits before a 502
 on_demand = false            # see "On demand"
 idle_minutes = 15
+front_redirect = false       # pdms browser redirect on
+front_redirect_hosts = ["dev-pdm.alivi.com", "qa-pdm.alivi.com", "uat-pdm.alivi.com"]
 
 [defaults.env]               # extra variables for every service
 
@@ -384,6 +403,7 @@ passwords you already have and backs up the configuration first. Repos are never
 | `pdms ps`, `logs`, `urls`, `open`, `restart`, `stop`, `adopt` | Background services |
 | `pdms stack`, `up`, `down` | Stacks (`list`, `add`, `rename`, `edit`, `remove`) |
 | `pdms proxy`, `front` | Local API gateway, the web app |
+| `pdms browser` | Extension that opens the local web app from the known front (`install`, `redirect`, `status`) |
 | `pdms events` | Local SQS (`map`, `up`, `status`, `send`, `peek`, `purge`, `down`) |
 | `pdms aws` | AWS profile (`profile`, `login`, `status`, `read`) |
 | `pdms db`, `user`, `repo`, `config` | Databases (and `db local`), development users, repos, settings |
