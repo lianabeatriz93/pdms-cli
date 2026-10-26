@@ -63,19 +63,23 @@ def test_the_known_fronts_are_hosts_of_alivi_com() -> None:
 
 def test_it_redirects_only_when_on_and_the_frontend_answers(cfg, monkeypatch) -> None:
     config = Config.load()
-    assert browser.answer(config) == {"pdms": "front-redirect", "active": False, "target": "",
-                                      "hosts": list(FRONT_HOSTS), "version": browser.version()}
+    assert browser.answer(config) == {
+        "pdms": "front-redirect", "active": False, "target": "", "redirect": False, "hosts": list(FRONT_HOSTS),
+        "version": browser.version(), "language": "en",
+    }
+    monkeypatch.setattr(frontend, "running", lambda: {"pid": 1, "port": 3001})
+    monkeypatch.setattr(frontend, "scheme", lambda port, timeout=1.5: "https")
+    off = browser.answer(config)
+    assert (off["active"], off["target"]) == (False, "https://localhost:3001")  # the panel says where it would go
     config.defaults.front_redirect = True
+    assert browser.answer(config)["active"]
+    monkeypatch.setattr(frontend, "scheme", lambda port, timeout=1.5: "")  # still starting
+    waiting = browser.answer(config)
+    assert (waiting["active"], waiting["redirect"], waiting["target"]) == (False, True, "")
     monkeypatch.setattr(frontend, "running", lambda: None)
     assert not browser.answer(config)["active"]
-    monkeypatch.setattr(frontend, "running", lambda: {"pid": 1, "port": 3001})
-    monkeypatch.setattr(frontend, "scheme", lambda port, timeout=1.5: "")  # still starting
-    assert not browser.answer(config)["active"]
-    monkeypatch.setattr(frontend, "scheme", lambda port, timeout=1.5: "https")
-    assert browser.answer(config) | {"version": ""} == {
-        "pdms": "front-redirect", "active": True, "target": "https://localhost:3001", "hosts": list(FRONT_HOSTS),
-        "version": "",
-    }
+    config.defaults.language = "es"
+    assert browser.answer(config)["language"] == "es"
 
 
 def test_the_status_lists_installed_browsers_and_where_it_asked_from(cfg, monkeypatch) -> None:
@@ -114,6 +118,24 @@ def test_only_the_extension_may_ask(ui, cfg, front) -> None:  # noqa: F811
     response, _raw, _conn = request(port, browser.STATE_PATH, {"Host": "evil.example", "Origin": EXTENSION}, "POST",
                                     b"{}")
     assert response.status == 403  # DNS rebinding
+
+
+def test_its_panel_turns_the_redirect_on_and_off(ui, cfg, front) -> None:  # noqa: F811
+    port = ui[0]
+
+    def turn(on: object, origin: str = EXTENSION):
+        body = json.dumps({"browser": "chrome", "version": browser.version(), "on": on}).encode()
+        response, raw, _conn = request(port, browser.REDIRECT_PATH,
+                                       {"Content-Type": "application/json", "Origin": origin}, "POST", body)
+        return response.status, json.loads(raw) if raw.startswith(b"{") else {}
+
+    status, data = turn(True)
+    assert status == 200 and data["active"] and data["redirect"] and Config.load().defaults.front_redirect
+    assert turn(False, f"http://127.0.0.1:{port}")[0] == 403  # only the extension
+    assert turn("off")[0] == 400
+    assert Config.load().defaults.front_redirect is True
+    status, data = turn(False)
+    assert status == 200 and not data["active"] and Config.load().defaults.front_redirect is False
 
 
 def test_the_page_turns_it_on_sets_the_fronts_and_installs(ui, cfg, monkeypatch) -> None:  # noqa: F811
@@ -167,7 +189,7 @@ def test_the_command_turns_it_on_with_other_fronts(cfg, monkeypatch) -> None:
 def test_firefox_gets_its_own_manifest(tmp_path) -> None:
     folder = browser.write_firefox_source(tmp_path / "firefox")
     manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
-    assert "key" not in manifest and manifest["background"] == {"scripts": ["background.js"]}
+    assert "key" not in manifest and manifest["background"] == {"scripts": ["texts.js", "background.js"]}
     assert manifest["browser_specific_settings"]["gecko"]["id"] == browser.GECKO_ID
     assert manifest["version"] == browser.version()
     assert sorted(path.name for path in folder.iterdir()) == sorted(browser.FILES)

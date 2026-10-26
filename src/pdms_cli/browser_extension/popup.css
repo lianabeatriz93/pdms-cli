@@ -1,0 +1,32 @@
+:root {
+  --bg: #ffffff; --ink: #1f2937; --muted: #6b7280; --line: #e5e7eb; --accent: #2563eb;
+  --on: #1f9d55; --on-soft: #e7f6ee; --off: #6b7280; --off-soft: #f1f3f5;
+  --waiting: #b45309; --waiting-soft: #fdf3e2; --nopdms: #dc2626; --nopdms-soft: #fdecec;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1f24; --ink: #e5e7eb; --muted: #9ca3af; --line: #30363d; --accent: #60a5fa;
+    --on: #4ade80; --on-soft: #16301f; --off: #9ca3af; --off-soft: #262b31;
+    --waiting: #fbbf24; --waiting-soft: #342a14; --nopdms: #f87171; --nopdms-soft: #3a1c1c;
+  }
+}
+body { margin: 0; width: 320px; padding: 12px 14px; background: var(--bg); color: var(--ink);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; display: grid; gap: 10px; }
+header { display: flex; gap: 8px; align-items: center; }
+.state { margin: 0; padding: 8px 10px; border-radius: 8px; font-weight: 600; }
+.state.on { color: var(--on); background: var(--on-soft); }
+.state.off { color: var(--off); background: var(--off-soft); }
+.state.waiting { color: var(--waiting); background: var(--waiting-soft); }
+.state.nopdms { color: var(--nopdms); background: var(--nopdms-soft); }
+.switch { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.switch input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.switch:has(input:disabled) { color: var(--muted); cursor: default; }
+dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; }
+dt { color: var(--muted); }
+dd { margin: 0; white-space: pre-line; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+footer { display: flex; gap: 8px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line);
+  padding-top: 8px; color: var(--muted); font-size: 12px; }
+button { font: inherit; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 6px;
+  padding: 3px 9px; cursor: pointer; }
+button:disabled { color: var(--muted); cursor: default; }

@@ -411,9 +411,11 @@ def make_handler(
             return True
 
         def extension_request(self) -> bool:
-            """The browser extension asking what to redirect (browser.py). Only an extension sends its ``Origin``,
-            so it needs no cookie; it learns no more than the hosts and the local frontend's URL."""
-            if urlsplit(self.path).path != browser.STATE_PATH:
+            """The browser extension asking what to redirect, or its panel turning the redirect on or off
+            (browser.py). Only an extension sends its ``Origin``, so it needs no cookie; it learns no more than the
+            hosts and the local frontend's URL."""
+            path = urlsplit(self.path).path
+            if path not in (browser.STATE_PATH, browser.REDIRECT_PATH):
                 return False
             if self.headers.get("Host", "") not in self.own_hosts() or not browser.is_extension(
                     self.headers.get("Origin", "")):
@@ -424,8 +426,15 @@ def make_handler(
                 body = json.loads(self.rfile.read(min(length, MAX_BODY)) or b"{}")
             except ValueError:
                 body = {}
-            if isinstance(body, dict):
-                browser.record_seen(body.get("browser"), body.get("version"))
+            if not isinstance(body, dict):
+                body = {}
+            if path == browser.REDIRECT_PATH:
+                if not isinstance(body.get("on"), bool):
+                    self.reply_json(400, {"error": "on must be true or false"})
+                    return True
+                actions.set_front_redirect(Config.load(), body["on"])
+                hub.poke()
+            browser.record_seen(body.get("browser"), body.get("version"))
             self.reply_json(200, browser.answer(Config.load()))
             return True
 
