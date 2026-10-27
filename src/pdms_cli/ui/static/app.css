@@ -848,6 +848,10 @@ dialog.palette .palette-in input { border: 0; outline: 0; box-shadow: none; bord
 .tile dd:has(.redirect) { font-family: inherit; }
 
 /* The Python of services' virtualenvs (python.js) */
-#python-dialog { width: min(36rem, calc(100vw - 32px)); }
+#python-dialog, #pending-dialog { width: min(36rem, calc(100vw - 32px)); }
 .python-list { margin: 0 0 .8rem; padding-left: 1.1rem; display: grid; gap: .3rem; font-size: .85rem; }
 .python-list code { font-size: .78rem; }
+
+/* Data: what a database lacks of pdms-db-migrations, in pills that wrap in a narrow column */
+.pills { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: center; }
+td.migrations { white-space: normal; min-width: 9rem; }

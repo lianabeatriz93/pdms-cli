@@ -73,7 +73,8 @@ def test_migrations_are_applied_only_where_flyway_manages_them(cfg, monkeypatch)
     with pytest.raises(actions.ActionError, match="no Flyway history"):
         jobs.migrate_db("local")  # tables made by the ORM: baselineOnMigrate would run everything over them
     started = []
-    monkeypatch.setattr(migrations, "status", lambda repo, db, timeout: {"flyway": True, "counts": {"pending": 2}})
+    monkeypatch.setattr(migrations, "status", lambda repo, db, timeout: {"flyway": True, "counts": {"pending": 2}, "migrations": [
+        {"kind": "versioned", "version": v, "description": "x", "state": "pending"} for v in ("1", "2")]})
     monkeypatch.setattr(ui_jobs.images, "require", lambda names: None)
     monkeypatch.setattr(jobs, "run", lambda key, action, phase, work: started.append((key, action)) or SimpleNamespace(key=key))
     assert jobs.migrate_db("pdms-local").key == "migrate:pdms-local" and started == [("migrate:pdms-local", "migrate")]

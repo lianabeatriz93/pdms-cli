@@ -35,6 +35,7 @@ REPO_KEY = "repo"  # the job of switching the current repo (stopping or moving w
 TESTS_DB_KEY = "tests:db"  # the job of starting pdms's Postgres and creating its test databases
 IMAGES_KEY = "images"  # the job of downloading Docker images (asked first: hundreds of MB)
 DATA_KEY = "data:postgres"  # the jobs of the Data screen on pdms's Postgres (start, stop, refresh the local copy)
+TEST_DBS_KEY = "data:test-dbs"  # preparing the test databases from the local copy, or migrating them
 SWITCH_CHOICES = ("keep", "stop", "move")
 
 
@@ -212,6 +213,7 @@ class Jobs:
             known = migrations.status(repo, database, cfg.defaults.db_timeout)
         except Exception as exc:  # noqa: BLE001 - the driver's errors: nothing to migrate without reading it first
             raise actions.ActionError(_("Could not query {name}: {error}", name=name, error=str(exc).strip()[:200])) from exc
+        behind = actions.behind_of(name, database, repo, known) if known["flyway"] else None
         if not known["flyway"]:
             raise actions.ActionError(_("{name} has no Flyway history: its tables were made another way, and Flyway "
                                         "would run every migration over them. pdms only applies migrations to a "
@@ -223,13 +225,10 @@ class Jobs:
             log = install_log(key)
             log.parent.mkdir(parents=True, exist_ok=True)
             self.phase(job, f"migrating {name}", installed=True, log_key=key)
+            if behind is None:
+                return
             with open(log, "w", encoding="utf-8", errors="replace") as output:
-                code = subprocess.run(migrations.docker_command(repo, database, "migrate"), stdout=output,
-                                      stderr=subprocess.STDOUT, timeout=3600,
-                                      env={**os.environ, "DB_PASSWORD": database.password}).returncode
-            if code != 0:
-                raise actions.ActionError(_("Flyway migrate failed on {name} (exit code {code}); the log says why.",
-                                            name=name, code=code))
+                actions.apply_migrations(behind, output)
 
         return self.run(key, "migrate", f"migrating {name}", work)
 
@@ -288,20 +287,69 @@ class Jobs:
         if using and body.get("confirmed") is not True:
             raise actions.Decision(_("{n} running services use the local copy ({keys}): their connections end while "
                                      "it is replaced.", n=len(using), keys=", ".join(using)))
+        answer = body.get("migrate")
+        if answer not in (None, True, False):
+            raise actions.ActionError("migrate must be true, false or null (ask)")
         try:
-            repo = actions.current_migrations_repo(cfg) if body.get("migrate", True) else None
+            repo = actions.current_migrations_repo(cfg)
         except actions.ActionError:
             repo = None  # no migrations repo: copied as the source has it
-        images.require([localdb.IMAGE, *([migrations.IMAGE] if repo else [])])
+        migrate = bool(repo) and answer is not False
+        if repo and answer is None:
+            try:
+                behind = localcopy.pending_after_copy(cfg, repo, alias, database)
+            except Exception:  # noqa: BLE001 - the source cannot be read now: migrated as before, without asking
+                behind = None
+            if behind:
+                raise actions.MigrationsPending([behind])
+        images.require([localdb.IMAGE, *([migrations.IMAGE] if migrate else [])])
 
         def work(job: Job) -> None:
             log = install_log(DATA_KEY)
             log.parent.mkdir(parents=True, exist_ok=True)
             self.phase(job, "copying", installed=True, log_key=DATA_KEY)
             with open(log, "w", encoding="utf-8", errors="replace") as output:
-                localcopy.refresh(cfg, output, alias=alias, database=database, migrations_repo=repo)
+                localcopy.refresh(cfg, output, alias=alias, database=database, migrations_repo=repo, migrate=migrate)
 
         return self.run(DATA_KEY, "refresh", "copying", work)
+
+    def prepare_test_dbs(self, names: list[str]) -> Job:
+        """Make test databases copies of the local copy and apply what they lack of the checkout, one after the
+        other (Data → Prepare from the local copy)."""
+        for name in names:
+            testruns.require_test_db(name)
+        if not names:
+            raise actions.ActionError("names must be the test databases to prepare")
+        if localdb.MAIN_DB not in localdb.databases():
+            raise actions.ActionError(_("There is no local copy yet: make it first (Data → Make the local copy, or "
+                                        "pdms db local refresh)."))
+        images.require([migrations.IMAGE])
+
+        def work(job: Job) -> None:
+            log = install_log(TEST_DBS_KEY)
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with open(log, "w", encoding="utf-8", errors="replace") as output:
+                for name in names:
+                    self.phase(job, f"preparing {name}", installed=True, log_key=TEST_DBS_KEY)
+                    testruns.prepare_from_copy(Config.load(), name, output)
+
+        return self.run(TEST_DBS_KEY, "prepare", f"preparing {names[0]}", work)
+
+    def migrate_test_dbs(self, names: list[str]) -> Job:
+        """Apply what test databases with Flyway's history lack of the checkout (Data → Apply)."""
+        for name in names:
+            testruns.require_test_db(name)
+        images.require([migrations.IMAGE])
+
+        def work(job: Job) -> None:
+            log = install_log(TEST_DBS_KEY)
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with open(log, "w", encoding="utf-8", errors="replace") as output:
+                for name in names:
+                    self.phase(job, f"migrating {name}", installed=True, log_key=TEST_DBS_KEY)
+                    testruns.migrate_test_db(Config.load(), name, output)
+
+        return self.run(TEST_DBS_KEY, "migrate", f"migrating {names[0]}", work)
 
     # ------------------------------------------------------------------ repos
 
@@ -400,7 +448,7 @@ class Jobs:
 
     def restart(
         self, key: str, *, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False, python: bool | None = None,
+        confirmed: bool = False, python: bool | None = None, migrate: bool | None = None,
     ) -> Job:
         """Restart on the same port; raises the decisions before stopping anything, like ``pdms restart``."""
         inst = find(key)
@@ -415,9 +463,12 @@ class Jobs:
         if self.busy(inst.key):
             raise actions.ActionError(_("{key} is busy.", key=inst.key))
         recreate = actions.check_pythons(cfg, [Path(inst.service)], install, python)
+        behind = actions.check_migrations(cfg, [db], migrate)
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
+            self.migrate_first(job, behind)
+
             def install_step(service: Path) -> None:
                 self.install(cfg, job, service, inst.key, install, recreate=recreate)
                 self.phase(job, "starting")
@@ -429,6 +480,7 @@ class Jobs:
     def restart_many(
         self, keys: list[str], *, user: str | None = None, db: str | None = None, install: bool | None = None,
         confirmed: bool = False, stack: str | None = None, remember: bool = False, python: bool | None = None,
+        migrate: bool | None = None,
     ) -> list[Job]:
         """Restart several instances on their ports, one after the other (each its own job, waiting its turn).
 
@@ -452,6 +504,7 @@ class Jobs:
         if busy:
             raise actions.ActionError(_("{key} is busy.", key=", ".join(busy)))
         recreate = actions.check_pythons(cfg, [Path(inst.service) for inst in found], install, python)
+        behind = actions.check_migrations(cfg, [db or inst.db for inst in found], migrate)
         if remember:
             if not stack or not (user or db):
                 raise actions.ActionError("remember needs a stack and a user or a database")
@@ -461,10 +514,14 @@ class Jobs:
         if user or db:
             actions.remember_profile(cfg, user or found[0].user, db or found[0].db)
         turn = threading.Lock()  # one at a time: installs and starts do not compete
+        migrated: set[str] = set()  # each database once, by the first restart that uses it
 
         def restart_one(inst: instances.Instance) -> Callable[[Job], None]:
             def work(job: Job) -> None:
                 with turn:
+                    due = [item for item in behind if item.alias == (db or inst.db) and item.alias not in migrated]
+                    migrated.update(item.alias for item in due)
+                    self.migrate_first(job, due)
                     self.phase(job, "stopping")
 
                     def install_step(service: Path) -> None:
@@ -488,6 +545,7 @@ class Jobs:
     def start(
         self, service: str, *, port: int | None = None, user: str | None = None, db: str | None = None,
         install: bool | None = None, confirmed: bool = False, on_demand: bool | None = None, python: bool | None = None,
+        migrate: bool | None = None,
     ) -> Job:
         """Start one service of the current repo in the background, like ``pdms run -b``. Without ``port`` it takes
         the next free one; a busy ``port``, a protected database or a stopped local ElasticMQ (for a consumer) are
@@ -509,14 +567,26 @@ class Jobs:
         if self.busy(key):
             raise actions.ActionError(_("{key} is busy.", key=key))
         recreate = actions.check_pythons(cfg, [launch.service], install, python)
+        behind = actions.check_migrations(cfg, [db], migrate)
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
+            self.migrate_first(job, behind)
             self.install(cfg, job, launch.service, key, install, recreate=recreate)
             self.phase(job, "starting")
             actions.start_service(cfg, launch)
 
         return self.run(key, "start", "starting", work)
+
+    def migrate_first(self, job: Job, behind: list[actions.Unmigrated]) -> None:
+        """Apply the migrations the user agreed to (see :func:`actions.check_migrations`), each with its log."""
+        for item in behind:
+            key = f"migrate:{item.alias}"
+            log = install_log(key)
+            log.parent.mkdir(parents=True, exist_ok=True)
+            self.phase(job, f"migrating {item.alias}", installed=True, log_key=key)
+            with open(log, "w", encoding="utf-8", errors="replace") as output:
+                actions.apply_migrations(item, output)
 
     def install(self, cfg: Config, job: Job, service: Path, key: str, install: bool | None, label: str = "",
                 recreate: dict[Path, str] | None = None) -> None:
@@ -538,7 +608,7 @@ class Jobs:
 
     def up(
         self, name: str, *, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False, python: bool | None = None,
+        confirmed: bool = False, python: bool | None = None, migrate: bool | None = None,
     ) -> Job | None:
         """Start what is not running of the stack, like ``pdms up``; None when all of it already runs."""
         cfg = Config.load()
@@ -551,9 +621,11 @@ class Jobs:
             return None
         actions.check_database(cfg, db, confirmed)
         recreate = actions.check_pythons(cfg, [launch.service for launch in plan.services], install, python)
+        behind = actions.check_migrations(cfg, [launch.db_name for launch in plan.services], migrate)
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
+            self.migrate_first(job, behind)
             keys = {launch.service: instances.make_key(launch.service, launch.port) for launch in plan.services}
             installing: list[Path] = []  # at once
             lock = threading.Lock()
@@ -659,7 +731,8 @@ class Jobs:
 
     # ------------------------------------------------------------------ Home
 
-    def start_all(self, *, install: bool | None = None, confirmed: bool = False, python: bool | None = None) -> Job | None:
+    def start_all(self, *, install: bool | None = None, confirmed: bool = False, python: bool | None = None,
+                  migrate: bool | None = None) -> Job | None:
         """Start what is not running of the saved setup, in order: the local events, the stack, the proxy (pointing
         the frontend to it) and the frontend. A protected database or a busy frontend port are raised first; the
         proxy takes the next free port by itself. None when everything already runs."""
@@ -710,10 +783,14 @@ class Jobs:
         starting = [path for path in actions.stack_paths(cfg.stacks[stack_name], backend(cfg))
                     if str(path) not in actions.running_by_service()] if stack_name else []
         recreate = actions.check_pythons(cfg, [*starting, *([broker] if broker else [])], install, python)
+        stack_dbs = [cfg.stacks[stack_name].profile_of(path.relative_to(backend(cfg)).as_posix(), user, db)[1]
+                     for path in starting] if stack_name else []
+        behind = actions.check_migrations(cfg, [*stack_dbs, *([db] if broker else [])], migrate)
         if stack_name or broker:
             actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
+            self.migrate_first(job, behind)
             if event_map is not None:
                 self.phase(job, "starting ElasticMQ")
                 actions.start_events(cfg, event_map.queues)
@@ -793,7 +870,7 @@ class Jobs:
 
     def events_up(
         self, *, broker: bool = True, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False, python: bool | None = None,
+        confirmed: bool = False, python: bool | None = None, migrate: bool | None = None,
     ) -> Job:
         """Start the local ElasticMQ with every queue of the repo and, with ``broker``, the broker, like
         ``pdms events up``; a protected database for the broker is asked before anything starts."""
@@ -811,10 +888,12 @@ class Jobs:
             actions.require(cfg.dbs, _("database"), db)
             actions.check_database(cfg, db, confirmed)
         recreate = actions.check_pythons(cfg, [service] if service else [], install, python)
+        behind = actions.check_migrations(cfg, [db] if service and db else [], migrate)
         if service:
             actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
+            self.migrate_first(job, behind)
             actions.start_events(cfg, event_map.queues)
             if service and user and db:
                 launch = actions.plan_service(cfg, service, user_name=user, db_name=db, events_mode="local")
@@ -1241,7 +1320,8 @@ def data_info(cfg: Config) -> dict:
         "copy": {"alias": copy_alias, "size": sizes.get(localdb.MAIN_DB), "refresh": localcopy.load_state().get("refresh"),
                  "source": f"{localcopy.SOURCE_ALIAS}:{localcopy.SOURCE_DATABASE}"},
         "snapshots": snapshots,
-        "tests": [{"name": name, "size": sizes.get(name, 0)} for name in localdb.test_databases(sizes)] if sizes else [],
+        "tests": [{"name": name, "size": sizes.get(name, 0), "migrations": testruns.migration_state(cfg, name)}
+                  for name in localdb.test_databases(sizes)] if sizes else [],
         "test_count": localdb.TEST_COUNT,
     }
 

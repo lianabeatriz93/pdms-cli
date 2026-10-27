@@ -67,3 +67,44 @@ export function paintFlyway() {
   $("flyway-empty").hidden = shown.length > 0;
   $("flyway-empty").textContent = onlyTodo && !text ? t("Nothing to run: the database is up to date with this checkout.") : t("No migration matches the filter.");
 }
+
+// Local databases behind pdms-db-migrations when services start on them (actions.check_migrations): true (apply them
+// first), false (start as they are) or null (cancel).
+// ``context``: "start" (services start on it) or "copy" (the local copy, made again from the template).
+const PENDING_TEXTS = {
+  start: {
+    title: N_("Apply the pending migrations first?"),
+    text: N_("The services start on a local database that lacks migrations of pdms-db-migrations (your checkout). pdms can apply them with Flyway first, with the image of the pipeline."),
+    skip: N_("Start without them"), apply: N_("Apply and start"), repair: N_("Repair, apply and start"),
+  },
+  copy: {
+    title: N_("Apply your migrations to the new copy?"),
+    text: N_("The copy of the template will lack these migrations of your checkout of pdms-db-migrations. pdms can apply them with Flyway once it is copied."),
+    skip: N_("Copy without them"), apply: N_("Copy and apply them"), repair: N_("Copy and apply them"),
+  },
+};
+
+export function askMigrations(dbs, context = "start") {
+  const texts = PENDING_TEXTS[context];
+  $("pending-title").textContent = t(texts.title);
+  $("pending-text").textContent = t(texts.text);
+  $("pending-skip").textContent = t(texts.skip);
+  $("pending-list").replaceChildren(...dbs.map((db) => el("li", {},
+    el("b", {}, db.db), " ",
+    db.count ? t("{n} migrations ({first} … {last})", { n: db.count, first: db.first, last: db.last }) : "",
+    ...(db.uncommitted ? [" ", el("span", { class: "tag" }, t("{n} uncommitted", { n: db.uncommitted }))] : []),
+    ...(db.changed.length ? [el("div", { class: "muted" }, t("{n} applied ones changed since they ran ({first} … {last}): Flyway repairs their history first; making the local copy again also fixes it.",
+      { n: db.changed.length, first: db.changed[0], last: db.changed[db.changed.length - 1] }))] : []),
+  )));
+  const repair = dbs.some((db) => db.changed.length);
+  $("pending-apply").textContent = t(repair ? texts.repair : texts.apply);
+  $("pending-repair-note").hidden = !repair;
+  $("pending-dialog").returnValue = "";
+  $("pending-dialog").showModal();
+  return new Promise((resolve) => {
+    $("pending-dialog").addEventListener("close", () => {
+      const answer = $("pending-dialog").returnValue;
+      resolve(answer === "apply" ? true : answer === "skip" ? false : null);
+    }, { once: true });
+  });
+}

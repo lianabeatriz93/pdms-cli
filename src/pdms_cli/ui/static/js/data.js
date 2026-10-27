@@ -3,16 +3,17 @@
 
 import { $, act, button, el, failedText, getJson, phaseLabel, post, postNeedingImages, toast } from "./core.js";
 import { state } from "./state.js";
-import { openFlyway } from "./migrations.js";
+import { askMigrations, openFlyway } from "./migrations.js";
 import { openLogs } from "./logs.js";
 import { confirmDialog } from "./stacks.js";
 import { paintAws } from "./aws.js";
 import { dbLevel, roundTrip as roundTripText, routeText, sparkline } from "./status.js";
 
 // migrations: name → { loading, counts, flyway, error }, read once per database when the screen opens.
-export const dataView = { data: null, loading: false, jobWas: false, migrations: {}, migrating: new Set() };
+export const dataView = { data: null, loading: false, jobWas: false, testJobWas: false, migrations: {}, migrating: new Set() };
 
 const JOB = "data:postgres";
+const TEST_JOB = "data:test-dbs"; // preparing the test databases from the local copy, or migrating them
 
 function mb(bytes) {
   return bytes || bytes === 0 ? `${(bytes / 1048576).toFixed(1)} MB` : "–";
@@ -40,7 +41,9 @@ async function loadMigrations(name) {
   paintConnections(dataView.data);
   try {
     const { status, data } = await post("/api/migrations/status", { db: name });
-    dataView.migrations[name] = status === 200 ? { counts: data.counts, flyway: data.flyway } : { error: data.error || String(status) };
+    dataView.migrations[name] = status === 200
+      ? { counts: data.counts, flyway: data.flyway, uncommitted: data.migrations.filter((m) => m.uncommitted && ["pending", "failed", "outdated"].includes(m.state)).length }
+      : { error: data.error || String(status) };
   } catch {
     dataView.migrations[name] = { error: t("pdms ui is not reachable: is it still running?") };
   }
@@ -52,8 +55,11 @@ export function syncData() {
   const job = state.jobs[JOB];
   const running = Boolean(job && !job.error);
   const visible = !document.getElementById("view-data").hidden;
-  if (dataView.jobWas && !running && visible) loadData();
+  const testJob = state.jobs[TEST_JOB];
+  const testRunning = Boolean(testJob && !testJob.error);
+  if (((dataView.jobWas && !running) || (dataView.testJobWas && !testRunning)) && visible) loadData();
   dataView.jobWas = running;
+  dataView.testJobWas = testRunning;
   for (const name of [...dataView.migrating]) {
     const migrate = state.jobs[`migrate:${name}`];
     if (!migrate || migrate.error) {
@@ -61,7 +67,7 @@ export function syncData() {
       if (!migrate && visible) loadMigrations(name);
     }
   }
-  if (dataView.data && visible) { paintJob(); paintConnections(dataView.data); }
+  if (dataView.data && visible) { paintJob(); paintConnections(dataView.data); paintTests(dataView.data); }
   if (visible) paintAws();
 }
 
@@ -97,8 +103,19 @@ function migrationsCell(db) {
   if (known.error) return el("span", { class: "st stopped", title: known.error }, t("could not read"));
   if (dataView.migrating.has(db.name)) return el("span", { class: "st busy" }, t("applying…"));
   if (!known.flyway) return el("span", { class: "st off" }, t("no Flyway history"));
-  const todo = known.counts.pending + known.counts.failed + known.counts.outdated;
-  return todo ? el("span", { class: "st starting" }, t("{n} pending", { n: todo })) : el("span", { class: "st ok" }, t("up to date"));
+  return behindPill(known.counts.pending + known.counts.failed + known.counts.outdated, known.counts.changed || 0,
+    known.uncommitted || 0);
+}
+
+// "21 pending", "7 uncommitted", "9 changed since they ran" (each its own pill, so a narrow column wraps them), or
+// "up to date".
+function behindPill(pending, changed, uncommitted) {
+  if (!pending && !changed) return el("span", { class: "st ok" }, t("up to date"));
+  const pills = el("span", { class: "pills" });
+  if (pending) pills.append(el("span", { class: "st starting" }, t("{n} pending", { n: pending })));
+  if (uncommitted) pills.append(el("span", { class: "tag", title: t("Files of your checkout without a commit: work in progress.") }, t("{n} uncommitted", { n: uncommitted })));
+  if (changed) pills.append(el("span", { class: "st stopped", title: t("Their file changed after they ran: make the local copy again, or Flyway repairs their history first.") }, t("{n} changed", { n: changed })));
+  return pills;
 }
 
 // Only on a local database Flyway already manages: one without its history has tables made another way (the ORM,
@@ -107,8 +124,10 @@ function applyButton(db) {
   const known = dataView.migrations[db.name];
   if (!db.local || !known || !known.counts || !known.flyway || dataView.migrating.has(db.name)) return "";
   const todo = known.counts.pending + known.counts.failed + known.counts.outdated;
-  if (!todo) return "";
-  return button(t("Apply {n}", { n: todo }), () => applyMigrations(db.name, todo), { class: "btn small primary" });
+  const changed = known.counts.changed || 0;
+  if (!todo && !changed) return "";
+  const label = changed ? t("Repair and apply {n}", { n: todo }) : t("Apply {n}", { n: todo });
+  return button(label, () => applyMigrations(db.name, todo), { class: "btn small primary" });
 }
 
 async function applyMigrations(name, count) {
@@ -129,7 +148,7 @@ function paintConnections(data) {
       el("td", {}, throughCell(db, measured)),
       el("td", { class: "num" }, roundTripCell(measured)),
       el("td", {}, measured ? sparkline(measured.history, dbLevel(measured)) : ""),
-      el("td", {}, migrationsCell(db)),
+      el("td", { class: "migrations" }, migrationsCell(db)),
       el("td", { class: "row-actions" },
         state.jobs[`migrate:${db.name}`] ? button(t("Log"), () => openLogs(`migrate:${db.name}`, "install"), { class: "btn small ghost" }) : "",
         button(t("See the list"), () => openFlyway(db.name), { class: "btn small ghost" }), applyButton(db)));
@@ -188,11 +207,42 @@ function paintSnapshots(data) {
     : t("No snapshots yet. Save one before a test that changes the copy, to come back in a second.");
 }
 
+// A test database against pdms-db-migrations: made by the tests (no Flyway), behind, or up to date.
+function testMigrationsCell(db) {
+  const m = db.migrations;
+  if (!m) return el("span", { class: "muted" }, "–");
+  if (!m.flyway) return el("span", { class: "st off", title: t("The tests made its tables from the models (or it is empty): Prepare from the local copy gives it the real schema.") }, t("tables of the tests · no Flyway"));
+  return behindPill(m.pending, m.changed, m.uncommitted);
+}
+
+function testActions(db, busy) {
+  const m = db.migrations;
+  const disabled = busy ? { disabled: "" } : {};
+  const cell = el("td", { class: "row-actions" });
+  if (m && m.flyway && m.pending && !m.changed) {
+    cell.append(button(t("Apply {n}", { n: m.pending }), () => migrateTestDbs([db.name]), { class: "btn small primary", ...disabled }));
+  } else if (m && (!m.flyway || m.changed)) {
+    cell.append(button(t("Prepare from the local copy"), () => prepareTestDbs([db.name]), { class: "btn small primary", ...disabled }));
+  }
+  cell.append(button(t("Recreate empty"), () => recreateTestDb(db.name), disabled));
+  return cell;
+}
+
 function paintTests(data) {
+  const job = state.jobs[TEST_JOB];
+  const busy = Boolean(job && !job.error);
   const rows = data.tests.map((db) => el("tr", {},
-    el("td", { class: "name" }, db.name), el("td", { class: "num" }, mb(db.size)),
-    el("td", { class: "row-actions" }, button(t("Recreate empty"), () => recreateTestDb(db.name)))));
+    el("td", { class: "name" }, db.name), el("td", { class: "num" }, mb(db.size)), el("td", { class: "migrations" }, testMigrationsCell(db)),
+    testActions(db, busy)));
   $("data-tests").replaceChildren(...rows);
+  const behind = data.tests.filter((db) => db.migrations && (!db.migrations.flyway || db.migrations.pending || db.migrations.changed));
+  $("data-tests-prepare").hidden = !data.tests.length || !data.copy.size;
+  $("data-tests-prepare").disabled = busy;
+  $("data-tests-prepare").classList.toggle("primary", behind.length > 0);
+  $("data-tests-job").hidden = !job;
+  $("data-tests-job").textContent = !job ? "" : job.error ? failedText(job) : phaseLabel(job.phase);
+  $("data-tests-job").className = job && job.error ? "error" : "muted note";
+  $("data-tests-log").hidden = !job;
   $("data-tests-empty").hidden = data.tests.length > 0;
   $("data-tests-count").value = String(data.tests.length || data.test_count);
   $("data-tests-count").disabled = !data.postgres.running;
@@ -214,10 +264,33 @@ export function postgresUpDown(verb) {
   else act("/api/data/down", {});
 }
 
-export async function refreshCopy(confirmed = false) {
-  const { status, data } = await postNeedingImages("/api/data/refresh", { confirmed }, "refresh");
-  if (status === 409 && data.decision !== "images_missing"
-      && await confirmDialog(t("Replace the local copy?"), data.error, t("Replace it"))) refreshCopy(true);
+export async function refreshCopy(confirmed = false, migrate = null) {
+  const { status, data } = await postNeedingImages("/api/data/refresh", { confirmed, migrate }, "refresh");
+  if (status === 409 && data.decision === "migrations_pending") {
+    const answer = await askMigrations(data.dbs, "copy");
+    if (answer !== null) refreshCopy(confirmed, answer);
+  } else if (status === 409 && data.decision !== "images_missing"
+      && await confirmDialog(t("Replace the local copy?"), data.error, t("Replace it"))) refreshCopy(true, migrate);
+}
+
+async function prepareTestDbs(names) {
+  const many = names.length > 1;
+  if (!await confirmDialog(many ? t("Prepare the {n} test databases from the local copy?", { n: names.length }) : t("Prepare {name} from the local copy?", { name: names[0] }),
+    t("Each one becomes a copy of the local copy (its schema, Flyway's history and its little data), and gets the migrations of your checkout it lacks. What a test left in it goes; tests drop and make their tables again when they run."),
+    t("Prepare"))) return;
+  await postNeedingImages("/api/data/test-prepare", { names }, "");
+}
+
+async function migrateTestDbs(names) {
+  await postNeedingImages("/api/data/test-migrate", { names }, "");
+}
+
+export function prepareAllTestDbs() {
+  if (dataView.data) prepareTestDbs(dataView.data.tests.map((db) => db.name));
+}
+
+export function testDbsLog() {
+  openLogs(TEST_JOB, "install");
 }
 
 export function copyLog() {

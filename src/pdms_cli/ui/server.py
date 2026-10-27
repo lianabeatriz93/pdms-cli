@@ -154,6 +154,10 @@ def decision_body(decision: actions.Decision) -> dict:
                 "error": "The local ElasticMQ is not running: start it with pdms events up."}
     if isinstance(decision, actions.PortBusy):
         return {"decision": "port_busy", "port": decision.port, "free": decision.free}
+    if isinstance(decision, actions.MigrationsPending):
+        return {"decision": "migrations_pending", "dbs": [item.describe() for item in decision.items],
+                "error": _("{names} lacks migrations of pdms-db-migrations: start it from Services to choose whether "
+                           "to apply them.", names=", ".join(item.alias for item in decision.items))}
     if isinstance(decision, actions.PythonMismatch):
         return {"decision": "python_mismatch", "services": [item.describe() for item in decision.items],
                 "error": _("The virtualenv of {names} runs a Python its project no longer accepts: start or restart "
@@ -181,14 +185,16 @@ def _body_text(body: dict, key: str) -> str:
 
 def launch_options(body: dict) -> dict:
     """The user, database, install choice and confirmation of a restart or a stack's up."""
-    install, python = body.get("install"), body.get("python")
+    install, python, migrate = body.get("install"), body.get("python"), body.get("migrate")
     if install not in (None, True, False):
         raise actions.ActionError("install must be true, false or null")
     if python not in (None, True, False):
         raise actions.ActionError("python must be true (recreate), false (keep) or null (ask)")
+    if migrate not in (None, True, False):
+        raise actions.ActionError("migrate must be true (apply them), false (start as it is) or null (ask)")
     return {
         "user": str(body.get("user") or "") or None, "db": str(body.get("db") or "") or None,
-        "install": install, "confirmed": body.get("confirmed") is True, "python": python,
+        "install": install, "confirmed": body.get("confirmed") is True, "python": python, "migrate": migrate,
     }
 
 
@@ -625,6 +631,12 @@ def make_handler(
                 return 200, jobs.use_copy(_body_text(body, "instead_of"))
             if path == "/api/data/refresh":
                 return 202, {"job": jobs.refresh_copy(body).key}
+            if path in ("/api/data/test-prepare", "/api/data/test-migrate"):
+                names = body.get("names")
+                if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+                    raise actions.ActionError("names must be a list of test databases")
+                job = jobs.prepare_test_dbs(names) if path.endswith("prepare") else jobs.migrate_test_dbs(names)
+                return 202, {"job": job.key}
             if path.startswith("/api/data/") and path.count("/") == 3:
                 return 200, ui_jobs.data_action(path.rsplit("/", 1)[-1], body)
             if path == "/api/tests/run":
@@ -660,7 +672,7 @@ def make_handler(
                 if path.endswith("start"):
                     options = launch_options(body)
                     job = jobs.start_all(install=options["install"], confirmed=options["confirmed"],
-                                         python=options["python"])
+                                         python=options["python"], migrate=options["migrate"])
                 else:
                     job = jobs.stop_all()
                 return (202, {"job": job.key}) if job else (200, {"job": None})

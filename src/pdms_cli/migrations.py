@@ -21,6 +21,7 @@ from .config import Database
 # public.ecr.aws, no authentication; the image flyway_migrate.yml / flyway_validate.yml run on (Flyway 11.20.2).
 IMAGE = "public.ecr.aws/w3g2g9j8/epicride/flyway-postgres:11.20.2-1"
 READ_ONLY = ("info", "validate")
+LOCAL_ONLY = ("migrate", "repair")  # pdms runs them on local databases only (see actions.apply_migrations)
 COMMANDS = (*READ_ONLY, "migrate")
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", "host.docker.internal"}
 
@@ -136,7 +137,27 @@ def files(repo: Path, flyway: FlywaySettings | None = None) -> list[dict]:
                 "kind": "versioned" if match["kind"] == "V" else "repeatable", "version": match["version"],
                 "description": match["description"].replace("_", " "), "script": path.relative_to(location).as_posix(),
                 "checksum": checksum(path.read_text(encoding="utf-8", errors="replace")),
+                "path": path.resolve().relative_to(repo.resolve()).as_posix() if path.resolve().is_relative_to(repo.resolve())
+                else path.as_posix(),
             })
+    return found
+
+
+def uncommitted(repo: Path) -> set[str]:
+    """The files of the repo with changes git has no commit of (modified, staged or new), relative to it: Flyway
+    applies the working tree, work in progress included."""
+    try:
+        result = subprocess.run(["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all", "--",
+                                 "."], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if result.returncode != 0:
+        return set()
+    found = set()
+    for line in result.stdout.splitlines():
+        name = line[3:].split(" -> ")[-1].strip().strip('"')
+        if name:
+            found.add(name)
     return found
 
 
@@ -161,11 +182,13 @@ def history(db: Database, flyway: FlywaySettings, timeout: int) -> list[dict] | 
 def status(repo: Path, db: Database, timeout: int = 15) -> dict:
     """What ``flyway info`` would say, read straight from the history table and the repo's files.
 
-    States: ``applied``, ``pending``, ``failed``, ``outdated`` (a repeatable changed since it ran: it runs again) and
-    ``missing`` (applied, but not in this checkout: another branch, or an old checkout)."""
+    States: ``applied``, ``pending``, ``failed``, ``outdated`` (a repeatable changed since it ran: it runs again),
+    ``changed`` (a versioned one whose file changed since it ran: Flyway refuses to migrate until ``repair`` takes
+    the new checksum) and ``missing`` (applied, but not in this checkout: another branch, or an old checkout)."""
     flyway = settings(repo)
     local = files(repo, flyway)
     rows = history(db, flyway, timeout)
+    dirty = uncommitted(repo)
     applied = [row for row in rows or [] if row["type"] not in ("BASELINE", "SCHEMA", "DELETE")]
     by_version = {version_key(row["version"]): row for row in applied if row["version"]}
     last_repeatable = {row["description"]: row for row in applied if not row["version"]}
@@ -179,18 +202,21 @@ def status(repo: Path, db: Database, timeout: int = 15) -> dict:
             state = "failed"
         elif item["kind"] == "repeatable" and row["checksum"] != item["checksum"]:
             state = "outdated"
+        elif row["checksum"] is not None and row["checksum"] != item["checksum"]:
+            state = "changed"
         else:
             state = "applied"
         items.append({**{k: item[k] for k in ("kind", "version", "description", "script")}, "state": state,
+                      "uncommitted": item["path"] in dirty,
                       "installed_on": row["installed_on"].isoformat(timespec="seconds") if row and row["installed_on"] else ""})
     known = {version_key(item["version"]) for item in local if item["kind"] == "versioned"}
     items += [{"kind": "versioned", "version": row["version"], "description": row["description"],
-               "script": row["script"], "state": "missing",
+               "script": row["script"], "state": "missing", "uncommitted": False,
                "installed_on": row["installed_on"].isoformat(timespec="seconds") if row["installed_on"] else ""}
               for key, row in by_version.items() if key not in known]
     items.sort(key=lambda item: (item["kind"] != "versioned", version_key(item["version"]), item["description"]))
     counts = {state: sum(item["state"] == state for item in items)
-              for state in ("applied", "pending", "failed", "outdated", "missing")}
+              for state in ("applied", "pending", "failed", "outdated", "changed", "missing")}
     return {"repo": str(repo), "branch": git_branch(repo), "flyway": rows is not None, "migrations": items,
             "counts": counts, "table": f"{flyway.schema}.{flyway.table}"}
 

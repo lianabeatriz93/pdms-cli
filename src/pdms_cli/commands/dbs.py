@@ -11,7 +11,9 @@ from rich.table import Table
 from .. import actions, completion, localcopy, localdb, prompts, testruns
 from ..config import Config
 from ..i18n import _
-from .common import add_db, check_db, console, db_app, pick, print_dbs, print_removed, settle, show_menu, with_images
+from .common import (
+    add_db, check_db, console, db_app, interactive_terminal, pick, print_dbs, print_removed, settle, show_menu, with_images,
+)
 
 
 @db_app.callback()
@@ -165,7 +167,10 @@ def local_refresh(
     source_alias: str = typer.Option(localcopy.SOURCE_ALIAS, "--from", help=_("Alias of the server to copy from."),
                                      autocompletion=completion.dbs),
     database: str = typer.Option(localcopy.SOURCE_DATABASE, "--database", help=_("Database to copy.")),
-    migrate: bool = typer.Option(True, "--migrate/--no-migrate", help=_("Apply the repo's Flyway migrations after.")),
+    migrate: Optional[bool] = typer.Option(
+        None, "--migrate/--no-migrate",
+        help=_("Apply the migrations of your checkout the copy lacks after copying (asked when it lacks some)."),
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask, even when services use the copy.")),
 ) -> None:
     import sys
@@ -176,14 +181,59 @@ def local_refresh(
         _("{n} running services use the local copy ({keys}): their connections end while it is replaced. Go on?",
           n=len(using), keys=", ".join(using)), default=False).unsafe_ask():
         raise typer.Exit(1)
-    repo = _migrations_repo(cfg) if migrate else None
-    if migrate and not repo:
+    repo = _migrations_repo(cfg)
+    if not repo:
         console.print(_("[dim]No pdms-db-migrations repo found: the copy stays as the source has it.[/]"))
+    elif migrate is None:
+        migrate = ask_copy_migrations(cfg, repo, source_alias, database)
     result = with_images(lambda: _settle_local(lambda: localcopy.refresh(
-        cfg, sys.stdout, alias=source_alias, database=database, migrations_repo=repo)))
+        cfg, sys.stdout, alias=source_alias, database=database, migrations_repo=repo, migrate=migrate is not False)))
     console.print("[green]✓[/] " + _("Local copy ready in {seconds} s: alias {alias}, {size:.1f} MB.",
                                       seconds=result["seconds"], alias=result["alias"],
                                       size=result["size"] / 1048576))
+    tests = localdb.test_databases()
+    if tests and interactive_terminal() and questionary.confirm(
+            _("Prepare the test databases ({names}) from the new copy too?", names=", ".join(tests)),
+            default=True).unsafe_ask():
+        prepare_tests(tests)
+
+
+def ask_copy_migrations(cfg: Config, repo, source_alias: str, database: str) -> bool:
+    """Whether to apply the migrations of the checkout the new copy will lack (asked; without a terminal, yes)."""
+    try:
+        behind = localcopy.pending_after_copy(cfg, repo, source_alias, database)
+    except Exception:  # noqa: BLE001 - the source cannot be read now: migrated as before
+        return True
+    if not behind:
+        return True
+    console.print("[yellow]" + _("The copy of {database} will lack {n} migrations of your checkout ({first} … {last})",
+                                 database=database, n=len(behind.versions), first=behind.versions[0],
+                                 last=behind.versions[-1])
+                  + (_(", {m} of them uncommitted", m=len(behind.uncommitted)) if behind.uncommitted else "")
+                  + ".[/]", highlight=False)
+    if not interactive_terminal():
+        return True
+    return questionary.confirm(_("Apply them to the copy once it is copied?"), default=True).unsafe_ask()
+
+
+@local_app.command("prepare-tests", help=_(
+    "Make the test databases copies of the local copy (its schema, Flyway's history and its little data) and apply "
+    "the migrations of your checkout they lack."))
+def local_prepare_tests(
+    names: Optional[list[str]] = typer.Argument(None, help=_("Test databases (all by default)."),
+                                                autocompletion=completion.test_dbs),
+) -> None:
+    prepare_tests(names or _settle_local(localdb.test_databases))
+
+
+def prepare_tests(names: list[str]) -> None:
+    import sys
+
+    cfg = Config.load()
+    for name in names:
+        applied = with_images(lambda name=name: _settle_local(lambda: testruns.prepare_from_copy(cfg, name, sys.stdout)))
+        console.print("[green]✓[/] " + _("{name}: a copy of the local copy, {n} migrations applied.", name=name,
+                                          n=applied), highlight=False)
 
 
 snapshot_app = typer.Typer(help=_("Snapshots of the local copy: keep it as it is and come back to it in seconds."),

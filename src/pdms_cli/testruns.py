@@ -23,6 +23,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import IO
 
 from . import actions, installer, instances, localdb, migrations, repos, runner
 from .config import Config, Database, DevUser
@@ -68,6 +69,41 @@ def prepare_test_dbs(count: int = localdb.TEST_COUNT) -> list[str]:
     localdb.up()
     localdb.ensure_test_databases(count)
     return localdb.test_databases()
+
+
+# ---------------------------------------------------------------------------------------------- migrations
+
+
+def migration_state(cfg: Config, name: str) -> dict | None:
+    """Where test database ``name`` stands against pdms-db-migrations: ``flyway`` (False: the tests made its
+    tables, or it is empty) and how many are ``pending``, ``changed`` and ``uncommitted``; None without a migrations
+    repo or when it cannot be read."""
+    try:
+        repo = actions.current_migrations_repo(cfg)
+        known = migrations.status(repo, require_test_db(name), cfg.defaults.db_timeout)
+    except Exception:  # noqa: BLE001 - no repo, or the database does not answer: the screen says it does not know
+        return None
+    item = actions.behind_of(name, require_test_db(name), repo, known) if known["flyway"] else None
+    return {"flyway": known["flyway"], "pending": len(item.versions) if item else 0,
+            "changed": len(item.changed) if item else 0, "uncommitted": len(item.uncommitted) if item else 0}
+
+
+def migrate_test_db(cfg: Config, name: str, output: IO[str] | None = None) -> int:
+    """Apply what test database ``name`` lacks of pdms-db-migrations (it must have Flyway's history); how many."""
+    item = actions.unmigrated(cfg, name, require_test_db(name))
+    if item is None:
+        return 0
+    actions.apply_migrations(item, output)
+    return len(item.versions)
+
+
+def prepare_from_copy(cfg: Config, name: str, output: IO[str] | None = None) -> int:
+    """Make test database ``name`` a copy of the local copy, then apply what it lacks of the checkout; how many."""
+    if output:
+        output.write(_("{name}: copying the local copy into it...", name=name) + "\n")
+        output.flush()
+    localdb.copy_into_test_database(name)
+    return migrate_test_db(cfg, name, output)
 
 
 # ---------------------------------------------------------------------------------------------- projects

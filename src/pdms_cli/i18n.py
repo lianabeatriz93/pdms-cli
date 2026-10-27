@@ -75,7 +75,6 @@ ES: dict[str, str] = {
     "No service has sent an email yet.": "Ningún servicio ha enviado un email todavía.",
     "emails": "emails",
     "{name} has no Flyway history: its tables were made another way, and Flyway would run every migration over them. pdms only applies migrations to a database Flyway already manages.": "{name} no tiene historial de Flyway: sus tablas se crearon de otra forma, y Flyway ejecutaría todas las migraciones encima. pdms solo aplica migraciones a una base de datos que Flyway ya gestiona.",
-    "Flyway migrate failed on {name} (exit code {code}); the log says why.": "Flyway migrate falló en {name} (código de salida {code}); el log dice por qué.",
     "There is no local copy yet: make it in Data first.": "Aún no hay copia local: hazla primero en Datos.",
     "'{name}' is not an image pdms uses.": "'{name}' no es una imagen que use pdms.",
     "Could not download {image}: {error}. Check the connection and try again.": "No se pudo descargar {image}: {error}. Revisa la conexión e inténtalo de nuevo.",
@@ -91,7 +90,6 @@ ES: dict[str, str] = {
     "'{name}' is not a database name.": "'{name}' no es un nombre de base de datos.",
     "A snapshot name has lowercase letters, digits and _ (up to 40): '{name}' is not one.": "El nombre de un snapshot lleva minúsculas, dígitos y _ (hasta 40): '{name}' no lo es.",
     "Alias of the server to copy from.": "Alias del servidor del que copiar.",
-    "Apply the repo's Flyway migrations after.": "Aplicar después las migraciones Flyway del repo.",
     "Copy a database into pdms's Postgres (the local copy, alias pdms-local), replacing it, and apply the repo's migrations. By default pdm_template_dev on the server of web-dev, which is only read.": "Copiar una base de datos al Postgres de pdms (la copia local, alias pdms-local), reemplazándola, y aplicar las migraciones del repo. Por defecto pdm_template_dev del servidor de web-dev, que solo se lee.",
     "Copying {database} from {host} into {target}…": "Copiando {database} de {host} a {target}…",
     "{schema} is built from the repo's migrations: {user} may not read {what}.": "{schema} se construye con las migraciones del repo: {user} no puede leer {what}.",
@@ -110,7 +108,6 @@ ES: dict[str, str] = {
     "Snapshot '{name}' saved ({size:.1f} MB).": "Snapshot '{name}' guardado ({size:.1f} MB).",
     "Snapshots of the local copy: keep it as it is and come back to it in seconds.": "Snapshots de la copia local: guardarla como está y volver a ella en segundos.",
     "Taken": "Tomado",
-    "The copy is there, but Flyway migrate failed (exit code {code}); the log says why.": "La copia está, pero Flyway migrate falló (código de salida {code}); el log dice por qué.",
     "The snapshots of the local copy.": "Los snapshots de la copia local.",
     "There is a snapshot '{name}' already.": "Ya hay un snapshot '{name}'.",
     "There is no snapshot '{name}'.": "No hay ningún snapshot '{name}'.",
@@ -1618,4 +1615,66 @@ ES: dict[str, str] = {
         "{distro}: pdms abre el navegador de Windows",
     "{path} not found: this repo's web app does not use AWS CodeArtifact.":
         "No se encontró {path}: la app web de este repo no usa AWS CodeArtifact.",
+    "Apply them now (flyway migrate)?":
+        "¿Aplicarlas ahora (flyway migrate)?",
+    "The services start on it as it is (pdms migrate migrate -d {db} applies them).":
+        "Los servicios arrancan sobre ella tal como está (pdms migrate migrate -d {db} las aplica).",
+    "flyway migrate on {db}":
+        "flyway migrate en {db}",
+    "{names} lacks migrations of pdms-db-migrations: start it from Services to choose whether to apply them.":
+        "A {names} le faltan migraciones de pdms-db-migrations: arráncalo desde Servicios para elegir si aplicarlas.",
+    "⚠ {db} lacks {n} migrations of pdms-db-migrations ({first} … {last}).":
+        "⚠ A {db} le faltan {n} migraciones de pdms-db-migrations ({first} … {last}).",
+    "({m} uncommitted)":
+        "({m} sin commit)",
+    ", {m} of them uncommitted":
+        ", {m} de ellas sin commit",
+    "Apply the migrations of your checkout the copy lacks after copying (asked when it lacks some).":
+        "Aplicar después de copiar las migraciones de tu checkout que le faltan a la copia (se pregunta si le faltan).",
+    "Apply them from Data, or with pdms migrate migrate -d {name}.":
+        "Aplícalas desde Datos, o con pdms migrate migrate -d {name}.",
+    "Apply them to the copy once it is copied?":
+        "¿Aplicarlas a la copia una vez copiada?",
+    "Copying the local copy into {name} failed: {error}":
+        "Falló la copia de la copia local en {name}: {error}",
+    "Could not prepare {name}: {error}":
+        "No se pudo preparar {name}: {error}",
+    "Data → Repair and apply: flyway repair takes your checkout's checksums first.":
+        "Datos → Reparar y aplicar: flyway repair adopta antes los checksums de tu checkout.",
+    "Flyway {command} could not run on {name}: {error}":
+        "Flyway {command} no pudo ejecutarse en {name}: {error}",
+    "Flyway {command} failed on {name} (exit code {code}); the log says why.":
+        "Flyway {command} falló en {name} (código de salida {code}); el log dice por qué.",
+    "Make the local copy again (pdms db local refresh, or Data): it comes up to date with the template.":
+        "Vuelve a hacer la copia local (pdms db local refresh, o Datos): queda al día con el template.",
+    "Make the test databases copies of the local copy (its schema, Flyway's history and its little data) and apply the migrations of your checkout they lack.":
+        "Hace las bases de prueba como copias de la copia local (su esquema, el historial de Flyway y su poca data) y les aplica las migraciones de tu checkout que les falten.",
+    "Migrations of {name}":
+        "Migraciones de {name}",
+    "Prepare the test databases ({names}) from the new copy too?":
+        "¿Preparar también las bases de prueba ({names}) desde la copia nueva?",
+    "Repair the history and apply them now (flyway repair, then migrate)?":
+        "¿Reparar el historial y aplicarlas ahora (flyway repair y después migrate)?",
+    "Test databases (all by default).":
+        "Bases de prueba (todas por defecto).",
+    "The copy is there, but: {error}":
+        "La copia está hecha, pero: {error}",
+    "The copy of {database} will lack {n} migrations of your checkout ({first} … {last})":
+        "A la copia de {database} le faltarán {n} migraciones de tu checkout ({first} … {last})",
+    "There is no local copy yet: make it first (Data → Make the local copy, or pdms db local refresh).":
+        "Aún no hay copia local: hazla primero (Datos → Hacer la copia local, o pdms db local refresh).",
+    "{m} of them uncommitted.":
+        "{m} de ellas sin commit.",
+    "{name} is not a local database: pdms only migrates local ones.":
+        "{name} no es una base local: pdms solo migra bases locales.",
+    "{name}: a copy of the local copy, {n} migrations applied.":
+        "{name}: copia de la copia local, {n} migraciones aplicadas.",
+    "{name}: copying the local copy into it...":
+        "{name}: copiando en ella la copia local...",
+    "{n} changed since they ran":
+        "{n} modificadas desde que se aplicaron",
+    "{n} migrations pending":
+        "{n} migraciones pendientes",
+    "⚠ {n} migrations applied to {db} changed in your checkout since they ran ({versions}): Flyway refuses to migrate until flyway repair takes their new checksums (the database keeps what they did then).":
+        "⚠ {n} migraciones aplicadas en {db} cambiaron en tu checkout desde que se aplicaron ({versions}): Flyway no migra hasta que flyway repair adopte sus checksums nuevos (la base conserva lo que hicieron entonces).",
 }
