@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, browser, emails, events, frontend, health, i18n, images, instances, proxy, testruns
+from .. import actions, browser, emails, events, frontend, health, i18n, images, instances, proxy, testruns, testviews
 from ..config import Config
 from ..i18n import _
 from ..logview import LogFollower
@@ -154,6 +154,10 @@ def decision_body(decision: actions.Decision) -> dict:
                 "error": "The local ElasticMQ is not running: start it with pdms events up."}
     if isinstance(decision, actions.PortBusy):
         return {"decision": "port_busy", "port": decision.port, "free": decision.free}
+    if isinstance(decision, actions.TestViewsPending):
+        return {"decision": "test_views_pending", "views": [item.describe() for item in decision.items],
+                "error": _("{names}: changed in your checkout. Start it from Services to choose between your version "
+                           "and the real one.", names=", ".join(item.view for item in decision.items))}
     if isinstance(decision, actions.MigrationsPending):
         return {"decision": "migrations_pending", "dbs": [item.describe() for item in decision.items],
                 "error": _("{names} lacks migrations of pdms-db-migrations: start it from Services to choose whether "
@@ -185,16 +189,19 @@ def _body_text(body: dict, key: str) -> str:
 
 def launch_options(body: dict) -> dict:
     """The user, database, install choice and confirmation of a restart or a stack's up."""
-    install, python, migrate = body.get("install"), body.get("python"), body.get("migrate")
+    install, python, migrate, views = body.get("install"), body.get("python"), body.get("migrate"), body.get("views")
     if install not in (None, True, False):
         raise actions.ActionError("install must be true, false or null")
     if python not in (None, True, False):
         raise actions.ActionError("python must be true (recreate), false (keep) or null (ask)")
     if migrate not in (None, True, False):
         raise actions.ActionError("migrate must be true (apply them), false (start as it is) or null (ask)")
+    if views not in (None, True, False):
+        raise actions.ActionError("views must be true (the test copies), false (the real views) or null (ask)")
     return {
         "user": str(body.get("user") or "") or None, "db": str(body.get("db") or "") or None,
         "install": install, "confirmed": body.get("confirmed") is True, "python": python, "migrate": migrate,
+        "views": views,
     }
 
 
@@ -393,6 +400,11 @@ def make_handler(
                     self.reply_json(200, {"notes": ui_updates.notes(parse_qs(url.query).get("version", [""])[0])})
                 except actions.ActionError as exc:
                     self.reply_json(502, {"error": plain(exc.message)})
+            elif url.path == "/api/views":
+                try:
+                    self.reply_json(200, actions.test_views(Config.load()))
+                except actions.ActionError as exc:
+                    self.reply_json(400, {"error": plain(exc.message)})
             elif url.path == "/api/data":
                 self.reply_json(200, ui_jobs.data_info(Config.load()))
             elif url.path == "/api/tests":
@@ -631,6 +643,8 @@ def make_handler(
                 return 200, jobs.use_copy(_body_text(body, "instead_of"))
             if path == "/api/data/refresh":
                 return 202, {"job": jobs.refresh_copy(body).key}
+            if path.startswith("/api/views/"):
+                return self.act_on_view(path.rsplit("/", 1)[-1], body)
             if path in ("/api/data/test-prepare", "/api/data/test-migrate"):
                 names = body.get("names")
                 if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
@@ -672,7 +686,7 @@ def make_handler(
                 if path.endswith("start"):
                     options = launch_options(body)
                     job = jobs.start_all(install=options["install"], confirmed=options["confirmed"],
-                                         python=options["python"], migrate=options["migrate"])
+                                         python=options["python"], migrate=options["migrate"], views=options["views"])
                 else:
                     job = jobs.stop_all()
                 return (202, {"job": job.key}) if job else (200, {"job": None})
@@ -741,6 +755,23 @@ def make_handler(
             if verb == "dismiss":
                 jobs.dismiss(key)
                 return 200, {}
+            return 404, {"error": "not found"}
+
+        def act_on_view(self, verb: str, body: dict) -> tuple[int, dict]:
+            """Test copies of materialized views (Data → Test views, see testviews.py)."""
+            cfg = Config.load()
+            view = _body_text(body, "view")
+            if verb == "create":
+                return 200, actions.create_test_view(cfg, view, confirmed=body.get("confirmed") is True)
+            if verb == "use":
+                actions.use_test_view(cfg, view, _body_text(body, "name"))
+                return 200, {}
+            if verb == "stop":
+                testviews.stop_using(cfg, view)
+                return 200, {}
+            if verb == "drop":
+                return 200, actions.drop_test_view(cfg, view, _body_text(body, "name"),
+                                                   confirmed=body.get("confirmed") is True)
             return 404, {"error": "not found"}
 
         def act_on_repo(self, name: str, verb: str, body: dict) -> tuple[int, dict]:

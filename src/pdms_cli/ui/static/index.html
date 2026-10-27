@@ -404,6 +404,17 @@
       <tbody id="data-tests"></tbody>
     </table><p class="empty" id="data-tests-empty" hidden>None yet: start pdms's Postgres.</p></div>
   </section>
+  <section class="card data-card" aria-labelledby="data-views-title">
+    <div class="panel-head"><h2 id="data-views-title">Test views</h2><span class="muted" id="data-views-where"></span>
+      <button class="btn small push" id="data-views-reload" type="button">Check again</button></div>
+    <p class="muted note">The materialized views you changed in your checkout, and their test copies: starting a service that reads one offers to try your version, a copy made from your SQL with your ticket as a suffix. The deployed services keep reading the real view.</p>
+    <p class="warn" id="data-views-using" hidden></p>
+    <p class="error" id="data-views-error" hidden></p>
+    <div class="tbl"><table>
+      <thead><tr><th>View</th><th>Test copy</th><th>State</th><th></th></tr></thead>
+      <tbody id="data-views"></tbody>
+    </table><p class="empty" id="data-views-empty" hidden></p></div>
+  </section>
   <section class="card data-card" aria-labelledby="data-aws-title">
     <div class="panel-head"><h2 id="data-aws-title">AWS</h2><span class="st" id="data-aws-status"></span>
       <label class="inline push">Profile <select id="data-aws-profile" aria-label="AWS profile for the services"></select></label></div>
@@ -1034,6 +1045,32 @@
     <div class="actions">
       <button class="btn ghost" value="no">Cancel</button>
       <button class="btn primary bad-fill" value="yes" id="confirm-yes">Delete</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="views-dialog">
+  <form method="dialog">
+    <h2>Try your version of these views?</h2>
+    <p>The services about to start read materialized views you changed in your checkout of pdms-db-migrations. They can read a test copy made from your SQL, with your ticket as a suffix, beside the real view: the deployed services keep reading the real one.</p>
+    <ul class="python-list" id="views-list"></ul>
+    <p class="muted note" id="views-note" hidden>Your user cannot create views there: run this SQL in your database client, then start. pdms checks the copy is there.</p>
+    <div class="actions">
+      <button class="btn ghost" value="cancel">Cancel</button>
+      <button class="btn" value="real">Use the real views</button>
+      <button class="btn primary" value="apply" id="views-apply">Create and start</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="sql-dialog">
+  <form method="dialog">
+    <h2 id="sql-title"></h2>
+    <p id="sql-text"></p>
+    <textarea class="mono sql-text" id="sql-body" readonly rows="14" spellcheck="false"></textarea>
+    <div class="actions">
+      <button class="btn" type="button" id="sql-copy">Copy</button>
+      <button class="btn primary" value="close">Done</button>
     </div>
   </form>
 </dialog>

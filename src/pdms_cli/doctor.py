@@ -166,6 +166,21 @@ def check_local_migrations(cfg: Config) -> list[Check]:
     return checks
 
 
+def check_test_views(cfg: Config) -> list[Check]:
+    """Test copies of views left behind: your change is in the real view (or undone), so nothing reads them."""
+    from . import testviews
+
+    try:
+        repo = actions.current_migrations_repo(cfg)
+        info = testviews.overview(cfg, repo, testviews.database_of(cfg), timeout=10)
+    except Exception:  # noqa: BLE001 - no migrations repo, web-dev unreachable: nothing to say
+        return []
+    return [Check(_("Databases"), _("Test view {name}", name=row["name"]), WARN,
+                  _("left in {db}, but your checkout no longer changes {view}", db=info["db"], view=row["view"]),
+                  _("Drop it: pdms view drop {view} (or Data → Test views).", view=row["view"]), "data")
+            for row in info["views"] if row["exists"] and not row["changed"]]
+
+
 def check_service_pythons(cfg: Config) -> list[Check]:
     """A Python the current repo's services accept (most of them ask for the same), and their virtualenvs still
     running one their project no longer accepts (pdms asks before recreating each, see :mod:`pythons`)."""
@@ -464,6 +479,6 @@ def check_aws(cfg: Config) -> list[Check]:
 def run_all(cfg: Config, *, databases: bool = True, timeout: int = 5) -> list[Check]:
     checks = check_pdms() + check_tools() + check_service_pythons(cfg) + check_wsl(cfg) + check_config(cfg)
     if databases:
-        checks += check_databases(cfg, timeout) + check_local_migrations(cfg)
+        checks += check_databases(cfg, timeout) + check_local_migrations(cfg) + check_test_views(cfg)
     checks += check_network(cfg)
     return checks + check_aws(cfg) + check_repo(cfg) + check_frontend(cfg) + check_ports(cfg) + check_instances(cfg) + check_shell()

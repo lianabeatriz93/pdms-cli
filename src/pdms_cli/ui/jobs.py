@@ -448,7 +448,7 @@ class Jobs:
 
     def restart(
         self, key: str, *, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False, python: bool | None = None, migrate: bool | None = None,
+        confirmed: bool = False, python: bool | None = None, migrate: bool | None = None, views: bool | None = None,
     ) -> Job:
         """Restart on the same port; raises the decisions before stopping anything, like ``pdms restart``."""
         inst = find(key)
@@ -464,10 +464,12 @@ class Jobs:
             raise actions.ActionError(_("{key} is busy.", key=inst.key))
         recreate = actions.check_pythons(cfg, [Path(inst.service)], install, python)
         behind = actions.check_migrations(cfg, [db], migrate)
+        needs = actions.check_test_views(cfg, [(Path(inst.service), db)], views)
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
             self.migrate_first(job, behind)
+            self.views_first(cfg, job, needs)
 
             def install_step(service: Path) -> None:
                 self.install(cfg, job, service, inst.key, install, recreate=recreate)
@@ -480,7 +482,7 @@ class Jobs:
     def restart_many(
         self, keys: list[str], *, user: str | None = None, db: str | None = None, install: bool | None = None,
         confirmed: bool = False, stack: str | None = None, remember: bool = False, python: bool | None = None,
-        migrate: bool | None = None,
+        migrate: bool | None = None, views: bool | None = None,
     ) -> list[Job]:
         """Restart several instances on their ports, one after the other (each its own job, waiting its turn).
 
@@ -505,6 +507,8 @@ class Jobs:
             raise actions.ActionError(_("{key} is busy.", key=", ".join(busy)))
         recreate = actions.check_pythons(cfg, [Path(inst.service) for inst in found], install, python)
         behind = actions.check_migrations(cfg, [db or inst.db for inst in found], migrate)
+        needs = actions.check_test_views(cfg, [(Path(inst.service), db or inst.db) for inst in found], views)
+        prepared: list[bool] = []  # the test views, by the first restart
         if remember:
             if not stack or not (user or db):
                 raise actions.ActionError("remember needs a stack and a user or a database")
@@ -522,6 +526,9 @@ class Jobs:
                     due = [item for item in behind if item.alias == (db or inst.db) and item.alias not in migrated]
                     migrated.update(item.alias for item in due)
                     self.migrate_first(job, due)
+                    if not prepared:
+                        prepared.append(True)
+                        self.views_first(cfg, job, needs)
                     self.phase(job, "stopping")
 
                     def install_step(service: Path) -> None:
@@ -545,7 +552,7 @@ class Jobs:
     def start(
         self, service: str, *, port: int | None = None, user: str | None = None, db: str | None = None,
         install: bool | None = None, confirmed: bool = False, on_demand: bool | None = None, python: bool | None = None,
-        migrate: bool | None = None,
+        migrate: bool | None = None, views: bool | None = None,
     ) -> Job:
         """Start one service of the current repo in the background, like ``pdms run -b``. Without ``port`` it takes
         the next free one; a busy ``port``, a protected database or a stopped local ElasticMQ (for a consumer) are
@@ -568,15 +575,28 @@ class Jobs:
             raise actions.ActionError(_("{key} is busy.", key=key))
         recreate = actions.check_pythons(cfg, [launch.service], install, python)
         behind = actions.check_migrations(cfg, [db], migrate)
+        needs = actions.check_test_views(cfg, [(launch.service, db)], views)
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
             self.migrate_first(job, behind)
+            self.views_first(cfg, job, needs)
             self.install(cfg, job, launch.service, key, install, recreate=recreate)
             self.phase(job, "starting")
             actions.start_service(cfg, launch)
 
         return self.run(key, "start", "starting", work)
+
+    def views_first(self, cfg: Config, job: Job, needs: list[actions.TestViewNeed]) -> None:
+        """Make the test copies of the views the user agreed to (see :func:`actions.check_test_views`)."""
+        if not needs:
+            return
+        key = "test-views"
+        log = install_log(key)
+        log.parent.mkdir(parents=True, exist_ok=True)
+        self.phase(job, "preparing test views", installed=True, log_key=key)
+        with open(log, "w", encoding="utf-8", errors="replace") as output:
+            actions.prepare_test_views(cfg, needs, output)
 
     def migrate_first(self, job: Job, behind: list[actions.Unmigrated]) -> None:
         """Apply the migrations the user agreed to (see :func:`actions.check_migrations`), each with its log."""
@@ -608,7 +628,7 @@ class Jobs:
 
     def up(
         self, name: str, *, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False, python: bool | None = None, migrate: bool | None = None,
+        confirmed: bool = False, python: bool | None = None, migrate: bool | None = None, views: bool | None = None,
     ) -> Job | None:
         """Start what is not running of the stack, like ``pdms up``; None when all of it already runs."""
         cfg = Config.load()
@@ -622,10 +642,12 @@ class Jobs:
         actions.check_database(cfg, db, confirmed)
         recreate = actions.check_pythons(cfg, [launch.service for launch in plan.services], install, python)
         behind = actions.check_migrations(cfg, [launch.db_name for launch in plan.services], migrate)
+        needs = actions.check_test_views(cfg, [(launch.service, launch.db_name) for launch in plan.services], views)
         actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
             self.migrate_first(job, behind)
+            self.views_first(cfg, job, needs)
             keys = {launch.service: instances.make_key(launch.service, launch.port) for launch in plan.services}
             installing: list[Path] = []  # at once
             lock = threading.Lock()
@@ -732,7 +754,7 @@ class Jobs:
     # ------------------------------------------------------------------ Home
 
     def start_all(self, *, install: bool | None = None, confirmed: bool = False, python: bool | None = None,
-                  migrate: bool | None = None) -> Job | None:
+                  migrate: bool | None = None, views: bool | None = None) -> Job | None:
         """Start what is not running of the saved setup, in order: the local events, the stack, the proxy (pointing
         the frontend to it) and the frontend. A protected database or a busy frontend port are raised first; the
         proxy takes the next free port by itself. None when everything already runs."""
@@ -786,11 +808,13 @@ class Jobs:
         stack_dbs = [cfg.stacks[stack_name].profile_of(path.relative_to(backend(cfg)).as_posix(), user, db)[1]
                      for path in starting] if stack_name else []
         behind = actions.check_migrations(cfg, [*stack_dbs, *([db] if broker else [])], migrate)
+        needs = actions.check_test_views(cfg, list(zip(starting, stack_dbs)), views)
         if stack_name or broker:
             actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
             self.migrate_first(job, behind)
+            self.views_first(cfg, job, needs)
             if event_map is not None:
                 self.phase(job, "starting ElasticMQ")
                 actions.start_events(cfg, event_map.queues)
@@ -870,7 +894,7 @@ class Jobs:
 
     def events_up(
         self, *, broker: bool = True, user: str | None = None, db: str | None = None, install: bool | None = None,
-        confirmed: bool = False, python: bool | None = None, migrate: bool | None = None,
+        confirmed: bool = False, python: bool | None = None, migrate: bool | None = None, views: bool | None = None,
     ) -> Job:
         """Start the local ElasticMQ with every queue of the repo and, with ``broker``, the broker, like
         ``pdms events up``; a protected database for the broker is asked before anything starts."""
@@ -889,11 +913,13 @@ class Jobs:
             actions.check_database(cfg, db, confirmed)
         recreate = actions.check_pythons(cfg, [service] if service else [], install, python)
         behind = actions.check_migrations(cfg, [db] if service and db else [], migrate)
+        needs = actions.check_test_views(cfg, [(service, db)] if service and db else [], views)
         if service:
             actions.remember_profile(cfg, user, db)
 
         def work(job: Job) -> None:
             self.migrate_first(job, behind)
+            self.views_first(cfg, job, needs)
             actions.start_events(cfg, event_map.queues)
             if service and user and db:
                 launch = actions.plan_service(cfg, service, user_name=user, db_name=db, events_mode="local")

@@ -24,6 +24,7 @@ from .run import (
     print_summary,
     python_answer,
     recreations,
+    views_first,
     wait_until_ready,
     warn_events,
 )
@@ -242,6 +243,7 @@ def up(
     }, show_service=False)
     confirm_protected(cfg, profile, yes)
     migrate_first(cfg, [s.db_name for s in plan.services])
+    views_first(cfg, [(s.service, s.db_name) for s in plan.services])
     paths = [s.service for s in plan.services]
     recreate = recreations(cfg, paths, install, python_answer(cfg, paths, install))
 

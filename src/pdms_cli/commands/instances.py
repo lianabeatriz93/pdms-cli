@@ -15,7 +15,7 @@ from .. import actions, completion, desktop, emails, events, frontend, installer
 from ..config import Config
 from ..i18n import _
 from .common import app, console, fail, pick, print_endpoints, print_restored, settle, show_menu
-from .run import Profile, confirm_protected, do_run, migrate_first, python_answer
+from .run import Profile, confirm_protected, do_run, migrate_first, python_answer, views_first
 from .services import backend_root, stack_paths
 
 
@@ -481,6 +481,7 @@ def restart(
                                        changing.host, changing.port), False)
     python = python_answer(cfg, [Path(inst.service) for inst in chosen], install)  # before stopping them
     migrate_first(cfg, [db or inst.db for inst in chosen])
+    views_first(cfg, [(Path(inst.service), db or inst.db) for inst in chosen])
     if remember:
         root = backend_root(cfg)
         for inst in chosen:
@@ -495,7 +496,7 @@ def restart(
         do_run(
             user=user or inst.user, db=db or inst.db, port=inst.port, host=inst.host, install=install,
             reload=inst.reload, yes=True, path=Path(inst.service), background=True,
-            events_mode="local" if inst.events == "local" else None, python=python, migrate=False,
+            events_mode="local" if inst.events == "local" else None, python=python, migrate=False, check_views=False,
         )
 
 

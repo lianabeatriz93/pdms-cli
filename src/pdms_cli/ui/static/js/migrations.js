@@ -1,6 +1,6 @@
 // The Flyway migrations of a database (read-only).
 
-import { $, el, post } from "./core.js";
+import { $, button, copyText, el, post } from "./core.js";
 import { matches } from "./settings.js";
 
 export const flywayView = { db: "", data: null };
@@ -105,6 +105,39 @@ export function askMigrations(dbs, context = "start") {
     $("pending-dialog").addEventListener("close", () => {
       const answer = $("pending-dialog").returnValue;
       resolve(answer === "apply" ? true : answer === "skip" ? false : null);
+    }, { once: true });
+  });
+}
+
+// Services about to start read views changed in your checkout (actions.check_test_views): true (your version: the
+// test copies, made now or from the SQL the user ran), false (the real views) or null (cancel).
+export function askViews(views) {
+  const byHand = views.filter((item) => item.sql);
+  $("views-list").replaceChildren(...views.map((item) => {
+    const state = item.exists && item.current ? t("ready") : item.exists ? t("its SQL changed since it was made")
+      : t("not made yet");
+    const row = el("li", {}, el("b", {}, item.view), " ",
+      t("read by {services}", { services: item.services.join(", ") }),
+      ...(item.uncommitted ? [" ", el("span", { class: "tag" }, t("uncommitted"))] : []),
+      el("div", { class: "muted" }, t("Its test copy {name}: {state}", { name: item.name, state })));
+    if (item.sql) {
+      const area = el("textarea", { class: "mono sql-text", rows: "6", readonly: "", spellcheck: "false" });
+      area.value = item.sql;
+      row.append(area, button(t("Copy"), () => copyText(item.sql, t("SQL copied: paste it in your database client.")),
+        { class: "btn small" }));
+    }
+    return row;
+  }));
+  $("views-note").hidden = !byHand.length;
+  $("views-apply").textContent = byHand.length ? t("I ran it, start")
+    : views.every((item) => item.exists && item.current) ? t("Start with my version") : t("Create and start");
+  $("views-dialog").returnValue = "";
+  $("views-dialog").showModal();
+  for (const area of $("views-list").querySelectorAll("textarea")) area.scrollTop = 0; // from its header
+  return new Promise((resolve) => {
+    $("views-dialog").addEventListener("close", () => {
+      const answer = $("views-dialog").returnValue;
+      resolve(answer === "apply" ? true : answer === "real" ? false : null);
     }, { once: true });
   });
 }

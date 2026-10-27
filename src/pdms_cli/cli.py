@@ -31,6 +31,7 @@ from .commands import (  # noqa: F401 - importing them registers their commands
     testing,
     ui,
     users,
+    views,
 )
 from .commands.common import app, console, interactive_terminal
 from .commands.menu import main_menu
