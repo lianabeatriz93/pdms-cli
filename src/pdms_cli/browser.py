@@ -31,7 +31,7 @@ from datetime import datetime
 from importlib import resources
 from pathlib import Path
 
-from . import frontend, i18n, instances
+from . import frontend, i18n, instances, wsl
 from .config import Config
 
 SOURCE = resources.files("pdms_cli") / "browser_extension"
@@ -77,7 +77,16 @@ BY_KEY = {browser.key: browser for browser in BROWSERS}
 
 
 def extension_dir() -> Path:
+    """Where the extension is written for the browser to load. Inside WSL the browsers are Windows': a folder of
+    the Windows user (``AppData\\Local\\pdms``), which they can open."""
+    if wsl.detected() and (local := wsl.windows_dir("LOCALAPPDATA")):
+        return local / "pdms" / "browser-extension"
     return instances.state_dir() / "browser-extension"
+
+
+def shown(path: Path) -> str:
+    """A path as the user types it in their browser's dialogs (Windows' form inside WSL)."""
+    return wsl.to_windows(path) if wsl.detected() else str(path)
 
 
 def seen_path() -> Path:
@@ -195,10 +204,22 @@ def _windows_exe(browser: Browser) -> str | None:
     return None
 
 
+def _wsl_exe(browser: Browser) -> str | None:
+    """Inside WSL: the Windows browser, run through WSL's interop."""
+    for name in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        root = wsl.windows_dir(name)
+        for folder in browser.folders if root else ():
+            if (path := root / folder / browser.exe).is_file():
+                return str(path)
+    return None
+
+
 def executable(browser: Browser) -> str | None:
     """Full path of the browser's program, or None when it is not installed."""
     if WINDOWS:
         return _windows_exe(browser)
+    if wsl.detected():
+        return _wsl_exe(browser)
     if MAC:
         for apps in (Path("/Applications"), Path.home() / "Applications"):
             for name in (browser.app, browser.app.lower()):  # Firefox.app/Contents/MacOS/firefox
@@ -226,6 +247,8 @@ def open_page(browser: Browser, target: str = "") -> bool:
     program = installed().get(browser.key) or executable(browser)
     if not program:
         return False
+    if target and wsl.detected():
+        target = wsl.to_windows(Path(target))  # a Windows program, a Windows path
     try:
         subprocess.Popen([program, target or browser.page], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, **instances.detach_options())
@@ -296,7 +319,7 @@ def status(cfg: Config) -> dict:
         })
     return {
         "redirect": cfg.defaults.front_redirect, "hosts": list(cfg.defaults.front_redirect_hosts),
-        "folder": str(extension_dir()), "browsers": rows,
+        "folder": shown(extension_dir()), "browsers": rows,
     }
 
 

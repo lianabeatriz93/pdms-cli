@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import __version__, actions, awsenv, events, frontend, health, images, instances, installer, migrations, proxy, pythons, repos, routes, runner, update
+from . import __version__, actions, awsenv, browser, events, frontend, health, images, instances, installer, migrations, proxy, pythons, repos, routes, runner, update, wsl
 from .config import Config, config_path
 from .i18n import _
 
@@ -111,6 +111,32 @@ def check_tools() -> list[Check]:
                         "" if docker_ok else _("Install Docker and start it: https://docs.docker.com/get-docker/")))
     if docker_ok:
         checks.extend(check_images())
+    return checks
+
+
+def check_wsl(cfg: Config) -> list[Check]:
+    """Inside WSL: what reaches Windows (the browser, the web app's certificate) and repos on a Windows drive."""
+    if not wsl.detected():
+        return []
+    section = "WSL"
+    checks = [Check(section, "WSL", OK, _("{distro}: pdms opens the browser of Windows", distro=wsl.distro() or "Linux"))]
+    for alias, repo in cfg.repos.items():
+        if wsl.on_windows_drive(repo.root):
+            checks.append(Check(section, _("Repo {name}", name=alias), WARN,
+                                _("on a Windows drive ({path}): Poetry, yarn and --reload are much slower there",
+                                  path=repo.root),
+                                _("Clone it in your Linux home (~/...) and add it again (pdms repo add).")))
+    state, ca = wsl.certificate()
+    if state != "unknown":
+        checks.append(Check(
+            section, _("Certificate of the web app"), OK if state == "ok" else WARN,
+            _("trusted by Windows") if state == "ok"
+            else _("Windows does not trust it, so its browsers warn about https://localhost:3000 ({path})", path=ca),
+            "" if state == "ok" else _("Trust it in Windows: pdms browser trust"),
+        ))
+    found = [browser.BY_KEY[key].name for key in browser.installed()]
+    checks.append(Check(section, _("Browsers of Windows"), OK if found else WARN,
+                        ", ".join(found) if found else _("none found for the pdms extension")))
     return checks
 
 
@@ -410,7 +436,7 @@ def check_aws(cfg: Config) -> list[Check]:
 
 
 def run_all(cfg: Config, *, databases: bool = True, timeout: int = 5) -> list[Check]:
-    checks = check_pdms() + check_tools() + check_service_pythons(cfg) + check_config(cfg)
+    checks = check_pdms() + check_tools() + check_service_pythons(cfg) + check_wsl(cfg) + check_config(cfg)
     if databases:
         checks += check_databases(cfg, timeout)
     checks += check_network(cfg)
