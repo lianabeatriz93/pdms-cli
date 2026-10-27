@@ -185,7 +185,8 @@ function copyByCommand(text) {
   const area = el("textarea", { readonly: "", style: "position:fixed;top:0;left:0;opacity:0" });
   area.value = text;
   const focused = document.activeElement;
-  document.body.append(area);
+  // Inside the open modal dialog, if any: the rest of the page is inert then, and a selection there copies nothing.
+  (document.querySelector("dialog[open]") || document.body).append(area);
   area.select();
   let copied = false;
   try {
