@@ -216,7 +216,8 @@ def print_endpoints(inst: instances.Instance, limit: Optional[int] = None, conta
 
 
 def interactive_terminal() -> bool:
-    return sys.stdin.isatty() and sys.stdout.isatty()
+    """A user at a terminal (not pdmsw.exe's no console, where Python may leave the streams as None)."""
+    return all(stream is not None and stream.isatty() for stream in (sys.stdin, sys.stdout))
 
 
 def current_repo_root(cfg: Config) -> Path:
