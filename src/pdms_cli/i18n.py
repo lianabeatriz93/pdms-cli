@@ -1821,4 +1821,8 @@ ES: dict[str, str] = {
         "{name} tiene los datos de hoy.",
     "{name} is not in {db}.":
         "{name} no está en {db}.",
+    "the user the services connect as":
+        "el usuario con el que se conectan los servicios",
+    "{user} cannot read {name}: run in your database client: {sql}":
+        "{user} no puede leer {name}: ejecuta en tu gestor de base de datos: {sql}",
 }
