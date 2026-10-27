@@ -143,7 +143,7 @@ def test_a_failed_install_says_when_codeartifact_needs_a_login(web, tmp_path, mo
     log.write_text("error https://alivi-609837931903.d.codeartifact.us-east-1.amazonaws.com/npm/: "
                    "Request failed \"401 Unauthorized\"\n", encoding="utf-8")
     monkeypatch.setattr(frontend, "install_command", lambda: ["false"])
-    with pytest.raises(actions.ActionError, match="codeartifact-login.sh"):
+    with pytest.raises(actions.ActionError, match="even after logging in"):  # logged in again, still refused
         actions.install_frontend(web, open(os.devnull, "w"), log)
     log.write_text("error Couldn't find package\n", encoding="utf-8")
     with pytest.raises(actions.ActionError, match="yarn install failed"):

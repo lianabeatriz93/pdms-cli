@@ -27,7 +27,7 @@ from urllib.parse import unquote, urlsplit
 import psutil
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
-from . import awsenv, browser, captures, emails, health, pythons, trace, vscode
+from . import awsenv, browser, captures, codeartifact, emails, health, pythons, trace, vscode
 from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from .i18n import LANGUAGES, _
 
@@ -1219,14 +1219,60 @@ def _yarn(cmd: list[str], cwd: Path, output: IO[str] | None) -> None:
     subprocess.run(cmd, cwd=cwd, env=frontend.environment(), check=True, **redirect)
 
 
-def install_frontend(root: Path, output: IO[str] | None = None, log: Path | None = None) -> None:
-    """``yarn install`` in ``frontend/``; a failure that looks like CodeArtifact says how to log in."""
+def codeartifact_ready(
+    folder: Path, notes: IO[str] | None = None, sso: Callable[[str], bool] | None = None, force: bool = False,
+) -> list[str]:
+    """Log in to the AWS CodeArtifact repositories of the web app whose token npm no longer accepts (all of them with
+    ``force``), as ``frontend/codeartifact-login.sh`` does; the profiles used. An expired SSO session is given to
+    ``sso`` (the terminal runs ``aws sso login``), else it says how to log in."""
+    cfg = Config.load()
+    used = []
+    for domain in codeartifact.needed(folder):
+        if not force and codeartifact.authorized(folder, domain) is not False:
+            continue
+        if notes:
+            notes.write(_("The {namespace} packages need a new AWS CodeArtifact token; logging in...",
+                          namespace=domain.namespace) + "\n")
+            notes.flush()
+        try:
+            try:
+                used.append(codeartifact.login(cfg, domain, notes))
+            except codeartifact.LoginError as exc:
+                if not (exc.expired and sso and sso(exc.profile)):
+                    raise
+                used.append(codeartifact.login(cfg, domain, notes))
+        except codeartifact.LoginError as exc:
+            if exc.expired:
+                raise ActionError(_("The AWS session of {profile} is over: log in with aws sso login --profile "
+                                    "{profile} (or from Data in pdms ui) and install the frontend again.",
+                                    profile=exc.profile)) from exc
+            raise ActionError(_("Could not log in to AWS CodeArtifact: {error}", error=exc.message)) from exc
+    return used
+
+
+def install_frontend(
+    root: Path, output: IO[str] | None = None, log: Path | None = None, sso: Callable[[str], bool] | None = None,
+    notes: IO[str] | None = None,
+) -> None:
+    """``yarn install`` in ``frontend/``, logged in to AWS CodeArtifact first when its token is over (see
+    :func:`codeartifact_ready`). A failure that still looks like CodeArtifact logs in again and tries once more.
+    ``notes`` gets what pdms says (``output`` when it is given, the terminal's otherwise)."""
+    folder, notes = frontend.folder(root), output or notes
+    codeartifact_ready(folder, notes, sso)
     try:
-        _yarn(frontend.install_command(), frontend.folder(root), output)
+        _yarn(frontend.install_command(), folder, output)
+        return
+    except (OSError, subprocess.CalledProcessError) as exc:
+        if not (log and frontend.needs_codeartifact(log)):
+            raise ActionError(_("yarn install failed: {error}", error=exc)) from exc
+    codeartifact_ready(folder, notes, sso, force=True)
+    try:
+        _yarn(frontend.install_command(), folder, output)
     except (OSError, subprocess.CalledProcessError) as exc:
         if log and frontend.needs_codeartifact(log):
-            raise ActionError(_("yarn install could not download the @alivi packages from AWS CodeArtifact. Log in "
-                                "with ./codeartifact-login.sh (in frontend/) and try again.")) from exc
+            raise ActionError(_("yarn install could not download the {packages} packages from AWS CodeArtifact, "
+                                "even after logging in: check the profile has the {role} role.",
+                                packages="@alivi", role=codeartifact.ROLE)) from exc
         raise ActionError(_("yarn install failed: {error}", error=exc)) from exc
 
 
