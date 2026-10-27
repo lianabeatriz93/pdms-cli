@@ -341,8 +341,10 @@ Inside WSL pdms runs as on Linux (keep the repos in the Linux home: on `/mnt/c` 
 slower), and what reaches the desktop goes to Windows: `pdms ui` and `pdms open` open the Windows browser, and
 `pdms browser install` finds the Windows browsers and writes the extension to a folder they can open
 (`AppData\Local\pdms`). WSL2 forwards `127.0.0.1`, so pdms ui, the proxy and the web app answer as usual. The web
-app's certificate (mkcert) is trusted inside WSL only: `pdms browser trust` adds it to Windows. `pdms doctor` has a
-WSL section; `pdms ui --window`, `--install` and `--at-login` need a Windows desktop, so they say so.
+app's certificate (mkcert) is trusted inside WSL only: `pdms browser trust` adds it to Windows. `pdms ui --install`
+and `--at-login` add pdms to Windows' Start menu and to its Startup folder: a small script starts pdms ui inside WSL
+with no window, and keeps WSL running while it does. `pdms doctor` has a WSL section; `--window` needs a Windows
+desktop, so pdms ui opens in the browser instead.
 
 ## Configuration
 

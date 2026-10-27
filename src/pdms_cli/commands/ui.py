@@ -163,9 +163,6 @@ def ui_setup(install: bool, uninstall: bool, at_login: Optional[bool]) -> None:
     from ..ui import window as ui_window
 
     cfg = Config.load()
-    if wsl.detected() and (install or at_login):
-        fail(_("Inside WSL pdms has no app menu nor tray in Windows: open pdms ui from the terminal, and it opens in "
-               "your Windows browser."))
     if uninstall:
         removed = desktop.uninstall()
         if cfg.defaults.ui_at_login:

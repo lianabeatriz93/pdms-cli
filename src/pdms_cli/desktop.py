@@ -176,6 +176,60 @@ def windows_shortcut(path: Path, hidden: bool = False) -> None:
         raise OSError(result.stderr.strip() or f"powershell exited with {result.returncode}")
 
 
+# --------------------------------------------------------------------------- WSL: entries of Windows' Start menu
+
+# A shortcut to wsl.exe shows a console window: Windows runs this script instead, which starts pdms ui inside WSL
+# with no window. wsl.exe keeps running as long as pdms ui does, and with it the WSL machine.
+WSL_LAUNCHER = """' pdms ui inside WSL ({distro}), started by Windows' Start menu or at login. Written by pdms.
+Dim args, i
+args = ""
+For i = 0 To WScript.Arguments.Count - 1
+  args = args & " " & WScript.Arguments(i)
+Next
+CreateObject("WScript.Shell").Run "wsl.exe -d {distro} --cd ~ -e {pdms} ui --detached" & args, 0, False
+"""
+
+
+def wsl_folder() -> Path:
+    """pdms' folder of the Windows user (``AppData\\Local\\pdms``), for what Windows runs."""
+    from . import wsl
+
+    local = wsl.windows_dir("LOCALAPPDATA")
+    if not local:
+        raise OSError("the Windows user's folders were not found (cmd.exe through WSL)")
+    return local / "pdms"
+
+
+def wsl_programs() -> Path:
+    from . import wsl
+
+    roaming = wsl.windows_dir("APPDATA")
+    if not roaming:
+        raise OSError("the Windows user's folders were not found (cmd.exe through WSL)")
+    return roaming / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+
+
+def wsl_shortcut(path: Path, hidden: bool = False) -> None:
+    """A Windows shortcut that runs pdms ui inside this WSL (``--no-browser`` at login)."""
+    from . import wsl
+
+    folder = wsl_folder()
+    launcher, icon = folder / "pdms-ui.vbs", folder / f"{APP_NAME}.ico"
+    _write(launcher, WSL_LAUNCHER.format(distro=wsl.distro(), pdms=pdms_executable()).replace("\n", "\r\n"))
+    _write(icon, (STATIC / "icon.ico").read_bytes())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    values = {"PDMS_LNK": wsl.to_windows(path), "PDMS_TARGET": "wscript.exe",
+              "PDMS_ARGS": f'"{wsl.to_windows(launcher)}"' + (" --no-browser" if hidden else ""),
+              "PDMS_ICON": f"{wsl.to_windows(icon)},0", "PDMS_COMMENT": COMMENT}
+    powershell = wsl._tool("powershell.exe") or "powershell.exe"
+    # WSLENV hands these variables to the Windows program (they are Windows paths already).
+    env = {**os.environ, **values, "WSLENV": ":".join([*values, os.environ.get("WSLENV", "")]).rstrip(":")}
+    result = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", SHORTCUT_SCRIPT],
+                            env=env, capture_output=True, text=True, check=False, cwd="/mnt/c")
+    if result.returncode:
+        raise OSError(result.stderr.strip() or f"powershell exited with {result.returncode}")
+
+
 # --------------------------------------------------------------------------- macOS
 
 
@@ -212,8 +266,16 @@ def mac_launch_agent() -> bytes:
 # --------------------------------------------------------------------------- install / uninstall
 
 
+def _in_wsl() -> bool:
+    from . import wsl
+
+    return wsl.detected()
+
+
 def menu_entry() -> Path:
-    """Where the app menu entry lives on this system."""
+    """Where the app menu entry lives on this system (inside WSL, in Windows' Start menu)."""
+    if _in_wsl():
+        return wsl_programs() / f"{APP_NAME}.lnk"
     if sys.platform == "win32":
         return windows_menu_file()
     if sys.platform == "darwin":
@@ -222,6 +284,8 @@ def menu_entry() -> Path:
 
 
 def autostart_entry() -> Path:
+    if _in_wsl():
+        return wsl_programs() / "Startup" / f"{APP_NAME}.lnk"
     if sys.platform == "win32":
         return windows_autostart_file()
     if sys.platform == "darwin":
@@ -235,7 +299,9 @@ def installed() -> bool:
 
 def install() -> Path:
     """Add pdms ui to the app menu (again, to point it to the current pdms); where the entry is."""
-    if sys.platform == "win32":
+    if _in_wsl():
+        wsl_shortcut(menu_entry())
+    elif sys.platform == "win32":
         _write(windows_icon(), (STATIC / "icon.ico").read_bytes())
         windows_shortcut(windows_menu_file())
     elif sys.platform == "darwin":
@@ -257,7 +323,9 @@ def set_autostart(enabled: bool) -> None:
     if not enabled:
         entry.unlink(missing_ok=True)
         return
-    if sys.platform == "win32":
+    if _in_wsl():
+        wsl_shortcut(entry, hidden=True)
+    elif sys.platform == "win32":
         _write(windows_icon(), (STATIC / "icon.ico").read_bytes())
         windows_shortcut(entry, hidden=True)
     elif sys.platform == "darwin":
@@ -270,7 +338,9 @@ def uninstall() -> list[Path]:
     """Remove the app menu entry, its icons and opening at login; what was removed."""
     removed = []
     paths = [menu_entry(), autostart_entry()]
-    if sys.platform == "win32":
+    if _in_wsl():
+        paths += [wsl_folder() / "pdms-ui.vbs", wsl_folder() / f"{APP_NAME}.ico"]
+    elif sys.platform == "win32":
         paths.append(windows_icon())
     elif sys.platform != "darwin":
         paths += [target for target, _source in linux_icons()]
@@ -281,7 +351,7 @@ def uninstall() -> list[Path]:
         elif path.exists():
             path.unlink()
             removed.append(path)
-    if sys.platform not in ("win32", "darwin") and removed:
+    if sys.platform not in ("win32", "darwin") and removed and not _in_wsl():
         _refresh_linux_menu()
     return removed
 
