@@ -140,6 +140,32 @@ def check_wsl(cfg: Config) -> list[Check]:
     return checks
 
 
+def check_local_migrations(cfg: Config) -> list[Check]:
+    """Local databases Flyway manages (the local copy) that lack migrations of the checkout, or whose applied ones
+    changed since: pdms asks before services start on them, and Data applies them."""
+    from . import localcopy
+
+    checks = []
+    copy = localcopy.alias(cfg)
+    for alias, db in cfg.dbs.items():
+        if not migrations.is_local(db) or (item := actions.unmigrated(cfg, alias)) is None:
+            continue
+        parts = []
+        if item.versions:
+            parts.append(_("{n} migrations pending", n=len(item.versions))
+                         + (" " + _("({m} uncommitted)", m=len(item.uncommitted)) if item.uncommitted else ""))
+        if item.changed:
+            parts.append(_("{n} changed since they ran", n=len(item.changed)))
+        checks.append(Check(
+            _("Databases"), _("Migrations of {name}", name=alias), WARN, " · ".join(parts),
+            _("Make the local copy again (pdms db local refresh, or Data): it comes up to date with the template.")
+            if item.changed and alias == copy
+            else _("Data → Repair and apply: flyway repair takes your checkout's checksums first.") if item.changed
+            else _("Apply them from Data, or with pdms migrate migrate -d {name}.", name=alias), "data",
+        ))
+    return checks
+
+
 def check_service_pythons(cfg: Config) -> list[Check]:
     """A Python the current repo's services accept (most of them ask for the same), and their virtualenvs still
     running one their project no longer accepts (pdms asks before recreating each, see :mod:`pythons`)."""
@@ -438,6 +464,6 @@ def check_aws(cfg: Config) -> list[Check]:
 def run_all(cfg: Config, *, databases: bool = True, timeout: int = 5) -> list[Check]:
     checks = check_pdms() + check_tools() + check_service_pythons(cfg) + check_wsl(cfg) + check_config(cfg)
     if databases:
-        checks += check_databases(cfg, timeout)
+        checks += check_databases(cfg, timeout) + check_local_migrations(cfg)
     checks += check_network(cfg)
     return checks + check_aws(cfg) + check_repo(cfg) + check_frontend(cfg) + check_ports(cfg) + check_instances(cfg) + check_shell()

@@ -5,11 +5,13 @@ import { state } from "./state.js";
 import { logs, openLogs } from "./logs.js";
 import { slashes } from "./stacks.js";
 import { askPython } from "./python.js";
+import { askMigrations } from "./migrations.js";
 
 // go: what the dialog's button does, "restart" or "start" (its label comes from goLabel).
 // set: several instances restarted together (their keys), from a stack when stack is its name.
 const launch = {
   path: null, confirmed: false, after: null, run: false, service: "", go: "start", set: false, stack: "", python: null,
+  migrate: null,
 };
 
 function goLabel() {
@@ -35,7 +37,7 @@ export function dbLabel(name) {
 
 // The user, database and install of a restart or a stack's up, asking again before a protected database.
 export function openLaunch({ title, key, hint, user, db, path, go, after, broker = false, run = false, service = "" }) {
-  Object.assign(launch, { path, after, run, service, confirmed: false, set: false, stack: "", python: null });
+  Object.assign(launch, { path, after, run, service, confirmed: false, set: false, stack: "", python: null, migrate: null });
   $("set-picker").hidden = $("set-change-label").hidden = $("set-remember-label").hidden = true;
   $("restart-user-label").hidden = $("restart-db-label").hidden = false;
   $("run-picker").hidden = $("run-port-label").hidden = $("run-on-demand-label").hidden = !run;
@@ -190,6 +192,7 @@ export async function submitLaunch(event) {
   const install = { auto: null, force: true, skip: false }[$("restart-form").install.value];
   const body = {
     user: $("restart-user").value, db: $("restart-db").value, install, confirmed: launch.confirmed, python: launch.python,
+    migrate: launch.migrate,
   };
   if (launch.set) {
     const change = $("set-change").checked;
@@ -226,6 +229,14 @@ export async function submitLaunch(event) {
       $("restart-warn").textContent = t("Port {port} is in use. Start on {free} instead?", { port: data.port, free: data.free });
       $("restart-warn").hidden = false;
       $("restart-go").textContent = goOnPort(data.free);
+      return;
+    }
+    if (status === 409 && data.decision === "migrations_pending") {
+      const answer = await askMigrations(data.dbs);
+      if (answer !== null) {
+        launch.migrate = answer;
+        submitLaunch(event);
+      }
       return;
     }
     if (status === 409 && data.decision === "python_mismatch") {

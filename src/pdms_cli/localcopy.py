@@ -185,10 +185,27 @@ def _run(cmd: list[str], output: IO[str], env: dict[str, str] | None = None) -> 
     return subprocess.run(cmd, stdout=output, stderr=subprocess.STDOUT, env=env, timeout=3600).returncode
 
 
+def pending_after_copy(cfg: Config, repo: Path, alias: str = SOURCE_ALIAS,
+                       database: str = SOURCE_DATABASE) -> actions.Unmigrated | None:
+    """What of the checkout the copy will lack once copied: the source's own Flyway history against the repo's files
+    (read-only). None when nothing; raises when the source cannot be read."""
+    src = source(cfg, alias, database)
+    known = migrations.status(repo, src, cfg.defaults.db_timeout)
+    target = localdb.database(localdb.MAIN_DB, localdb.state()["port"] or localdb.PORT)
+    item = actions.behind_of(register_name(cfg), target, repo, known) if known["flyway"] else None
+    return actions.Unmigrated(item.alias, target, repo, item.versions, [], item.uncommitted) \
+        if item and item.versions else None  # changed ones are the source's business: it was copied as it is
+
+
+def register_name(cfg: Config) -> str:
+    """The alias the local copy has, or will get (see :func:`register_alias`)."""
+    return alias(cfg) or ALIAS
+
+
 def refresh(cfg: Config, output: IO[str], *, alias: str = SOURCE_ALIAS, database: str = SOURCE_DATABASE,
-            migrations_repo: Path | None = None) -> dict:
+            migrations_repo: Path | None = None, migrate: bool = True) -> dict:
     """Copy ``database`` (server of ``alias``) into the local copy, replacing it, then migrate it with the repo's
-    Flyway migrations (when ``migrations_repo`` is given) and register its alias. What it did, also kept for
+    Flyway migrations (with ``migrations_repo``, when ``migrate``) and register its alias. What it did, also kept for
     ``pdms db local status`` and the Data screen."""
     src = source(cfg, alias, database)
     images.require([localdb.IMAGE, *([migrations.IMAGE] if migrations_repo else [])])
@@ -218,13 +235,12 @@ def refresh(cfg: Config, output: IO[str], *, alias: str = SOURCE_ALIAS, database
     if restored not in (0, 1):  # 1: warnings (e.g. an extension that already exists)
         raise actions.ActionError(_("pg_restore failed (exit code {code}); the log says why.", code=restored))
     migrated = None
-    if migrations_repo:
+    if migrations_repo and migrate:
         target = localdb.database(localdb.MAIN_DB, localdb.state()["port"] or localdb.PORT)
-        code = _run(migrations.docker_command(migrations_repo, target, "migrate"), output,
-                    {**os.environ, "DB_PASSWORD": target.password})
-        if code != 0:
-            raise actions.ActionError(_("The copy is there, but Flyway migrate failed (exit code {code}); the log "
-                                        "says why.", code=code))
+        try:
+            actions.apply_migrations(actions.Unmigrated(register_name(cfg), target, migrations_repo, ["*"]), output)
+        except actions.ActionError as exc:
+            raise actions.ActionError(_("The copy is there, but: {error}", error=exc.message)) from exc
         migrated = str(migrations_repo)
     name = register_alias(cfg)
     result = {

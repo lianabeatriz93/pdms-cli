@@ -17,7 +17,8 @@ from .. import actions, awsenv, completion, instances, prompts, proxy, pythons, 
 from ..config import Config, Database, DevUser
 from ..i18n import _
 from .common import (
-    EVENTS_HELP, add_db, add_user, app, console, fail, interactive_terminal, pick, print_endpoints, settle, yes_no,
+    EVENTS_HELP, add_db, add_user, app, console, fail, interactive_terminal, pick, print_endpoints, settle, with_images,
+    yes_no,
 )
 from .services import resolve_service
 
@@ -119,6 +120,44 @@ def install_label(cfg: Config, install: Optional[bool], each: bool = False) -> s
     return _("poetry lock && poetry install (each)") if each else "poetry lock && poetry install"
 
 
+def migrate_first(cfg: Config, aliases: list[str], migrate: Optional[bool] = None) -> None:
+    """Apply the migrations of pdms-db-migrations the local databases lack, if the user says so (asked when
+    ``migrate`` is None; without a terminal they start as they are)."""
+    try:
+        behind = actions.check_migrations(cfg, aliases, migrate)
+    except actions.MigrationsPending as pending:
+        for item in pending.items:
+            if item.versions:
+                console.print("[yellow]" + _("⚠ {db} lacks {n} migrations of pdms-db-migrations ({first} … {last}).",
+                                             db=item.alias, n=len(item.versions), first=item.versions[0],
+                                             last=item.versions[-1])
+                              + (" " + _("{m} of them uncommitted.", m=len(item.uncommitted)) if item.uncommitted else "")
+                              + "[/]", highlight=False)
+            if item.changed:
+                console.print("[yellow]" + _("⚠ {n} migrations applied to {db} changed in your checkout since they ran "
+                                             "({versions}): Flyway refuses to migrate until flyway repair takes their "
+                                             "new checksums (the database keeps what they did then).",
+                                             n=len(item.changed), db=item.alias,
+                                             versions=", ".join(item.changed)) + "[/]", highlight=False)
+        if not interactive_terminal():
+            console.print("[dim]" + _("The services start on it as it is (pdms migrate migrate -d {db} applies them).",
+                                      db=pending.items[0].alias) + "[/]")
+            return
+        question = _("Repair the history and apply them now (flyway repair, then migrate)?") \
+            if any(item.changed for item in pending.items) else _("Apply them now (flyway migrate)?")
+        if not questionary.confirm(question, default=True).unsafe_ask():
+            return
+        behind = with_images(lambda: actions.check_migrations(cfg, aliases, True))
+    except actions.ActionError as exc:
+        fail(exc.message)
+    for item in behind:
+        console.rule(_("flyway migrate on {db}", db=item.alias))
+        try:
+            actions.apply_migrations(item)
+        except actions.ActionError as exc:
+            fail(exc.message)
+
+
 def python_answer(cfg: Config, services: list[Path], install: Optional[bool]) -> Optional[bool]:
     """Ask whether to recreate the virtualenvs that run a Python their project no longer accepts (see
     :func:`actions.check_pythons`): True or False, or None when there are none. Without a terminal they stay."""
@@ -202,6 +241,7 @@ def do_run(
     parallel: Optional[bool] = None,
     on_demand: Optional[bool] = None,
     python: Optional[bool] = None,
+    migrate: Optional[bool] = None,
 ) -> None:
     cfg = Config.load()
     service = resolve_service(cfg, service_name, path)
@@ -229,6 +269,7 @@ def do_run(
         _("Install"): install_label(cfg, install),
     })
     confirm_protected(cfg, prof, yes)
+    migrate_first(cfg, [prof.db_name], migrate)
     ensure_installed(cfg, launch.service, install, python)
 
     if not background:

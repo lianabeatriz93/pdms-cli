@@ -18,7 +18,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import IO
@@ -79,6 +79,15 @@ class PythonMismatch(Decision):
     def __init__(self, items: list[pythons.Mismatch]) -> None:
         super().__init__(", ".join(f"{item.service.name} ({pythons.show(item.have)}, wants {item.wants})"
                                    for item in items))
+        self.items = items
+
+
+class MigrationsPending(Decision):
+    """Local databases behind the migrations of pdms-db-migrations (answer: ``migrate=True`` applies them before the
+    services start, ``migrate=False`` starts them as they are)."""
+
+    def __init__(self, items: list[Unmigrated]) -> None:
+        super().__init__(", ".join(f"{item.alias}: {len(item.versions)}" for item in items))
         self.items = items
 
 
@@ -337,6 +346,109 @@ def plan_service(
 def install_wanted(cfg: Config, install: bool | None) -> bool:
     """Whether to install at all: True forces it, False skips it, None follows the settings."""
     return install is True or (install is None and cfg.defaults.install)
+
+
+@dataclass
+class Unmigrated:
+    """A local database Flyway manages (the local copy) without some migrations of the checkout: pending ones,
+    failed ones, and repeatable ones changed since they ran."""
+
+    alias: str
+    db: Database
+    repo: Path
+    versions: list[str]
+    changed: list[str] = field(default_factory=list)  # applied, but their file changed since: repair first
+    uncommitted: list[str] = field(default_factory=list)  # of ``versions``: work in progress, not committed
+
+    def describe(self) -> dict:
+        return {"db": self.alias, "count": len(self.versions), "first": self.versions[0] if self.versions else "",
+                "last": self.versions[-1] if self.versions else "", "changed": self.changed,
+                "uncommitted": len(self.uncommitted), "repo": str(self.repo)}
+
+
+def unmigrated(cfg: Config, alias: str, db: Database | None = None) -> Unmigrated | None:
+    """What of pdms-db-migrations the database ``alias`` (or ``db``, a test database) lacks. Only local databases
+    Flyway already manages: shared ones are migrated by the pipeline, and tables made another way would get every
+    migration run over them."""
+    db = db or cfg.dbs.get(alias)
+    if db is None or not migrations.is_local(db):
+        return None
+    try:
+        repo = current_migrations_repo(cfg)
+        known = migrations.status(repo, db, min(cfg.defaults.db_timeout, 10))
+    except Exception:  # noqa: BLE001 - no migrations repo, or the database does not answer: not a reason to stop
+        return None
+    if not known["flyway"]:
+        return None
+    return behind_of(alias, db, repo, known)
+
+
+def behind_of(alias: str, db: Database, repo: Path, known: dict) -> Unmigrated | None:
+    """The :class:`Unmigrated` of a :func:`migrations.status` (None when nothing is due)."""
+    due = [item for item in known["migrations"] if item["state"] in ("pending", "failed", "outdated")]
+    changed = [item["version"] for item in known["migrations"] if item["state"] == "changed"]
+    if not due and not changed:
+        return None
+    return Unmigrated(alias, db, repo, [item.get("version") or item["description"] for item in due], changed,
+                      [item.get("version") or item["description"] for item in due if item.get("uncommitted")])
+
+
+def check_migrations(cfg: Config, aliases: Iterable[str], migrate: bool | None) -> list[Unmigrated]:
+    """The databases to migrate before services start on them: :class:`MigrationsPending` for the user to answer
+    when ``migrate`` is None, the ones behind when True, none when False."""
+    if migrate is False:
+        return []
+    behind = [item for alias in dict.fromkeys(aliases) if alias and (item := unmigrated(cfg, alias))]
+    if behind and migrate is None:
+        raise MigrationsPending(behind)
+    if behind:
+        from . import images  # images imports this module
+
+        images.require([migrations.IMAGE])  # asked before anything starts
+    return behind
+
+
+MIGRATE_TIMEOUT = 3600
+# Schemas the real databases have and migrations write to (backups before a backfill), which no migration creates
+# and the local copy does not bring: empty, they let those migrations run locally.
+SUPPORT_SCHEMAS = ("backup_data",)
+
+
+def ensure_support_schemas(db: Database) -> None:
+    import psycopg
+    from psycopg import sql
+
+    try:
+        with psycopg.connect(host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password,
+                             connect_timeout=10, autocommit=True) as conn:
+            for schema in SUPPORT_SCHEMAS:
+                conn.execute(sql.SQL("create schema if not exists {}").format(sql.Identifier(schema)))
+    except Exception as exc:  # noqa: BLE001 - the driver's errors
+        raise ActionError(_("Could not prepare {name}: {error}", name=db.database, error=str(exc).strip()[:200])) from exc
+
+
+def apply_migrations(item: Unmigrated, output: IO[str] | None = None) -> None:
+    """``flyway migrate`` on a local database, with the image of the pipeline (output to ``output`` or the
+    terminal). Migrations whose file changed since they ran make Flyway refuse: ``flyway repair`` takes the
+    checkout's checksums first (the database keeps what those migrations did then)."""
+    from . import images  # images imports this module
+
+    if not migrations.is_local(item.db):
+        raise ActionError(_("{name} is not a local database: pdms only migrates local ones.", name=item.alias))
+    images.require([migrations.IMAGE])
+    ensure_support_schemas(item.db)
+    redirect = {"stdout": output, "stderr": subprocess.STDOUT} if output else {}
+    for command in (["repair"] if item.changed else []) + (["migrate"] if item.versions else []):
+        try:
+            code = subprocess.run(migrations.docker_command(item.repo, item.db, command), timeout=MIGRATE_TIMEOUT,
+                                  env={**os.environ, "DB_PASSWORD": item.db.password}, stdin=subprocess.DEVNULL,
+                                  **redirect).returncode
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ActionError(_("Flyway {command} could not run on {name}: {error}", command=command,
+                                name=item.alias, error=exc)) from exc
+        if code != 0:
+            raise ActionError(_("Flyway {command} failed on {name} (exit code {code}); the log says why.",
+                                command=command, name=item.alias, code=code))
 
 
 def check_pythons(cfg: Config, services: Iterable[Path], install: bool | None, python: bool | None) -> dict[Path, str]:

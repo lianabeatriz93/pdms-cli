@@ -277,6 +277,20 @@ Tests run with `DEVELOPMENT_MODE` off, as deployed (`--dev-mode` to turn it on).
 Flyway image and arguments from the `pdms-db-migrations` checkout found next to the repo (`--migrations PATH` for
 another), so only Docker is needed. pdms never downloads a Docker image without asking.
 
+**Migrations of the checkout.** Flyway applies the working tree of `pdms-db-migrations`, uncommitted files included,
+and pdms says which those are. On local databases only (never web-dev or a shared one):
+
+- `pdms db local refresh` copies the template, then asks before applying what your checkout has that the template
+  does not, and offers to prepare the test databases from the new copy.
+- `pdms db local prepare-tests` (Data → **Prepare from the local copy**) makes test databases copies of the local
+  copy, with its schema and Flyway history, and applies what they lack. The tests' own fixtures still drop and make
+  their tables again when they run.
+- Starting services (`pdms run`, `up`, `restart`, pdms ui) on a local database that lacks migrations asks whether to
+  apply them first. Data and `pdms doctor` show what each local database lacks, and migrations that changed in the
+  checkout after they ran: Flyway refuses those until `flyway repair` (Data → **Repair and apply**); for the local
+  copy, making it again is cleaner.
+- Migrations that write to `backup_data` find it: pdms creates it empty when a local database lacks it.
+
 ## AWS, events and emails
 
 ### AWS profile

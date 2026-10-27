@@ -390,12 +390,17 @@
   </div>
   <section class="card data-card" aria-labelledby="data-tests-title">
     <div class="panel-head"><h2 id="data-tests-title">Test databases</h2>
-      <label class="inline push">How many <select id="data-tests-count" aria-label="How many test databases">
-        <option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option>
-      </select></label></div>
-    <p class="muted note">Empty databases for <code>pdms test</code> and the Tests screen: the integration tests drop and create every table, so they never run anywhere else. One project at a time on each.</p>
+      <div class="bar-actions push">
+        <button class="btn small" id="data-tests-log" type="button" hidden>Logs</button>
+        <button class="btn small" id="data-tests-prepare" type="button" hidden>Prepare all from the local copy</button>
+        <label class="inline">How many <select id="data-tests-count" aria-label="How many test databases">
+          <option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option>
+        </select></label>
+      </div></div>
+    <p class="muted note">Databases for <code>pdms test</code> and the Tests screen: empty, or prepared from the local copy with the migrations of your checkout. The integration tests drop and create every table when they run, so they never run anywhere else. One project at a time on each.</p>
+    <p class="muted note" id="data-tests-job" hidden></p>
     <div class="tbl"><table>
-      <thead><tr><th>Database</th><th class="num">Size</th><th></th></tr></thead>
+      <thead><tr><th>Database</th><th class="num">Size</th><th>Migrations</th><th></th></tr></thead>
       <tbody id="data-tests"></tbody>
     </table><p class="empty" id="data-tests-empty" hidden>None yet: start pdms's Postgres.</p></div>
   </section>
@@ -1029,6 +1034,20 @@
     <div class="actions">
       <button class="btn ghost" value="no">Cancel</button>
       <button class="btn primary bad-fill" value="yes" id="confirm-yes">Delete</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="pending-dialog">
+  <form method="dialog">
+    <h2 id="pending-title">Apply the pending migrations first?</h2>
+    <p id="pending-text">The services start on a local database that lacks migrations of pdms-db-migrations (your checkout). pdms can apply them with Flyway first, with the image of the pipeline.</p>
+    <ul class="python-list" id="pending-list"></ul>
+    <p class="muted note" id="pending-repair-note" hidden>flyway repair takes the checksums of your checkout: the database keeps what those migrations did when they ran.</p>
+    <div class="actions">
+      <button class="btn ghost" value="cancel">Cancel</button>
+      <button class="btn" value="skip" id="pending-skip">Start without them</button>
+      <button class="btn primary" value="apply" id="pending-apply">Apply and start</button>
     </div>
   </form>
 </dialog>

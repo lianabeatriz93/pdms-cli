@@ -146,6 +146,21 @@ def recreate_test_database(name: str) -> None:
     psql(f'create database "{name}"')
 
 
+def copy_into_test_database(name: str, timeout: float = 600) -> None:
+    """Make test database ``name`` again as a copy of the local copy (its schema, Flyway's history and its little
+    data), inside the container: pg_dump | pg_restore, so the services using the copy keep their connections."""
+    if MAIN_DB not in databases():
+        raise actions.ActionError(_("There is no local copy yet: make it first (Data → Make the local copy, or pdms "
+                                    "db local refresh)."))
+    recreate_test_database(name)
+    code, out = _docker("exec", CONTAINER, "sh", "-c",
+                        f'pg_dump -U {USER} -Fc {MAIN_DB} | pg_restore -U {USER} --no-owner -d "{name}"',
+                        timeout=timeout)
+    if code not in (0, 1):  # 1: warnings (an extension that is there already)
+        raise actions.ActionError(_("Copying the local copy into {name} failed: {error}", name=name,
+                                    error=out.strip()[-300:] or code))
+
+
 def available(timeout: float = 15) -> bool:
     """Whether the container runs and answers (without starting it)."""
     try:

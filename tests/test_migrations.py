@@ -151,12 +151,13 @@ def test_files_follow_the_locations_of_flyway_toml(tmp_path) -> None:
 def test_status_compares_the_history_with_the_files(tmp_path, monkeypatch) -> None:
     repo = flyway_repo(tmp_path)
     view = next(f for f in migrations.files(repo) if f["kind"] == "repeatable")
+    canary = next(f for f in migrations.files(repo) if f["version"] == "2026.08.25.467.01")
     now = datetime(2026, 9, 30, 12, 0)
     rows = [
         {"version": "1", "description": "<< Flyway Baseline >>", "type": "BASELINE", "script": "", "checksum": None,
          "installed_on": now, "success": True},
-        {"version": "2026.08.25.467.01", "description": "create canary", "type": "SQL", "script": "x", "checksum": 1,
-         "installed_on": now, "success": True},
+        {"version": "2026.08.25.467.01", "description": "create canary", "type": "SQL", "script": "x",
+         "checksum": canary["checksum"], "installed_on": now, "success": True},
         {"version": "2026.09.01.474.01", "description": "backfill taxonomy", "type": "SQL", "script": "x", "checksum": 1,
          "installed_on": now, "success": False},
         {"version": "2026.07.01.100.01", "description": "from another branch", "type": "SQL", "script": "old.sql",
@@ -169,9 +170,12 @@ def test_status_compares_the_history_with_the_files(tmp_path, monkeypatch) -> No
     states = {(m["version"] or m["description"]): m["state"] for m in result["migrations"]}
     assert states == {"2026.07.01.100.01": "missing", "2026.08.25.467.01": "applied", "2026.09.01.474.01": "failed",
                       "2026.09.29.443.01": "pending", "report view": "outdated"}
-    assert result["counts"] == {"applied": 1, "pending": 1, "failed": 1, "outdated": 1, "missing": 1}
+    assert result["counts"] == {"applied": 1, "pending": 1, "failed": 1, "outdated": 1, "changed": 0, "missing": 1}
     assert result["flyway"] and result["table"] == "public.flyway_schema_history"
 
+    rows[1]["checksum"] = canary["checksum"] + 1  # its file changed after it ran: Flyway refuses until repair
+    assert {m["version"]: m["state"] for m in migrations.status(repo, Database("x"))["migrations"]}[
+        "2026.08.25.467.01"] == "changed"
     rows[-1]["checksum"] = view["checksum"]
     assert {m["description"]: m["state"] for m in migrations.status(repo, Database("x"))["migrations"]}["report view"] == "applied"
     monkeypatch.setattr(migrations, "history", lambda db, flyway, timeout: None)

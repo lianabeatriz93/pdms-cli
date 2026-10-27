@@ -20,6 +20,7 @@ from .run import (
     confirm_protected,
     ensure_installed,
     install_label,
+    migrate_first,
     print_summary,
     python_answer,
     recreations,
@@ -240,6 +241,7 @@ def up(
         _("Install"): install_label(cfg, install, each=True),
     }, show_service=False)
     confirm_protected(cfg, profile, yes)
+    migrate_first(cfg, [s.db_name for s in plan.services])
     paths = [s.service for s in plan.services]
     recreate = recreations(cfg, paths, install, python_answer(cfg, paths, install))
 

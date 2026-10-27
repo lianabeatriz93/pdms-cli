@@ -114,7 +114,7 @@ def test_the_data_screen_shows_the_copy_and_only_touches_test_databases(monkeypa
     info = ui_jobs.data_info(cfg)
     assert info["copy"]["alias"] == "pdms-local" and info["copy"]["size"] == 14 << 20
     assert [s["name"] for s in info["snapshots"]] == ["fresh"]
-    assert info["tests"] == [{"name": "pdms_test_1", "size": 7 << 20}]
+    assert info["tests"] == [{"name": "pdms_test_1", "size": 7 << 20, "migrations": None}]  # no migrations repo here
     assert [d["name"] for d in info["dbs"] if d["copy"]] == ["pdms-local"]
     dropped = []
     monkeypatch.setattr(localdb, "psql", lambda sql, db="postgres", timeout=120: dropped.append(sql) or "")
