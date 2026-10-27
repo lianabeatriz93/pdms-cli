@@ -104,6 +104,6 @@ def test_two_services_woken_together_get_their_own_ports(cfg, monkeypatch, tmp_p
     for thread in threads:
         thread.join()
     assert not errors
-    assert sorted((inst.service.rsplit("/", 1)[-1], inst.port) for inst in woke) == [
+    assert sorted((Path(inst.service).name, inst.port) for inst in woke) == [
         ("lead-place-get", 28101), ("trip-type-list", 28100)]
     assert sorted(instances.load()) == ["lead-place-get@28101", "trip-type-list@28100"]
