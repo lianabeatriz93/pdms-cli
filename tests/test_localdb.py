@@ -76,6 +76,11 @@ def test_test_databases_are_created_up_to_a_count_and_only_they_can_be_dropped(d
     assert localdb.databases()["pdms"] == 7600000
 
 
+def test_only_pdms_own_test_databases_are_listed() -> None:
+    found = {"pdms": 1, "pdms_test_2": 1, "pdms_test_10": 1, "pdms_test_1": 1, "pdms_test_576_backend": 1}
+    assert localdb.test_databases(found) == ["pdms_test_1", "pdms_test_2", "pdms_test_10"]  # not a project's own
+
+
 def test_without_docker_it_says_so(monkeypatch) -> None:
     monkeypatch.setattr(localdb.events, "docker_available", lambda: (False, "permission denied"))
     with pytest.raises(actions.ActionError, match="Docker is not available: permission denied"):

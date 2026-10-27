@@ -112,9 +112,10 @@ def databases() -> dict[str, int]:
 
 
 def test_databases(found: dict[str, int] | None = None) -> list[str]:
-    """The test databases there are, in order (pdms_test_1, pdms_test_2, …)."""
-    names = [n for n in (found if found is not None else databases()) if n.startswith(TEST_PREFIX)]
-    return sorted(names, key=lambda n: int(n[len(TEST_PREFIX):]) if n[len(TEST_PREFIX):].isdigit() else 10**6)
+    """The test databases there are, in order (pdms_test_1, pdms_test_2, …): not others that only start the same,
+    such as one a project's own tests made (pdms_test_576_backend)."""
+    names = [n for n in (found if found is not None else databases()) if is_test_database(n)]
+    return sorted(names, key=lambda n: int(n[len(TEST_PREFIX):]))
 
 
 def is_test_database(name: str) -> bool:
