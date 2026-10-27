@@ -772,6 +772,9 @@ def make_handler(
             if verb == "drop":
                 return 200, actions.drop_test_view(cfg, view, _body_text(body, "name"),
                                                    confirmed=body.get("confirmed") is True)
+            if verb == "refresh":
+                return 200, actions.refresh_test_view(cfg, view, _body_text(body, "name"),
+                                                      confirmed=body.get("confirmed") is True)
             return 404, {"error": "not found"}
 
         def act_on_repo(self, name: str, verb: str, body: dict) -> tuple[int, dict]:

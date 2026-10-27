@@ -111,6 +111,11 @@ def drop_sql(name: str) -> str:
     return f"DROP MATERIALIZED VIEW IF EXISTS {SCHEMA}.{name};  -- {_('its indexes go with it')}"
 
 
+def refresh_sql(name: str) -> str:
+    """Recompute a copy's data: it is a snapshot of when it was made, and nothing refreshes it but this."""
+    return f"REFRESH MATERIALIZED VIEW {SCHEMA}.{name};"
+
+
 # --------------------------------------------------------------------------- which services read which view
 
 TABLES_FILE = Path("orm") / "tables.py"

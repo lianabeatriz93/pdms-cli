@@ -304,9 +304,12 @@ Test views and `pdms doctor` point to the copy left over, with its `DROP`.
 
 ```bash
 pdms view                                # the views you changed and their test copies
+pdms view refresh pdms_report_lead_view  # today's data in the copy (a snapshot of when it was made)
 pdms view drop pdms_report_lead_view     # back to the real view; the copy goes (or you get the DROP to run)
 pdms view create / use / stop / sql      # the same steps by hand
 ```
+
+Refreshing or dropping a copy takes its owner: made from a database client as another user, pdms gives you the SQL.
 
 ## AWS, events and emails
 

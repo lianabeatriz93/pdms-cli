@@ -273,3 +273,22 @@ def test_a_copy_is_always_made_with_its_data(repo) -> None:
                     encoding="utf-8")
     _made, sql = testviews.test_sql(repo, "pdms_report_document_view", "_pdmp627")
     assert "WITH NO DATA" not in sql and "WITH DATA" in sql
+
+
+def test_refreshing_the_data_is_for_its_owner_or_you_get_the_sql(cfg, monkeypatch) -> None:
+    ran = []
+    owner = {"pdms_report_document_view_pdmp627": "root"}
+    monkeypatch.setattr(testviews, "existing", lambda db, names, timeout=20: {n: owner[n] for n in names if n in owner})
+    monkeypatch.setattr(testviews, "run", lambda db, sql, timeout=20: ran.append(sql))
+    result = actions.refresh_test_view(cfg, "pdms_report_document_view", "pdms_report_document_view_pdmp627")
+    assert result == {"refreshed": False, "name": "pdms_report_document_view_pdmp627",
+                      "sql": "REFRESH MATERIALIZED VIEW public.pdms_report_document_view_pdmp627;"} and ran == []
+    cfg.dbs["web-dev"].user = "root"  # the copy is the user's own
+    with pytest.raises(actions.ProtectedDatabase):
+        actions.refresh_test_view(cfg, "pdms_report_document_view", "pdms_report_document_view_pdmp627")
+    assert actions.refresh_test_view(cfg, "pdms_report_document_view", "pdms_report_document_view_pdmp627",
+                                     confirmed=True)["refreshed"]
+    assert ran == ["REFRESH MATERIALIZED VIEW public.pdms_report_document_view_pdmp627;"]
+    owner.clear()
+    with pytest.raises(actions.ActionError, match="is not in web-dev"):
+        actions.refresh_test_view(cfg, "pdms_report_document_view", "pdms_report_document_view_pdmp627")
