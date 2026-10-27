@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import socket
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit
@@ -16,6 +17,8 @@ from typer.testing import CliRunner
 
 from pdms_cli import __version__, cli, update
 from pdms_cli.commands import ui as ui_commands
+from pdms_cli.ui import control as ui_control
+from pdms_cli.ui import instance as ui_instance
 from pdms_cli.ui import window as ui_window
 from pdms_cli.ui.control import Control
 
@@ -81,8 +84,50 @@ def test_a_window_that_cannot_open_says_so(monkeypatch, tmp_path) -> None:
         raise RuntimeError("qt.qpa.plugin: Could not load the Qt platform plugin \"xcb\"")
 
     monkeypatch.setattr(ui_window, "open_window", broken)
+    controls, opened = [], []
+    attach = ui_control.Control.attach
+
+    def remember(self, show, close) -> None:
+        controls.append(self)
+        attach(self, show, close)
+
+    def browser(url: str) -> bool:  # the page opens; then the tray's Quit
+        opened.append(url)
+        threading.Timer(0.2, lambda: controls[-1]._close()).start()
+        return True
+
+    monkeypatch.setattr(ui_control.Control, "attach", remember)
+    monkeypatch.setattr(ui_commands.desktop, "open_url", browser)
     result = CliRunner().invoke(cli.app, ["ui", "--window", "--port", str(free_port())])
-    assert result.exit_code == 1 and "Could not open the window" in result.output and "xcb" in result.output
+    assert result.exit_code == 0, result.output
+    assert "Could not open the window" in result.output and "xcb" in result.output
+    assert len(opened) == 1 and "token=" in opened[0]  # it went on in the browser instead of stopping
+
+
+def test_from_the_app_menu_a_failed_pywebview_install_opens_the_browser(monkeypatch, tmp_path) -> None:
+    """No terminal to read: rather than not opening at all, pdms ui opens in the browser."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setattr(ui_window, "available", lambda: False)
+    monkeypatch.setattr(ui_window, "installs_itself", lambda: True)
+    monkeypatch.setattr(ui_window, "install_desktop", lambda: (_ for _ in ()).throw(RuntimeError("no wheel for 3.14")))
+    monkeypatch.setattr(ui_commands.desktop, "notify", lambda title, message: None)
+    monkeypatch.setattr(ui_instance, "redirect_output", lambda: tmp_path / "ui.log")  # keep pytest's output
+    monkeypatch.setattr("pdms_cli.shellenv.adopt_in_background", lambda: set())
+    controls, opened = [], []
+    attach = ui_control.Control.attach
+
+    def remember(self, show, close) -> None:
+        controls.append(self)
+        attach(self, show, close)
+
+    monkeypatch.setattr(ui_control.Control, "attach", remember)
+    monkeypatch.setattr(ui_commands.desktop, "open_url", lambda url: opened.append(url) or threading.Timer(
+        0.2, lambda: controls[-1]._close()).start() or True)
+    result = CliRunner().invoke(cli.app, ["ui", "--window", "--port", str(free_port())])
+    assert result.exit_code == 1 and "no wheel for 3.14" in result.output  # in a terminal: it says so and stops
+    result = CliRunner().invoke(cli.app, ["ui", "--window", "--detached", "--port", str(free_port())])
+    assert result.exit_code == 0, result.output
+    assert len(opened) == 1
 
 
 def test_windows_and_macos_install_pywebview_by_themselves(monkeypatch) -> None:
@@ -232,3 +277,18 @@ def test_without_a_tray_closing_the_window_stops_pdms_ui(monkeypatch) -> None:
     ui_window.open_window("http://127.0.0.1:1/", Control(""), hidden=True)
     assert calls["window"][1]["hidden"] is False  # nothing to bring it back from
     assert window.events.closing.set() is False and window.calls == []
+
+
+def test_pdmsw_without_a_console_still_starts(monkeypatch) -> None:
+    """pdmsw.exe (the Start menu's) has no console: Python gives it no stdin, and checking for a terminal on None
+    stopped pdms ui before it began (AttributeError: 'NoneType' object has no attribute 'isatty')."""
+    from pdms_cli import launcher
+    from pdms_cli.commands.common import interactive_terminal
+
+    ran = []
+    monkeypatch.setattr(sys, "stdin", None)
+    monkeypatch.setattr("pdms_cli.cli._entrypoint", lambda: ran.append(interactive_terminal()))
+    launcher.main()
+    assert ran == [False] and sys.stdin is not None and not sys.stdin.isatty()
+    monkeypatch.setattr(sys, "stdin", None)
+    assert interactive_terminal() is False
