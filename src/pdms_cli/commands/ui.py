@@ -57,11 +57,6 @@ def ui_cmd(
         if changed := shellenv.adopt_in_background():
             console.print(f"[dim]From the shell's environment: {', '.join(sorted(changed))}[/]", highlight=False)
 
-    def stop_with(message: str) -> None:
-        if detached:
-            desktop.notify("pdms", Text.from_markup(message).plain)
-        fail(message)
-
     token = os.environ.pop(ui_instance.TOKEN_ENV, "")  # restarting after an update: the same token
     if not token and (existing := ui_instance.running()):
         if ui_instance.show(existing):
@@ -72,11 +67,15 @@ def ui_cmd(
         console.print(_("The window needs pywebview; installing it (only this once)..."))
         try:
             ui_window.install_desktop()
+            console.print("[green]✓[/] " + _("pywebview installed."))
         except RuntimeError as exc:
-            stop_with(_("Could not install pywebview ({error}). Install it with:\n  {command}\n"
+            message = _("Could not install pywebview ({error}). Install it with:\n  {command}\n"
                         "or use pdms ui to open it in the browser.", error=escape(str(exc)),
-                        command=escape(ui_window.install_command())))
-        console.print("[green]✓[/] " + _("pywebview installed."))
+                        command=escape(ui_window.install_command()))
+            if not detached:
+                fail(message)
+            # Opened from the app menu: nobody reads a terminal, so it opens in the browser rather than not at all.
+            console.print(message)
     if window and not ui_window.available():
         message = _("The window needs pywebview, which comes with the desktop extra. Install it with:\n  {command}\n"
                     "or use pdms ui to open it in the browser.", command=escape(ui_window.install_command()))
@@ -124,9 +123,11 @@ def ui_cmd(
             except KeyboardInterrupt:
                 pass
             except Exception as exc:  # noqa: BLE001 - a missing system library of the GUI toolkit, no display...
-                server.shutdown()
-                stop_with(_("Could not open the window: {error}. pdms ui opens it in the browser.",
-                            error=escape(str(exc))))
+                message = _("Could not open the window: {error}. pdms ui opens it in the browser.", error=escape(str(exc)))
+                console.print(f"[yellow]{message}[/]")
+                if detached:
+                    desktop.notify("pdms", Text.from_markup(message).plain)
+                in_browser(server, thread, control, url, port, token, show=not hidden)
             server.shutdown()
             thread.join(5)
         else:
@@ -145,6 +146,22 @@ def ui_cmd(
     if control.restart:
         restart_ui(control)
     console.print(f"[dim]{_('pdms ui stopped.')}[/]")
+
+
+def in_browser(server, thread: threading.Thread, control: Control, url: str, port: int, token: str,
+               show: bool) -> None:
+    """The window could not open: pdms ui keeps running, in the browser, until it is asked to stop."""
+    from ..ui import instance as ui_instance
+
+    ui_instance.remember(port, token, False)  # a second pdms ui opens the browser to show it
+    control.attach(None, lambda: threading.Thread(target=server.shutdown, daemon=True).start())
+    if show and not desktop.open_url(url):
+        console.print(_("[yellow]Could not open a browser; open the URL manually.[/]"))
+    try:
+        while thread.is_alive():
+            thread.join(1)
+    except KeyboardInterrupt:
+        console.print()
 
 
 def restart_ui(control: Control) -> None:
