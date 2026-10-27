@@ -18,7 +18,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -254,12 +256,71 @@ def load() -> dict[str, Instance]:
     return {k: Instance(**v) for k, v in data.items()}
 
 
+_registry_thread_lock = threading.RLock()
+_registry_depth = 0  # how deep the thread holding _registry_thread_lock is in registry_lock
+
+
+def _lock_file(handle) -> None:
+    if WINDOWS:
+        import msvcrt
+
+        handle.seek(0)  # it locks from the current position: always the first byte
+        while True:
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)  # retries for ~10 s itself
+                return
+            except OSError:
+                continue
+    import fcntl
+
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+
+
+def _unlock_file(handle) -> None:
+    if WINDOWS:
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl
+
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def registry_lock() -> Iterator[None]:
+    """One change of the registry at a time: each reads it, changes it and writes it back, and the proxy (waking
+    services, one thread each), pdms ui and the CLI do it at once. Without this, two at the same time lost one of the
+    changes: two services woken together ended up on the same port. Re-entrant within a thread."""
+    global _registry_depth
+    with _registry_thread_lock:
+        if _registry_depth:
+            _registry_depth += 1
+            try:
+                yield
+            finally:
+                _registry_depth -= 1
+            return
+        path = registry_path().with_name("instances.lock")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a+b") as handle:
+            _lock_file(handle)
+            _registry_depth = 1
+            try:
+                yield
+            finally:
+                _registry_depth = 0
+                _unlock_file(handle)
+
+
 def save(instances: dict[str, Instance]) -> None:
     """Replace the registry in one step: pdms ui reads it every couple of seconds while the CLI writes it, and a
-    half-written file would read as empty (the next save would then forget every instance)."""
+    half-written file would read as empty (the next save would then forget every instance). Changes go through
+    :func:`registry_lock`."""
     path = registry_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     temporary.write_text(json.dumps({k: asdict(v) for k, v in instances.items()}, indent=2), encoding="utf-8")
     for attempt in range(40):
         try:
@@ -316,9 +377,10 @@ def start(
         created=creation_time(proc.pid), deps=deps or {}, events=events, queue=queue,
         parallel=parallel, commit=commit, on_demand=on_demand,
     )
-    instances = load()
-    instances[key] = instance
-    save(instances)
+    with registry_lock():
+        instances = load()
+        instances[key] = instance
+        save(instances)
     return instance
 
 
@@ -332,31 +394,34 @@ def register_asleep(
         key=key, pid=0, service=str(service), host=host, port=port, user=user, db=db, reload=reload,
         log=str(log_path(key)), started_at="", events=events, parallel=parallel, on_demand=True,
     )
-    registry = load()
-    registry[key] = instance
-    save(registry)
+    with registry_lock():
+        registry = load()
+        registry[key] = instance
+        save(registry)
     return instance
 
 
 def sleep(instance: Instance, timeout: float = 10) -> Instance:
     """Stop an on-demand instance and keep it registered, asleep, until a request wakes it again."""
     kill_tree(instance.pid, instance.created, timeout)
-    registry = load()
-    current = registry.get(instance.key)
-    if current is None or current.pid != instance.pid:  # stopped or restarted meanwhile: not ours to change
-        return current or instance
-    current.pid, current.created, current.started_at, current.on_demand = 0, 0.0, "", True
-    save(registry)
+    with registry_lock():
+        registry = load()
+        current = registry.get(instance.key)
+        if current is None or current.pid != instance.pid:  # stopped or restarted meanwhile: not ours to change
+            return current or instance
+        current.pid, current.created, current.started_at, current.on_demand = 0, 0.0, "", True
+        save(registry)
     return current
 
 
 def set_on_demand(key: str, on: bool) -> Instance | None:
     """Mark a registered instance on demand or always on (it keeps running as it is); None when it is not there."""
-    registry = load()
-    instance = registry.get(key)
-    if instance is not None:
-        instance.on_demand = on
-        save(registry)
+    with registry_lock():
+        registry = load()
+        instance = registry.get(key)
+        if instance is not None:
+            instance.on_demand = on
+            save(registry)
     return instance
 
 
@@ -367,9 +432,10 @@ def stop(instance: Instance, timeout: float = 10) -> None:
 
 
 def forget(key: str) -> None:
-    instances = load()
-    if instances.pop(key, None):
-        save(instances)
+    with registry_lock():
+        instances = load()
+        if instances.pop(key, None):
+            save(instances)
 
 
 def tail(path: str, lines: int = 20) -> str:
@@ -576,9 +642,10 @@ def adopt(stray: Stray, *, user: str, db: str) -> Instance:
         reload=stray.reload, log=log, started_at=stray.started_at, created=stray.created,
         events="local" if "PDMS_SQS_ENDPOINT" in stray.env else "aws", queue=stray.queue,
     )
-    registry = load()
-    registry[stray.key] = instance
-    save(registry)
+    with registry_lock():
+        registry = load()
+        registry[stray.key] = instance
+        save(registry)
     return instance
 
 
