@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import sys
 import threading
-import webbrowser
 from dataclasses import replace
 from typing import TYPE_CHECKING, Optional
 
@@ -13,7 +12,7 @@ import typer
 from rich.markup import escape
 from rich.text import Text
 
-from .. import actions, desktop, instances, repos
+from .. import actions, desktop, instances, repos, wsl
 from .. import browser as extension
 from ..config import Config
 from ..i18n import _
@@ -41,6 +40,9 @@ def ui_cmd(
     if install or uninstall or at_login is not None:
         ui_setup(install, uninstall, at_login)
         return
+    if window and wsl.detected():
+        console.print(_("[dim]Inside WSL pdms ui opens in your Windows browser: the window needs a Linux desktop.[/]"))
+        window = False
     from ..ui import control as ui_control
     from ..ui import instance as ui_instance
     from ..ui import server as ui_server
@@ -130,7 +132,7 @@ def ui_cmd(
         else:
             control.attach(None, lambda: threading.Thread(target=server.shutdown, daemon=True).start())
             console.print(_("[dim]Only this machine can open it, and only with this link. Ctrl+C to stop it.[/]"))
-            if browser and not webbrowser.open(url):
+            if browser and not desktop.open_url(url):
                 console.print(_("[yellow]Could not open a browser; open the URL manually.[/]"))
             try:
                 ui_server.serve(server, hub)
@@ -161,6 +163,9 @@ def ui_setup(install: bool, uninstall: bool, at_login: Optional[bool]) -> None:
     from ..ui import window as ui_window
 
     cfg = Config.load()
+    if wsl.detected() and (install or at_login):
+        fail(_("Inside WSL pdms has no app menu nor tray in Windows: open pdms ui from the terminal, and it opens in "
+               "your Windows browser."))
     if uninstall:
         removed = desktop.uninstall()
         if cfg.defaults.ui_at_login:

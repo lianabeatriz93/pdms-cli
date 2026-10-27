@@ -32,6 +32,17 @@ STATIC = resources.files("pdms_cli.ui") / "static"
 # --------------------------------------------------------------------------- what the entries run
 
 
+def open_url(url: str) -> bool:
+    """Open ``url`` in the browser; inside WSL, in the Windows one (see :mod:`wsl`)."""
+    from . import wsl
+
+    if wsl.detected():
+        return wsl.open_url(url)
+    import webbrowser
+
+    return webbrowser.open(url)
+
+
 def pdms_executable(gui: bool = False) -> Path:
     """This ``pdms`` (``pdmsw`` on Windows when ``gui``: no console window), else the one on the PATH."""
     running = Path(sys.argv[0])

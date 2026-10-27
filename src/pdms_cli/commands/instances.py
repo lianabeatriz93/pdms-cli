@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +11,7 @@ import questionary
 import typer
 from rich.table import Table
 
-from .. import actions, completion, emails, events, frontend, installer, instances, logview, prompts, proxy, repos
+from .. import actions, completion, desktop, emails, events, frontend, installer, instances, logview, prompts, proxy, repos
 from ..config import Config
 from ..i18n import _
 from .common import app, console, fail, pick, print_endpoints, print_restored, settle, show_menu
@@ -381,7 +380,7 @@ def open_cmd(
         fail(_("{key} is an event consumer: it has no web page. See its logs: pdms logs {key}", key=inst.key))
     url = f"http://localhost:{inst.port}/{path.lstrip('/')}"
     console.print(_("Opening {url}", url=url))
-    if not webbrowser.open(url):
+    if not desktop.open_url(url):
         console.print(_("[yellow]Could not open a browser; open the URL manually.[/]"))
 
 

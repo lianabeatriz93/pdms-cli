@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import threading
-import webbrowser
 from collections.abc import Callable
+
+from .. import desktop
 
 
 class Control:
@@ -35,7 +36,7 @@ class Control:
             self.open_browser()
 
     def open_browser(self) -> None:
-        webbrowser.open(self.url)
+        desktop.open_url(self.url)
 
     def quit(self, restart: bool = False) -> None:
         self.restart = restart

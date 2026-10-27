@@ -216,7 +216,9 @@ pdms front -b --build      # a production build (yarn build) served with vite pr
 ```
 
 It checks Node and yarn and runs `yarn install` when `node_modules` is out of date. The `@alivi` packages come from
-AWS CodeArtifact: if they fail to download, run `./codeartifact-login.sh` in `frontend/`. A build keeps the API URL it
+AWS CodeArtifact, with a token that lasts 12 hours: when npm no longer accepts it, pdms logs in by itself before
+`yarn install`, with a profile of the account `frontend/codeartifact-login.sh` names (`pdms aws codeartifact` does
+it by hand). A build keeps the API URL it
 was made with, so pdms builds again only when that, `yarn.lock` or the code changed.
 
 ### Opening the local frontend from the known front
@@ -332,6 +334,15 @@ Adds a configuration to the repo's `.vscode/launch.json` (the service's Python, 
 The variables go to an env file in pdms's state folder (permissions `0600`), never into `launch.json`. Breakpoints in
 `common/` go in the copy under `.venv/lib/python3.*/site-packages/`. In pdms ui, **Debug** does all of this and opens
 VS Code. `pdms env -u supervisor -d local` prints the variables (`eval "$(pdms env …)"`, `--dotenv`).
+
+## WSL
+
+Inside WSL pdms runs as on Linux (keep the repos in the Linux home: on `/mnt/c` Poetry, yarn and `--reload` are much
+slower), and what reaches the desktop goes to Windows: `pdms ui` and `pdms open` open the Windows browser, and
+`pdms browser install` finds the Windows browsers and writes the extension to a folder they can open
+(`AppData\Local\pdms`). WSL2 forwards `127.0.0.1`, so pdms ui, the proxy and the web app answer as usual. The web
+app's certificate (mkcert) is trusted inside WSL only: `pdms browser trust` adds it to Windows. `pdms doctor` has a
+WSL section; `pdms ui --window`, `--install` and `--at-login` need a Windows desktop, so they say so.
 
 ## Configuration
 

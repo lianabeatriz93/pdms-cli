@@ -47,7 +47,7 @@ def test_without_pywebview_it_says_how_to_add_it(monkeypatch) -> None:
 def test_the_window_shows_the_page_and_closing_it_stops_the_server(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     monkeypatch.setattr(ui_window, "available", lambda: True)
-    monkeypatch.setattr(ui_commands.webbrowser, "open", lambda url: (_ for _ in ()).throw(AssertionError("no browser")))
+    monkeypatch.setattr(ui_commands.desktop, "open_url", lambda url: (_ for _ in ()).throw(AssertionError("no browser")))
     seen = {}
 
     def open_window(url: str, control, hidden: bool = False) -> None:  # what the webview does: follow the link, keep the cookie, load the page

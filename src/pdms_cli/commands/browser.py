@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import subprocess
 from typing import Optional
 
 import questionary
 import typer
 from rich.markup import escape
 
-from .. import actions, browser
+from .. import actions, browser, wsl
 from ..config import Config
 from ..i18n import _
 from .common import app, console, fail, interactive_terminal, settle
@@ -63,19 +64,19 @@ def browser_install(
                 questionary.Choice(item.name, item.key) for item in found]).unsafe_ask()
     chosen, folder, opened = settle(lambda: actions.install_extension(str(name)))
     if chosen.key == "firefox":
-        console.print("[green]✓[/] " + _("Signed extension: {file}", file=escape(str(folder))), highlight=False)
+        console.print("[green]✓[/] " + _("Signed extension: {file}", file=escape(browser.shown(folder))), highlight=False)
         if opened:
             console.print("  " + _("Firefox asks whether to add pdms front redirect: click Add."))
         else:
-            console.print("[yellow]" + _("Could not open Firefox: open {file} in it.", file=escape(str(folder))) + "[/]",
+            console.print("[yellow]" + _("Could not open Firefox: open {file} in it.", file=escape(browser.shown(folder))) + "[/]",
                           highlight=False)
         console.print("  " + _("Then turn the redirect on (pdms browser redirect on, or the Frontend tile of pdms ui)."))
         return
-    console.print("[green]✓[/] " + _("Extension written to {folder}", folder=escape(str(folder))), highlight=False)
+    console.print("[green]✓[/] " + _("Extension written to {folder}", folder=escape(browser.shown(folder))), highlight=False)
     if not opened:
         console.print("[yellow]" + _("Could not open {name}: open {page} in it.", name=chosen.name, page=chosen.page)
                       + "[/]", highlight=False)
-    for number, step in enumerate(steps(chosen, str(folder)), 1):
+    for number, step in enumerate(steps(chosen, browser.shown(folder)), 1):
         console.print(f"  {number}. {step}", highlight=False, soft_wrap=True)
 
 
@@ -108,3 +109,22 @@ def browser_redirect(
                                           hosts=", ".join(cfg.defaults.front_redirect_hosts)), highlight=False)
     else:
         console.print("[green]✓[/] " + _("The known front opens as always (within half a minute)."))
+
+
+@browser_app.command("trust", help=_(
+    "Inside WSL: make Windows trust the certificate of the web app (https://localhost:3000), so its browsers do not "
+    "warn about it."))
+def browser_trust() -> None:
+    if not wsl.detected():
+        fail(_("Only inside WSL: elsewhere the web app's certificate is trusted where it was made."))
+    state, ca = wsl.certificate()
+    if state == "ok":
+        console.print("[green]✓[/] " + _("Windows already trusts it."))
+        return
+    if not ca:
+        fail(_("No certificate yet: start the web app once (pdms front) and try again."))
+    console.print(_("Windows asks to confirm adding {path} to your trusted certificates: say yes.", path=escape(ca)),
+                  highlight=False)
+    if subprocess.run(wsl.trust_command()).returncode != 0 or wsl.certificate()[0] != "ok":
+        fail(_("Windows did not add it."))
+    console.print("[green]✓[/] " + _("Windows trusts the web app's certificate: reload the page in the browser."))

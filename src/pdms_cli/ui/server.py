@@ -667,7 +667,7 @@ def make_handler(
 
             if path == "/api/browser/install":
                 found, folder, opened = actions.install_extension(_body_text(body, "browser"))
-                return 200, {"name": found.name, "page": found.page, "folder": str(folder), "opened": opened}
+                return 200, {"name": found.name, "page": found.page, "folder": browser.shown(folder), "opened": opened}
             if path == "/api/browser/redirect":
                 if not isinstance(body.get("on"), bool):
                     raise actions.ActionError("on must be true or false")

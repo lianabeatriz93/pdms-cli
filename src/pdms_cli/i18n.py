@@ -1117,8 +1117,6 @@ ES: dict[str, str] = {
         "yarn build ({reason})",
     "yarn build failed: {error}":
         "yarn build falló: {error}",
-    "yarn install could not download the @alivi packages from AWS CodeArtifact. Log in with ./codeartifact-login.sh (in frontend/) and try again.":
-        "yarn install no pudo descargar los paquetes @alivi de AWS CodeArtifact. Inicia sesión con ./codeartifact-login.sh (en frontend/) y vuelve a intentarlo.",
     "yarn install failed: {error}":
         "yarn install falló: {error}",
     "yarn was not found. Install it with: npm install -g yarn":
@@ -1564,4 +1562,62 @@ ES: dict[str, str] = {
         "{version} ({program}) para {spec}",
     "⚠ The virtualenv of these services runs a Python their project no longer accepts:":
         "⚠ El virtualenv de estos servicios usa un Python que su proyecto ya no acepta:",
+    "Browsers of Windows":
+        "Navegadores de Windows",
+    "Certificate of the web app":
+        "Certificado de la app web",
+    "Clone it in your Linux home (~/...) and add it again (pdms repo add).":
+        "Clónalo en tu home de Linux (~/...) y vuelve a añadirlo (pdms repo add).",
+    "Could not log in to AWS CodeArtifact: {error}":
+        "No se pudo iniciar sesión en AWS CodeArtifact: {error}",
+    "Inside WSL pdms has no app menu nor tray in Windows: open pdms ui from the terminal, and it opens in your Windows browser.":
+        "Dentro de WSL pdms no tiene menú de aplicaciones ni bandeja en Windows: abre pdms ui desde la terminal y se abrirá en tu navegador de Windows.",
+    "Inside WSL: make Windows trust the certificate of the web app (https://localhost:3000), so its browsers do not warn about it.":
+        "Dentro de WSL: hace que Windows confíe en el certificado de la app web (https://localhost:3000), para que sus navegadores no avisen.",
+    "Log in to AWS CodeArtifact for the web app's @alivi packages, as frontend/codeartifact-login.sh does (pdms front does it by itself when the token is over).":
+        "Inicia sesión en AWS CodeArtifact para los paquetes @alivi de la app web, como frontend/codeartifact-login.sh (pdms front lo hace solo cuando el token caduca).",
+    "Logged in to AWS CodeArtifact with {profiles}: the token lasts 12 hours.":
+        "Sesión iniciada en AWS CodeArtifact con {profiles}: el token dura 12 horas.",
+    "No certificate yet: start the web app once (pdms front) and try again.":
+        "Aún no hay certificado: arranca la app web una vez (pdms front) e inténtalo de nuevo.",
+    "No profile of AWS account {account} in {path} to log in to CodeArtifact. Add one with aws configure sso (role {role}).":
+        "No hay un perfil de la cuenta de AWS {account} en {path} para iniciar sesión en CodeArtifact. Añade uno con aws configure sso (rol {role}).",
+    "Only inside WSL: elsewhere the web app's certificate is trusted where it was made.":
+        "Solo dentro de WSL: en otros sitios el certificado de la app web es de confianza donde se creó.",
+    "Repo {name}":
+        "Repo {name}",
+    "The AWS CLI (aws) is not installed: pdms needs it to log in to AWS CodeArtifact.":
+        "El AWS CLI (aws) no está instalado: pdms lo necesita para iniciar sesión en AWS CodeArtifact.",
+    "The AWS session of {profile} is over: log in with aws sso login --profile {profile} (or from Data in pdms ui) and install the frontend again.":
+        "La sesión de AWS de {profile} ha caducado: inicia sesión con aws sso login --profile {profile} (o desde Datos en pdms ui) e instala el frontend de nuevo.",
+    "The AWS session of {profile} is over; logging in (aws sso login)...":
+        "La sesión de AWS de {profile} ha caducado; iniciando sesión (aws sso login)...",
+    "The {namespace} packages need a new AWS CodeArtifact token; logging in...":
+        "Los paquetes {namespace} necesitan un token nuevo de AWS CodeArtifact; iniciando sesión...",
+    "Trust it in Windows: pdms browser trust":
+        "Haz que Windows confíe en él: pdms browser trust",
+    "Windows already trusts it.":
+        "Windows ya confía en él.",
+    "Windows asks to confirm adding {path} to your trusted certificates: say yes.":
+        "Windows pedirá confirmar que añades {path} a tus certificados de confianza: di que sí.",
+    "Windows did not add it.":
+        "Windows no lo añadió.",
+    "Windows does not trust it, so its browsers warn about https://localhost:3000 ({path})":
+        "Windows no confía en él, así que sus navegadores avisan en https://localhost:3000 ({path})",
+    "Windows trusts the web app's certificate: reload the page in the browser.":
+        "Windows confía en el certificado de la app web: recarga la página en el navegador.",
+    "[dim]Inside WSL pdms ui opens in your Windows browser: the window needs a Linux desktop.[/]":
+        "[dim]Dentro de WSL pdms ui se abre en tu navegador de Windows: la ventana necesita un escritorio Linux.[/]",
+    "none found for the pdms extension":
+        "no se encontró ninguno para la extensión de pdms",
+    "on a Windows drive ({path}): Poetry, yarn and --reload are much slower there":
+        "en una unidad de Windows ({path}): Poetry, yarn y --reload van mucho más lentos ahí",
+    "trusted by Windows":
+        "Windows confía en él",
+    "yarn install could not download the {packages} packages from AWS CodeArtifact, even after logging in: check the profile has the {role} role.":
+        "yarn install no pudo descargar los paquetes {packages} de AWS CodeArtifact, ni siquiera tras iniciar sesión: comprueba que el perfil tiene el rol {role}.",
+    "{distro}: pdms opens the browser of Windows":
+        "{distro}: pdms abre el navegador de Windows",
+    "{path} not found: this repo's web app does not use AWS CodeArtifact.":
+        "No se encontró {path}: la app web de este repo no usa AWS CodeArtifact.",
 }
