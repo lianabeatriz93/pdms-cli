@@ -1982,8 +1982,8 @@ def create_test_view(cfg: Config, view: str, db_alias: str = "", suffix: str = "
         if not found:
             raise testviews.TestViewError(_("The branch of {repo} names no ticket (PDMP-123): give a suffix.",
                                             repo=repo.name))
-        made, sql = testviews.test_sql(repo, view, testviews.check_suffix(found))
         db = cfg.dbs[db_alias]
+        made, sql = testviews.test_sql(repo, view, testviews.check_suffix(found), db.user)
         if not testviews.can_create(db, cfg.defaults.db_timeout):
             return {"created": False, "name": made.name, "sql": sql, "file": str(testviews.sql_file(made, sql))}
         check_database(cfg, db_alias, confirmed)
@@ -1998,9 +1998,13 @@ def use_test_view(cfg: Config, view: str, name: str, db_alias: str = "") -> None
     db_alias = require(cfg.dbs, _("database"), db_alias or testviews.database_of(cfg))
 
     def work() -> None:
-        if name not in testviews.existing(cfg.dbs[db_alias], [name], cfg.defaults.db_timeout):
+        db = cfg.dbs[db_alias]
+        if name not in testviews.existing(db, [name], cfg.defaults.db_timeout):
             raise testviews.TestViewError(_("{name} is not in {db} yet: create it first (or run its SQL).", name=name,
                                             db=db_alias))
+        if not testviews.readable(db, name, cfg.defaults.db_timeout):
+            raise testviews.TestViewError(_("{user} cannot read {name}: run in your database client: {sql}",
+                                            user=db.user, name=name, sql=testviews.grant_sql(name, db.user)))
         testviews.use(cfg, view, name, db_alias)
 
     _test_view_call(work)
@@ -2110,7 +2114,7 @@ def test_view_needs(cfg: Config, launches: Iterable[tuple[Path, str]]) -> list[T
                         readers.setdefault(view, []).append(service.name)
             if not readers:
                 continue
-            copies = {view: testviews.test_sql(repo, view, suffix) for view in readers}
+            copies = {view: testviews.test_sql(repo, view, suffix, db.user) for view in readers}
             there = testviews.existing(db, [made.name for made, _sql in copies.values()], cfg.defaults.db_timeout)
             can = testviews.can_create(db, cfg.defaults.db_timeout)
         except Exception:  # noqa: BLE001 - a database down, an odd file: the services start on the real views
@@ -2137,6 +2141,11 @@ def check_test_views(cfg: Config, launches: Iterable[tuple[Path, str]], views: b
     missing = [need.name for need in needs if not need.can_create and not need.exists]
     if missing:
         raise ActionError(_("{names} is not in the database yet: run its SQL first.", names=", ".join(missing)))
+    for need in needs:
+        db = cfg.dbs[need.db_alias]
+        if need.exists and not _test_view_call(lambda need=need, db=db: testviews.readable(db, need.name)):
+            raise ActionError(_("{user} cannot read {name}: run in your database client: {sql}", user=db.user,
+                                name=need.name, sql=testviews.grant_sql(need.name, db.user)))
     return needs
 
 

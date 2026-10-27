@@ -92,7 +92,8 @@ def view_sql(
     repo = settle(lambda: actions.current_migrations_repo(cfg))
     try:
         found = testviews.check_suffix(suffix or testviews.ticket_suffix(testviews.branch(repo)) or "x")
-        made, sql = testviews.test_sql(repo, view, found)
+        alias = testviews.database_of(cfg)
+        made, sql = testviews.test_sql(repo, view, found, cfg.dbs[alias].user if alias in cfg.dbs else "")
     except testviews.TestViewError as exc:
         fail(exc.message)
         return

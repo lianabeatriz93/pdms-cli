@@ -99,6 +99,7 @@ def cfg(monkeypatch, repo) -> Config:
     monkeypatch.setattr(actions, "current_migrations_repo", lambda cfg: repo)
     monkeypatch.setattr(testviews, "branch", lambda repo: "feature/PDMP-627-x")
     monkeypatch.setattr(testviews, "sql_file", lambda view, sql: Path(f"/state/{view.name}.sql"))
+    monkeypatch.setattr(testviews, "readable", lambda db, name, timeout=20: True)
     return config
 
 
@@ -292,3 +293,20 @@ def test_refreshing_the_data_is_for_its_owner_or_you_get_the_sql(cfg, monkeypatc
     owner.clear()
     with pytest.raises(actions.ActionError, match="is not in web-dev"):
         actions.refresh_test_view(cfg, "pdms_report_document_view", "pdms_report_document_view_pdmp627")
+
+
+def test_the_copy_is_granted_to_the_services_user(repo) -> None:
+    _made, sql = testviews.test_sql(repo, "pdms_report_document_view", "_pdmp627", "pdm-writer")
+    assert sql.rstrip().splitlines()[-1].startswith(
+        'GRANT SELECT ON public.pdms_report_document_view_pdmp627 TO "pdm-writer";')
+    assert "GRANT" not in testviews.test_sql(repo, "pdms_report_document_view", "_pdmp627")[1]
+
+
+def test_a_copy_the_services_user_cannot_read_says_how_to_grant_it(cfg, starting, monkeypatch) -> None:
+    cfg.dbs["web-dev"].user = "pdm-writer"
+    monkeypatch.setattr(testviews, "existing", lambda db, names, timeout=20: {n: "admin" for n in names})
+    monkeypatch.setattr(testviews, "readable", lambda db, name, timeout=20: False)
+    with pytest.raises(actions.ActionError, match='GRANT SELECT ON public.pdms_report_document_view_pdmp627 TO "pdm-writer"'):
+        actions.check_test_views(cfg, starting, True)
+    with pytest.raises(actions.ActionError, match="pdm-writer cannot read"):
+        actions.use_test_view(cfg, "pdms_report_document_view", "pdms_report_document_view_pdmp627")

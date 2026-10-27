@@ -88,8 +88,10 @@ def renames(view: str, sql: str, suffix: str) -> dict[str, str]:
     return found
 
 
-def test_sql(repo: Path, view: str, suffix: str) -> tuple[TestView, str]:
-    """The test view and the SQL that creates it (the checkout's, with the names it creates suffixed)."""
+def test_sql(repo: Path, view: str, suffix: str, reader: str = "") -> tuple[TestView, str]:
+    """The test view and the SQL that creates it (the checkout's, with the names it creates suffixed). With
+    ``reader`` (the user services connect as) it ends granting that user SELECT on it: a copy made from a database
+    client by another user would not be readable by the services otherwise."""
     path = files(repo).get(view)
     if path is None:
         raise TestViewError(_("No materialized view {view} in {folder}.", view=view, folder=repo / FOLDER))
@@ -104,7 +106,15 @@ def test_sql(repo: Path, view: str, suffix: str) -> tuple[TestView, str]:
     sql = re.sub(r"\bWITH\s+NO\s+DATA\b", "WITH DATA", sql, flags=re.IGNORECASE)
     header = (f"-- {_('Test copy of {view} made by pdms from {file}', view=view, file=path.name)}\n"
               f"-- {_('Drop it when you are done: {sql}', sql=drop_sql(mapping[view]))}\n\n")
-    return TestView(view, mapping[view], path), header + pattern.sub(lambda match: mapping[match.group(1)], sql)
+    body = pattern.sub(lambda match: mapping[match.group(1)], sql)
+    if reader:
+        body = body.rstrip() + "\n\n" + grant_sql(mapping[view], reader) + "\n"
+    return TestView(view, mapping[view], path), header + body
+
+
+def grant_sql(name: str, reader: str) -> str:
+    quoted = '"' + reader.replace('"', '""') + '"'
+    return f"GRANT SELECT ON {SCHEMA}.{name} TO {quoted};  -- {_('the user the services connect as')}"
 
 
 def drop_sql(name: str) -> str:
@@ -290,6 +300,12 @@ def existing(db: Database, names: list[str], timeout: int = 20) -> dict[str, str
         rows = conn.execute("select matviewname, matviewowner from pg_matviews where schemaname = %s "
                             "and matviewname = any(%s)", [SCHEMA, names]).fetchall()
     return {name: owner for name, owner in rows}
+
+
+def readable(db: Database, name: str, timeout: int = 20) -> bool:
+    """Whether the user of ``db`` (the services') may read ``name``."""
+    with _connect(db, timeout, read_only=True) as conn:
+        return bool(conn.execute("select has_table_privilege(%s, 'SELECT')", [f"{SCHEMA}.{name}"]).fetchone()[0])
 
 
 def run(db: Database, sql: str, timeout: int = 20) -> None:

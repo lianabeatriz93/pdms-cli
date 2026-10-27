@@ -309,7 +309,9 @@ pdms view drop pdms_report_lead_view     # back to the real view; the copy goes 
 pdms view create / use / stop / sql      # the same steps by hand
 ```
 
-Refreshing or dropping a copy takes its owner: made from a database client as another user, pdms gives you the SQL.
+The copy's SQL ends granting `SELECT` to the user the services connect as (`pdm-writer` on web-dev), and pdms checks
+that user can read it before starting. Refreshing or dropping a copy takes its owner: made from a database client as
+another user, pdms gives you the SQL.
 
 ## AWS, events and emails
 
