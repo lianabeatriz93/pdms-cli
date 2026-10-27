@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from typing import Optional
 
 import questionary
 import typer
 
-from .. import actions, awsenv, prompts
+from .. import actions, awsenv, codeartifact, frontend, prompts
 from ..config import Config
 from ..i18n import _
-from .common import app, console, interactive_terminal, settle, show_menu
+from .common import app, console, current_repo_root, fail, interactive_terminal, settle, show_menu
 
 aws_app = typer.Typer(help=_(
     "The AWS profile the services use, and the buckets pdms reads from that account's Lambdas."
@@ -142,6 +143,22 @@ def aws_login() -> None:
         console.print("[red]✗[/] " + _("The AWS CLI (aws) is not installed."))
         raise typer.Exit(1)
     raise typer.Exit(subprocess.run(awsenv.login_command(cfg.defaults.aws_profile)).returncode)
+
+
+@aws_app.command("codeartifact", help=_(
+    "Log in to AWS CodeArtifact for the web app's @alivi packages, as frontend/codeartifact-login.sh does "
+    "(pdms front does it by itself when the token is over)."))
+def aws_codeartifact() -> None:
+    from .frontend import sso_login
+
+    cfg = Config.load()
+    folder = frontend.folder(current_repo_root(cfg))
+    if not codeartifact.domains(folder):
+        fail(_("{path} not found: this repo's web app does not use AWS CodeArtifact.", path=folder / codeartifact.SCRIPT))
+    used = settle(lambda: actions.codeartifact_ready(folder, sys.stdout, sso_login if interactive_terminal() else None,
+                                                     force=True))
+    console.print("[green]✓[/] " + _("Logged in to AWS CodeArtifact with {profiles}: the token lasts 12 hours.",
+                                     profiles=", ".join(dict.fromkeys(used))), highlight=False)
 
 
 def aws_menu() -> None:

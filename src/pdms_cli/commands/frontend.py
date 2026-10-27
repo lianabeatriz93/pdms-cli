@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from typing import Optional
 
 import questionary
 import typer
 
-from .. import actions, frontend, instances, prompts, runner
+from .. import actions, awsenv, frontend, instances, prompts, runner
 from ..config import Config
 from ..i18n import _
 from .common import app, console, fail, interactive_terminal, settle
+
+
+def sso_login(profile: str) -> bool:
+    """``aws sso login`` in this terminal (it opens the browser); whether it worked."""
+    console.print("[yellow]" + _("The AWS session of {profile} is over; logging in (aws sso login)...",
+                                 profile=profile) + "[/]")
+    try:
+        return subprocess.run(awsenv.login_command(profile)).returncode == 0
+    except OSError:
+        return False
 
 
 @app.command("front", help=_("Run the PDMS web app (frontend/): the yarn dev server, or a production build with --build."))
@@ -49,7 +61,8 @@ def front_cmd(
         ).unsafe_ask()
     if plan.install:
         console.rule("yarn install")
-        settle(lambda: actions.install_frontend(plan.root))
+        settle(lambda: actions.install_frontend(plan.root, sso=sso_login if interactive_terminal() else None,
+                                                notes=sys.stdout))
     if plan.build:
         reasons = {"no build yet": _("no build yet"), "the API URL changed": _("the API URL changed"),
                    "the dependencies changed": _("the dependencies changed"), "the code changed": _("the code changed"),
