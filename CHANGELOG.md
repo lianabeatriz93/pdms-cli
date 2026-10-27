@@ -1,3 +1,21 @@
+## v0.4.9 (2026-10-27)
+
+### Feat
+
+- **views**: refresh a test copy's data
+- **views**: try a changed materialized view through a test copy, when a service that reads it starts
+- **migrations**: ask before applying the checkout's migrations to local databases
+- **wsl**: pdms in Windows' Start menu and at login, running inside WSL
+- **wsl**: inside WSL, what reaches the desktop goes to Windows
+- **frontend**: log in to AWS CodeArtifact by itself before yarn install
+
+### Fix
+
+- **localdb**: list only pdms's own test databases
+- **ui**: an in-memory empty stdin, which no OS calls a terminal
+- **ui**: when its window cannot open, pdms ui opens in the browser
+- **ui**: pdms ui opens from the Start menu on Windows
+
 ## v0.4.8 (2026-10-27)
 
 ### Feat
