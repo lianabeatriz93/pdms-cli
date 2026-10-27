@@ -1,7 +1,7 @@
 // Data: the databases with their round trip and migrations, pdms's Postgres with the local copy (refresh, snapshots)
 // and the test databases. Reloaded when the screen opens and when one of its jobs ends.
 
-import { $, act, button, el, failedText, getJson, phaseLabel, post, postNeedingImages, toast } from "./core.js";
+import { $, act, button, copyText, el, failedText, getJson, phaseLabel, post, postNeedingImages, toast } from "./core.js";
 import { state } from "./state.js";
 import { askMigrations, openFlyway } from "./migrations.js";
 import { openLogs } from "./logs.js";
@@ -10,7 +10,10 @@ import { paintAws } from "./aws.js";
 import { dbLevel, roundTrip as roundTripText, routeText, sparkline } from "./status.js";
 
 // migrations: name → { loading, counts, flyway, error }, read once per database when the screen opens.
-export const dataView = { data: null, loading: false, jobWas: false, testJobWas: false, migrations: {}, migrating: new Set() };
+export const dataView = {
+  data: null, loading: false, jobWas: false, testJobWas: false, migrations: {}, migrating: new Set(), views: null,
+  viewsError: "",
+};
 
 const JOB = "data:postgres";
 const TEST_JOB = "data:test-dbs"; // preparing the test databases from the local copy, or migrating them
@@ -33,6 +36,7 @@ export async function loadData() {
   paintData();
   post("/api/health/run", { all: true }).catch(() => {}); // every database measured while the screen is open
   for (const db of data.dbs) if (!dataView.migrations[db.name]) loadMigrations(db.name);
+  if (!dataView.views && !dataView.viewsError) loadViews(); // once: it asks web-dev (Check again reads it again)
 }
 
 // The migrations of one database, read from its Flyway history (a round trip or two: web-dev takes a moment).
@@ -333,4 +337,106 @@ async function recreateTestDb(name) {
 export function setTestCount() {
   const count = Number($("data-tests-count").value);
   act("/api/data/tests-count", { count }, loadData);
+}
+
+
+// ---- test copies of materialized views (testviews.py)
+
+export async function loadViews() {
+  dataView.viewsError = "";
+  $("data-views-where").textContent = t("reading…");
+  const { data, error } = await getJson("/api/views");
+  if (error) {
+    dataView.views = null;
+    dataView.viewsError = error;
+  } else {
+    dataView.views = data;
+  }
+  paintViews();
+}
+
+function viewState(row) {
+  if (!row.changed) return el("span", { class: "st stopped", title: t("Your checkout's SQL is the real view's again (deployed, or undone): nothing to try.") }, t("left over: drop it"));
+  if (!row.exists) return el("span", { class: "st off" }, t("not made yet"));
+  if (!row.current) return el("span", { class: "st starting" }, t("your SQL changed since it was made"));
+  if (row.in_use) return el("span", { class: "st ok" }, t("services read it"));
+  return el("span", { class: "st ok" }, t("ready"));
+}
+
+function viewActions(row, info) {
+  const cell = el("td", { class: "row-actions" });
+  if (!row.name) return cell;
+  if (row.changed && (!row.exists || !row.current)) {
+    cell.append(button(info.can_create ? (row.exists ? t("Make it again") : t("Create")) : t("SQL to create it"), () => createView(row), { class: "btn small primary" }));
+  } else if (row.changed && !row.in_use) {
+    cell.append(button(t("Have services read it"), () => act("/api/views/use", { view: row.view, name: row.name }, () => {
+      toast(t("Services on {db} read {name} from their next start: restart the ones running.", { db: info.db, name: row.name }), "info");
+      loadViews();
+    }), { class: "btn small primary" }));
+  } else if (row.in_use) {
+    cell.append(button(t("Read the real one"), () => act("/api/views/stop", { view: row.view }, () => {
+      toast(t("Services read the real {view} again from their next start.", { view: row.view }), "info");
+      loadViews();
+    })));
+  }
+  if (row.exists) cell.append(button(info.can_create ? t("Drop") : t("SQL to drop it"), () => dropView(row), { class: "btn small bad" }));
+  return cell;
+}
+
+export function paintViews() {
+  const info = dataView.views;
+  $("data-views-error").hidden = !dataView.viewsError;
+  $("data-views-error").textContent = dataView.viewsError;
+  if (!info) {
+    $("data-views").replaceChildren();
+    $("data-views-where").textContent = "";
+    $("data-views-empty").hidden = true;
+    return;
+  }
+  $("data-views-where").textContent = t("{db} · suffix {suffix} (branch {branch})", {
+    db: info.db, suffix: info.suffix || t("none"), branch: info.branch || "-" });
+  const using = info.views.filter((row) => row.in_use);
+  $("data-views-using").hidden = !using.length;
+  $("data-views-using").textContent = using.length
+    ? t("Services on {db} read {names} instead of the real views.", { db: info.db, names: using.map((row) => row.name).join(", ") }) : "";
+  $("data-views").replaceChildren(...info.views.map((row) => el("tr", {},
+    el("td", { class: "name" }, row.view), el("td", { class: "mono" }, row.name || "–"), el("td", {}, viewState(row)),
+    viewActions(row, info))));
+  $("data-views-empty").hidden = info.views.length > 0;
+  $("data-views-empty").textContent = t("None of the materialized views is changed in your checkout: when one is, starting a service that reads it offers its test copy.");
+}
+
+function showSql(title, text, sql) {
+  $("sql-title").textContent = title;
+  $("sql-text").textContent = text;
+  $("sql-body").value = sql;
+  $("sql-dialog").showModal();
+  $("sql-body").scrollTop = 0; // from its header, which says how to drop it
+}
+
+export function copySql() {
+  copyText($("sql-body").value, t("SQL copied: paste it in your database client."));
+}
+
+async function createView(row, confirmed = false) {
+  const { status, data } = await post("/api/views/create", { view: row.view, confirmed });
+  if (status === 409 && data.decision === "protected_database") {
+    if (await confirmDialog(t("Create {name} in {db}?", { name: row.name, db: data.name }),
+      t("{db} is a protected database: the copy is made beside the real view, which stays as it is.", { db: data.name }), t("Create"))) createView(row, true);
+    return;
+  }
+  if (status >= 400) { toast(data.error || t("pdms ui answered {status}", { status })); return; }
+  if (data.created) { toast(t("{name} created.", { name: data.name }), "info"); loadViews(); return; }
+  showSql(t("Run this in your database client"), t("Your user cannot create views in {db}. This SQL (your checkout's, with the suffix) makes {name}; then Check again, and Have services read it.", { db: dataView.views.db, name: data.name }), data.sql);
+}
+
+async function dropView(row, confirmed = false) {
+  if (!confirmed && !await confirmDialog(t("Drop {name}?", { name: row.name }), t("Services read the real {view} again; the copy and its indexes go.", { view: row.view }), t("Drop"))) return;
+  const { status, data } = await post("/api/views/drop", { view: row.view, name: row.name, confirmed });
+  if (status === 409 && data.decision === "protected_database") { dropView(row, true); return; }
+  if (status >= 400) { toast(data.error || t("pdms ui answered {status}", { status })); return; }
+  if (!data.dropped) {
+    showSql(t("Run this in your database client"), t("Your user cannot drop it. Services already read the real {view}.", { view: row.view }), data.sql);
+  } else toast(t("{name} is gone.", { name: row.name }), "info");
+  loadViews();
 }

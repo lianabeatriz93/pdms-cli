@@ -17,7 +17,7 @@ import { openSetting } from "./repos.js";
 import { openDb, showSettingsTab } from "./settings.js";
 import { setRedirect } from "./browser.js";
 import { askPython } from "./python.js";
-import { askMigrations } from "./migrations.js";
+import { askMigrations, askViews } from "./migrations.js";
 import { lineCheck, measureNow, roundTrip } from "./status.js";
 
 export const HOME_JOB = "home";
@@ -393,21 +393,24 @@ export function paintHome() {
   $("home-attn-count").className = `st ${items.some((item) => item[0] === "bad") ? "fail" : "warn"}`;
 }
 
-export async function startAll(confirmed = false, python = null, migrate = null) {
+export async function startAll(confirmed = false, python = null, migrate = null, views = null) {
   $("home-error").hidden = true;
   $("home-start").disabled = true;
   try {
-    const { status, data } = await post("/api/home/start", { confirmed, python, migrate });
+    const { status, data } = await post("/api/home/start", { confirmed, python, migrate, views });
     if (status === 200 && !data.job) toast(t("Everything in your setup is already running."), "info");
-    else if (status === 409 && data.decision === "migrations_pending") {
+    else if (status === 409 && data.decision === "test_views_pending") {
+      const answer = await askViews(data.views);
+      if (answer !== null) startAll(confirmed, python, migrate, answer);
+    } else if (status === 409 && data.decision === "migrations_pending") {
       const answer = await askMigrations(data.dbs);
-      if (answer !== null) startAll(confirmed, python, answer);
+      if (answer !== null) startAll(confirmed, python, answer, views);
     } else if (status === 409 && data.decision === "python_mismatch") {
       const answer = await askPython(data.services);
-      if (answer !== null) startAll(confirmed, answer, migrate);
+      if (answer !== null) startAll(confirmed, answer, migrate, views);
     } else if (status === 409 && data.decision === "protected_database") {
       if (await confirmDialog(t("'{name}' is a protected database. Use it anyway?", { name: data.name }),
-        t("The stack's services will run against it."), t("Use it"))) startAll(true, python, migrate);
+        t("The stack's services will run against it."), t("Use it"))) startAll(true, python, migrate, views);
     } else if (status === 409 && data.decision === "port_busy") {
       toast(t("Port {port} is in use, so the frontend cannot start there. Free it, or start the frontend on another port from its tile.", { port: data.port }));
     } else if (status >= 400) {

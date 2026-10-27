@@ -129,6 +129,10 @@ class Defaults:
     # The browser extension of pdms (browser.py) sends front_redirect_hosts to the frontend pdms runs, while it runs.
     front_redirect: bool = False
     front_redirect_hosts: list[str] = field(default_factory=lambda: list(FRONT_HOSTS))
+    # Materialized views the services on test_views_db read a test copy of instead: {view: test copy} (pdms view,
+    # testviews.py). The copies exist in that database only.
+    test_views: dict[str, str] = field(default_factory=dict)
+    test_views_db: str = ""
     # Extra environment variables injected on every run.
     env: dict[str, str] = field(default_factory=dict)
 

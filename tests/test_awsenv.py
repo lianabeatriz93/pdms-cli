@@ -241,7 +241,7 @@ def test_services_started_by_pdms_get_it(aws_config, fake, cfg, repo) -> None:
     awsenv.refresh("pdm-dev")
     launch = SimpleNamespace(service=service(repo, "report/report-download"), events=SimpleNamespace(env={}, kind="aws"),
                              is_consumer=False, parallel=False, user=SimpleNamespace(env=lambda: {}),
-                             db=SimpleNamespace(url=lambda: "postgresql://x"))
+                             db=SimpleNamespace(url=lambda: "postgresql://x"), db_name="local")
     env = actions.service_env(cfg, launch)
     assert env["AWS_PROFILE"] == "pdm-dev" and env["DOWNLOABLE_FILES_BUCKET_S3"] == "reports"
 

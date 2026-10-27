@@ -291,6 +291,23 @@ and pdms says which those are. On local databases only (never web-dev or a share
   copy, making it again is cleaner.
 - Migrations that write to `backup_data` find it: pdms creates it empty when a local database lacks it.
 
+**Test views.** When you change a materialized view (`R__MV_<view>.sql`, committed or not) and start a service that
+reads it against web-dev (`pdms run`, `up`, `restart`, pdms ui), pdms asks whether to try your version: a test copy
+made from your SQL beside the real view, named with the ticket of the migrations repo's branch
+(`pdms_report_lead_view_pdmp627`), always with its data. That service then reads the copy through a rewrite of its
+queries, with no change to its code; the deployed ones keep the real view. When your user cannot create views there
+(web-dev's usual one), you get the SQL to run in a database client, and pdms checks the copy is there before starting.
+
+A service reads a view when its code, or its local packages' (report-common), names it; a `report-lead-*` service
+is about the lead view, a general one (`report-download`) about all. Once your change is deployed or undone, Data →
+Test views and `pdms doctor` point to the copy left over, with its `DROP`.
+
+```bash
+pdms view                                # the views you changed and their test copies
+pdms view drop pdms_report_lead_view     # back to the real view; the copy goes (or you get the DROP to run)
+pdms view create / use / stop / sql      # the same steps by hand
+```
+
 ## AWS, events and emails
 
 ### AWS profile
@@ -446,6 +463,7 @@ passwords you already have and backs up the configuration first. Repos are never
 | `pdms events` | Local SQS (`map`, `up`, `status`, `send`, `peek`, `purge`, `down`) |
 | `pdms aws` | AWS profile (`profile`, `login`, `status`, `read`) |
 | `pdms db`, `user`, `repo`, `config` | Databases (and `db local`), development users, repos, settings |
+| `pdms view` | Test copies of materialized views (`create`, `use`, `stop`, `drop`, `sql`) |
 | `pdms test`, `migrate` | Tests on a test database, Flyway |
 | `pdms self-update` | Update pdms |
 

@@ -1677,4 +1677,136 @@ ES: dict[str, str] = {
         "{n} migraciones pendientes",
     "⚠ {n} migrations applied to {db} changed in your checkout since they ran ({versions}): Flyway refuses to migrate until flyway repair takes their new checksums (the database keeps what they did then).":
         "⚠ {n} migraciones aplicadas en {db} cambiaron en tu checkout desde que se aplicaron ({versions}): Flyway no migra hasta que flyway repair adopte sus checksums nuevos (la base conserva lo que hicieron entonces).",
+    "'{name}' is a protected DB: create {view}'s test copy there?":
+        "'{name}' es una base protegida: ¿crear ahí la copia de prueba de {view}?",
+    "'{name}' is a protected DB: drop {view} there?":
+        "'{name}' es una base protegida: ¿borrar ahí {view}?",
+    "'{suffix}' is not a suffix: lowercase letters, digits and _ (e.g. _pdmp627).":
+        "'{suffix}' no es un sufijo: minúsculas, dígitos y _ (p. ej. _pdmp627).",
+    "(none: give --suffix)":
+        "(ninguno: indica --suffix)",
+    "Database the test copy is in (web-dev by default).":
+        "Base de datos donde está la copia de prueba (web-dev por defecto).",
+    "Drop it when you are done: {sql}":
+        "Bórrala cuando termines: {sql}",
+    "Drop the test copy of a view (or give the SQL that drops it); services read the real one again.":
+        "Borra la copia de prueba de una vista (o da el SQL para borrarla); los servicios vuelven a leer la real.",
+    "Have the services pdms runs on that database read the test copy (from their next start).":
+        "Hace que los servicios que pdms corre sobre esa base lean la copia de prueba (desde su próximo arranque).",
+    "Make the test copy of a view from your checkout's SQL (or give the SQL to run).":
+        "Crea la copia de prueba de una vista con el SQL de tu checkout (o da el SQL para ejecutarlo).",
+    "No materialized view {view} in {folder}.":
+        "No hay vista materializada {view} en {folder}.",
+    "Or print it: pdms view sql {view}. Then: pdms view use {view}":
+        "O imprímelo: pdms view sql {view}. Después: pdms view use {view}",
+    "Print the SQL that makes a view's test copy (or drops it, with --drop).":
+        "Imprime el SQL que crea la copia de prueba de una vista (o la borra, con --drop).",
+    "Reading the materialized views...":
+        "Leyendo las vistas materializadas...",
+    "Running on {db}: {keys}. They read it from their next start: pdms restart {first}":
+        "Corriendo sobre {db}: {keys}. La leen desde su próximo arranque: pdms restart {first}",
+    "Services already read test views of {db}: stop using them first (one database at a time).":
+        "Los servicios ya leen vistas de prueba de {db}: deja de usarlas primero (una base a la vez).",
+    "Services do not read a test copy of {view}.":
+        "Los servicios no leen una copia de prueba de {view}.",
+    "Services on {db} read {name} instead of {view}.":
+        "Los servicios sobre {db} leen {name} en lugar de {view}.",
+    "Services read the real {view} again.":
+        "Los servicios vuelven a leer la {view} real.",
+    "State":
+        "Estado",
+    "Suffix of the copy (by default from the ticket of the migrations repo's branch, e.g. _pdmp627).":
+        "Sufijo de la copia (por defecto, del ticket de la rama del repo de migraciones, p. ej. _pdmp627).",
+    "Test copies of the materialized views: make one from your checkout's SQL in web-dev, with your ticket as a suffix, and have the services pdms runs read it instead of the real one.":
+        "Copias de prueba de las vistas materializadas: crea una con el SQL de tu checkout en web-dev, con tu ticket como sufijo, y haz que los servicios que corre pdms la lean en lugar de la real.",
+    "Test copy":
+        "Copia de prueba",
+    "Test copy of {view} made by pdms from {file}":
+        "Copia de prueba de {view} creada por pdms a partir de {file}",
+    "The SQL that drops it instead.":
+        "El SQL que la borra.",
+    "The branch of {repo} names no ticket (PDMP-123): give --name.":
+        "La rama de {repo} no nombra un ticket (PDMP-123): indica --name.",
+    "The branch of {repo} names no ticket (PDMP-123): give --suffix or --name.":
+        "La rama de {repo} no nombra un ticket (PDMP-123): indica --suffix o --name.",
+    "The branch of {repo} names no ticket (PDMP-123): give a suffix.":
+        "La rama de {repo} no nombra un ticket (PDMP-123): indica un sufijo.",
+    "The services read the real view again (from their next start); the copy stays.":
+        "Los servicios vuelven a leer la vista real (desde su próximo arranque); la copia se queda.",
+    "The test copy (by default the one services read, or the view with your suffix).":
+        "La copia de prueba (por defecto, la que leen los servicios, o la vista con tu sufijo).",
+    "The test copy (by default the view with your suffix).":
+        "La copia de prueba (por defecto, la vista con tu sufijo).",
+    "The view, e.g. pdms_report_lead_view.":
+        "La vista, p. ej. pdms_report_lead_view.",
+    "View":
+        "Vista",
+    "Your user cannot create views there. Run this SQL in your database client (it makes {name}):":
+        "Tu usuario no puede crear vistas ahí. Ejecuta este SQL en tu gestor de base de datos (crea {name}):",
+    "Your user cannot drop it. Run this in your database client:":
+        "Tu usuario no puede borrarla. Ejecuta esto en tu gestor de base de datos:",
+    "Your user of {db} cannot create there: pdms view create gives you the SQL to run in a database client.":
+        "Tu usuario de {db} no puede crear ahí: pdms view create te da el SQL para ejecutarlo en un gestor de base de datos.",
+    "its indexes go with it":
+        "sus índices se van con ella",
+    "services read it":
+        "la leen los servicios",
+    "{db} · branch {branch} · suffix {suffix}":
+        "{db} · rama {branch} · sufijo {suffix}",
+    "{name} created. Have the services read it: pdms view use {view}":
+        "{name} creada. Haz que la lean los servicios: pdms view use {view}",
+    "{name} is gone; services read the real {view}.":
+        "{name} ya no existe; los servicios leen la {view} real.",
+    "{name} is longer than Postgres allows ({max} characters): use a shorter suffix.":
+        "{name} es más largo de lo que permite Postgres ({max} caracteres): usa un sufijo más corto.",
+    "{name} is not a test copy of {view}.":
+        "{name} no es una copia de prueba de {view}.",
+    "{name} is not in {db} yet: create it first (or run its SQL).":
+        "{name} aún no está en {db}: créala primero (o ejecuta su SQL).",
+    "{path} does not create {view}: pdms cannot tell which names to copy.":
+        "{path} no crea {view}: pdms no puede saber qué nombres copiar.",
+    " (uncommitted)":
+        " (sin commit)",
+    "(uncommitted)":
+        "(sin commit)",
+    "Done? (pdms checks they are there)":
+        "¿Listo? (pdms comprueba que estén)",
+    "Drop it: pdms view drop {view} (or Data → Test views).":
+        "Bórrala: pdms view drop {view} (o Datos → Vistas de prueba).",
+    "Making {name} in {db}...":
+        "Creando {name} en {db}...",
+    "None of the materialized views is changed in your checkout.":
+        "Ninguna vista materializada está modificada en tu checkout.",
+    "Preparing the test views...":
+        "Preparando las vistas de prueba...",
+    "Test view {name}":
+        "Vista de prueba {name}",
+    "The materialized views you changed, their test copies and which ones services read.":
+        "Las vistas materializadas que modificaste, sus copias de prueba y cuáles leen los servicios.",
+    "They read the real views.":
+        "Leen las vistas reales.",
+    "They read {names}.":
+        "Leen {names}.",
+    "Try them with your version (the test copies)?":
+        "¿Probarlos con tu versión (las copias de prueba)?",
+    "Your user cannot create views there. Run this SQL in your database client:":
+        "Tu usuario no puede crear vistas ahí. Ejecuta este SQL en tu gestor de base de datos:",
+    "its SQL changed since it was made":
+        "su SQL cambió desde que se creó",
+    "left in {db}, but your checkout no longer changes {view}":
+        "sigue en {db}, pero tu checkout ya no modifica {view}",
+    "left over: drop it":
+        "sobrante: bórrala",
+    "not made yet":
+        "sin crear",
+    "ready":
+        "lista",
+    "your SQL changed since it was made":
+        "tu SQL cambió desde que se creó",
+    "{names} is not in the database yet: run its SQL first.":
+        "{names} aún no está en la base: ejecuta antes su SQL.",
+    "{names}: changed in your checkout. Start it from Services to choose between your version and the real one.":
+        "{names}: modificada en tu checkout. Arráncalo desde Servicios para elegir entre tu versión y la real.",
+    "⚠ {services} read {view}, which you changed{uncommitted}: its test copy {name} is {state}.":
+        "⚠ {services} leen {view}, que modificaste{uncommitted}: su copia de prueba {name} está {state}.",
 }

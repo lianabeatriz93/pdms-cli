@@ -37,7 +37,8 @@ import { openPalette, paintPalette, palette, runPalette, typing, viewFilter } fr
 import { route } from "./router.js";
 import { checkAws, chooseAwsProfile, loginAws, readAws } from "./aws.js";
 import {
-  copyLog, dataView, postgresUpDown, prepareAllTestDbs, refreshCopy, saveSnapshot, setTestCount, testDbsLog, testNow,
+  copyLog, copySql, dataView, loadViews, postgresUpDown, prepareAllTestDbs, refreshCopy, saveSnapshot, setTestCount,
+  testDbsLog, testNow,
 } from "./data.js";
 import {
   paintTests, pickAllTests, rerunFailed, runShown, showTests, startTestDb, stopTests, testsView,
@@ -78,6 +79,8 @@ $("data-snap-form").addEventListener("submit", saveSnapshot);
 $("data-tests-count").addEventListener("change", setTestCount);
 $("data-tests-prepare").addEventListener("click", prepareAllTestDbs);
 $("data-tests-log").addEventListener("click", testDbsLog);
+$("data-views-reload").addEventListener("click", loadViews);
+$("sql-copy").addEventListener("click", copySql);
 $("data-aws-profile").addEventListener("change", chooseAwsProfile);
 $("data-aws-read-btn").addEventListener("click", readAws);
 $("data-aws-login-btn").addEventListener("click", loginAws);

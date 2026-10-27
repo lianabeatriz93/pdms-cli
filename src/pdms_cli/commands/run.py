@@ -11,9 +11,10 @@ from typing import Optional
 
 import questionary
 import typer
+from rich.markup import escape
 from rich.table import Table
 
-from .. import actions, awsenv, completion, instances, prompts, proxy, pythons, runner
+from .. import actions, awsenv, completion, instances, prompts, proxy, pythons, runner, testviews
 from ..config import Config, Database, DevUser
 from ..i18n import _
 from .common import (
@@ -158,6 +159,41 @@ def migrate_first(cfg: Config, aliases: list[str], migrate: Optional[bool] = Non
             fail(exc.message)
 
 
+def views_first(cfg: Config, launches: list[tuple[Path, str]], views: Optional[bool] = None) -> None:
+    """Services about to start read views changed in your checkout: ask whether to try your version (their test
+    copies, made now or from the SQL you run) or the real ones (see :func:`actions.check_test_views`)."""
+    try:
+        needs = actions.check_test_views(cfg, launches, views)
+    except actions.TestViewsPending as pending:
+        for item in pending.items:
+            state = _("ready") if item.ready else _("its SQL changed since it was made") if item.exists else _("not made yet")
+            console.print("[yellow]" + _("⚠ {services} read {view}, which you changed{uncommitted}: its test copy {name} is "
+                                         "{state}.", services=", ".join(item.services), view=item.view,
+                                         uncommitted=_(" (uncommitted)") if item.uncommitted else "", name=item.name,
+                                         state=state) + "[/]", highlight=False)
+        if not interactive_terminal() or not questionary.confirm(
+                _("Try them with your version (the test copies)?"), default=True).unsafe_ask():
+            settle(lambda: actions.check_test_views(cfg, launches, False))
+            console.print("[dim]" + _("They read the real views.") + "[/]")
+            return
+        by_hand = [item for item in pending.items if not item.can_create and not item.ready]
+        if by_hand:
+            console.print(_("Your user cannot create views there. Run this SQL in your database client:"))
+            for item in by_hand:
+                made = testviews.TestView(item.view, item.name, Path(item.view))
+                console.print(f"  {escape(str(testviews.sql_file(made, item.sql)))}", highlight=False)
+            if not questionary.confirm(_("Done? (pdms checks they are there)"), default=True).unsafe_ask():
+                settle(lambda: actions.check_test_views(cfg, launches, False))
+                console.print("[dim]" + _("They read the real views.") + "[/]")
+                return
+        needs = settle(lambda: actions.check_test_views(cfg, launches, True))
+    if needs:
+        with console.status(_("Preparing the test views...")):
+            settle(lambda: actions.prepare_test_views(cfg, needs))
+        console.print("[green]✓[/] " + _("They read {names}.", names=", ".join(need.name for need in needs)),
+                      highlight=False)
+
+
 def python_answer(cfg: Config, services: list[Path], install: Optional[bool]) -> Optional[bool]:
     """Ask whether to recreate the virtualenvs that run a Python their project no longer accepts (see
     :func:`actions.check_pythons`): True or False, or None when there are none. Without a terminal they stay."""
@@ -242,6 +278,7 @@ def do_run(
     on_demand: Optional[bool] = None,
     python: Optional[bool] = None,
     migrate: Optional[bool] = None,
+    check_views: bool = True,
 ) -> None:
     cfg = Config.load()
     service = resolve_service(cfg, service_name, path)
@@ -270,6 +307,8 @@ def do_run(
     })
     confirm_protected(cfg, prof, yes)
     migrate_first(cfg, [prof.db_name], migrate)
+    if check_views:
+        views_first(cfg, [(prof.service, prof.db_name)])
     ensure_installed(cfg, launch.service, install, python)
 
     if not background:

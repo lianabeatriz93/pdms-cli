@@ -16,7 +16,7 @@ The emails sent through SES are kept for pdms ui, or sent to one address only, i
 
 The speed-ups for slow databases (requests in parallel, connections opened at start) live in pdms_parallel.py, the
 database time and queries of each request in pdms_queries.py, and following one request through logs and events in
-pdms_trace.py.
+pdms_trace.py. Test copies of materialized views, read instead of the real ones, are pdms_views.py.
 """
 
 import base64
@@ -239,6 +239,13 @@ if not helper_process():
         import pdms_parallel  # this folder: requests in parallel and connections opened at start (see that module)
 
         pdms_parallel.install()
+    except Exception:  # noqa: BLE001 - same as above
+        pass
+
+    try:
+        import pdms_views  # this folder: test copies of materialized views instead of the real ones (see that module)
+
+        pdms_views.install()
     except Exception:  # noqa: BLE001 - same as above
         pass
 
