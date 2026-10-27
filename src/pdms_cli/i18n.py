@@ -1743,8 +1743,6 @@ ES: dict[str, str] = {
         "Vista",
     "Your user cannot create views there. Run this SQL in your database client (it makes {name}):":
         "Tu usuario no puede crear vistas ahí. Ejecuta este SQL en tu gestor de base de datos (crea {name}):",
-    "Your user cannot drop it. Run this in your database client:":
-        "Tu usuario no puede borrarla. Ejecuta esto en tu gestor de base de datos:",
     "Your user of {db} cannot create there: pdms view create gives you the SQL to run in a database client.":
         "Tu usuario de {db} no puede crear ahí: pdms view create te da el SQL para ejecutarlo en un gestor de base de datos.",
     "its indexes go with it":
@@ -1809,4 +1807,18 @@ ES: dict[str, str] = {
         "{names}: modificada en tu checkout. Arráncalo desde Servicios para elegir entre tu versión y la real.",
     "⚠ {services} read {view}, which you changed{uncommitted}: its test copy {name} is {state}.":
         "⚠ {services} leen {view}, que modificaste{uncommitted}: su copia de prueba {name} está {state}.",
+    "'{name}' is a protected DB: refresh {view} there?":
+        "'{name}' es una base protegida: ¿refrescar ahí {view}?",
+    "Only its owner can drop it. Run this in your database client:":
+        "Solo su dueño puede borrarla. Ejecuta esto en tu gestor de base de datos:",
+    "Only its owner can refresh it. Run this in your database client:":
+        "Solo su dueño puede refrescarla. Ejecuta esto en tu gestor de base de datos:",
+    "Recompute the data of a view's test copy (it is a snapshot of when it was made).":
+        "Recalcula los datos de la copia de prueba de una vista (es una foto del momento en que se creó).",
+    "Refreshing {name}...":
+        "Refrescando {name}...",
+    "{name} has today's data.":
+        "{name} tiene los datos de hoy.",
+    "{name} is not in {db}.":
+        "{name} no está en {db}.",
 }

@@ -24,6 +24,13 @@ const KEEP = new Set([
 
 const CATALOG = {
   es: {
+    "Only its owner can drop it. Services already read the real {view}.": "Solo su dueño puede borrarla. Los servicios ya leen la {view} real.",
+    "Only the owner of {name} can refresh it: this recomputes its data.": "Solo el dueño de {name} puede refrescarla: esto recalcula sus datos.",
+    "Refresh data": "Refrescar datos",
+    "Refresh {name} in {db}?": "¿Refrescar {name} en {db}?",
+    "Refreshing {name}…": "Refrescando {name}…",
+    "{db} is a protected database: only the test copy is recomputed.": "{db} es una base protegida: solo se recalcula la copia de prueba.",
+    "{name} has today's data.": "{name} tiene los datos de hoy.",
     "its SQL changed since it was made": "su SQL cambió desde que se creó",
     "left over: drop it": "sobrante: bórrala",
     "not made yet": "sin crear",
@@ -54,7 +61,6 @@ const CATALOG = {
     "Run this in your database client": "Ejecuta esto en tu gestor de base de datos",
     "SQL copied: paste it in your database client.": "SQL copiado: pégalo en tu gestor de base de datos.",
     "SQL to create it": "SQL para crearla",
-    "SQL to drop it": "SQL para borrarla",
     "Services on {db} read {names} instead of the real views.": "Los servicios sobre {db} leen {names} en lugar de las vistas reales.",
     "Services on {db} read {name} from their next start: restart the ones running.": "Los servicios sobre {db} leen {name} desde su próximo arranque: reinicia los que estén corriendo.",
     "Services read the real {view} again from their next start.": "Los servicios vuelven a leer la {view} real desde su próximo arranque.",
@@ -63,7 +69,6 @@ const CATALOG = {
     "Test views": "Vistas de prueba",
     "View": "Vista",
     "Your user cannot create views in {db}. This SQL (your checkout's, with the suffix) makes {name}; then Check again, and Have services read it.": "Tu usuario no puede crear vistas en {db}. Este SQL (el de tu checkout, con el sufijo) crea {name}; después pulsa Comprobar de nuevo y Que la lean los servicios.",
-    "Your user cannot drop it. Services already read the real {view}.": "Tu usuario no puede borrarla. Los servicios ya leen la {view} real.",
     "services read it": "la leen los servicios",
     "{db} is a protected database: the copy is made beside the real view, which stays as it is.": "{db} es una base protegida: la copia se crea junto a la vista real, que no cambia.",
     "{db} · suffix {suffix} (branch {branch})": "{db} · sufijo {suffix} (rama {branch})",

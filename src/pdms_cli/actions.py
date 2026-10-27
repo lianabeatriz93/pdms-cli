@@ -2017,13 +2017,38 @@ def drop_test_view(cfg: Config, view: str, name: str, db_alias: str = "", confir
     def work() -> dict:
         db = cfg.dbs[db_alias]
         sql = testviews.drop_sql(name)
-        if name not in testviews.existing(db, [name], cfg.defaults.db_timeout):
+        there = testviews.existing(db, [name], cfg.defaults.db_timeout)
+        if name not in there:
+            testviews.forget(name)
             return {"dropped": True, "name": name}
-        if not testviews.can_create(db, cfg.defaults.db_timeout):
+        if there[name] != db.user:  # only its owner drops it (made from a database client, as root...)
             return {"dropped": False, "name": name, "sql": sql}
         check_database(cfg, db_alias, confirmed)
         testviews.run(db, sql, cfg.defaults.db_timeout)
+        testviews.forget(name)
         return {"dropped": True, "name": name}
+
+    return _test_view_call(work)
+
+
+def refresh_test_view(cfg: Config, view: str, name: str, db_alias: str = "", confirmed: bool = False) -> dict:
+    """Recompute the data of a test copy (a snapshot of when it was made; nothing else refreshes it). Only its owner
+    can: anyone else gets the SQL to run (``{"refreshed": False, "sql"}``)."""
+    db_alias = require(cfg.dbs, _("database"), db_alias or testviews.database_of(cfg))
+    if not name.startswith(view + "_") or name == view:
+        raise ActionError(_("{name} is not a test copy of {view}.", name=name, view=view))
+
+    def work() -> dict:
+        db = cfg.dbs[db_alias]
+        sql = testviews.refresh_sql(name)
+        there = testviews.existing(db, [name], cfg.defaults.db_timeout)
+        if name not in there:
+            raise testviews.TestViewError(_("{name} is not in {db}.", name=name, db=db_alias))
+        if there[name] != db.user:
+            return {"refreshed": False, "name": name, "sql": sql}
+        check_database(cfg, db_alias, confirmed)
+        testviews.run(db, sql, cfg.defaults.db_timeout)
+        return {"refreshed": True, "name": name}
 
     return _test_view_call(work)
 

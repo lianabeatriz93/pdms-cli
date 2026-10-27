@@ -156,7 +156,39 @@ def view_drop(
         console.print("[green]✓[/] " + _("{name} is gone; services read the real {view}.", name=name, view=view),
                       highlight=False)
         return
-    console.print("[yellow]" + _("Your user cannot drop it. Run this in your database client:") + "[/]")
+    console.print("[yellow]" + _("Only its owner can drop it. Run this in your database client:") + "[/]")
+    print(result["sql"])
+
+
+@view_app.command("refresh", help=_("Recompute the data of a view's test copy (it is a snapshot of when it was made)."))
+def view_refresh(
+    view: str = typer.Argument(..., help=_("The view, e.g. pdms_report_lead_view.")),
+    name: str = typer.Option("", "--name", help=_("The test copy (by default the one services read, or the view with your suffix).")),
+    db: Optional[str] = typer.Option(None, "--db", "-d", help=DB_HELP, autocompletion=completion.dbs),
+    yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
+) -> None:
+    cfg = Config.load()
+    name = name or testviews.in_use(cfg).get(view, "")
+    if not name:
+        repo = settle(lambda: actions.current_migrations_repo(cfg))
+        found = testviews.ticket_suffix(testviews.branch(repo))
+        if not found:
+            fail(_("The branch of {repo} names no ticket (PDMP-123): give --name.", repo=repo.name))
+        name = view + found
+    try:
+        with console.status(_("Refreshing {name}...", name=name)):
+            result = settle(lambda: actions.refresh_test_view(cfg, view, name, db or "", confirmed=yes))
+    except actions.ProtectedDatabase as protected:
+        if not interactive_terminal() or not questionary.confirm(
+                _("'{name}' is a protected DB: refresh {view} there?", name=protected.name, view=name),
+                default=False).unsafe_ask():
+            raise typer.Exit(1)
+        with console.status(_("Refreshing {name}...", name=name)):
+            result = settle(lambda: actions.refresh_test_view(cfg, view, name, db or "", confirmed=True))
+    if result["refreshed"]:
+        console.print("[green]✓[/] " + _("{name} has today's data.", name=name), highlight=False)
+        return
+    console.print("[yellow]" + _("Only its owner can refresh it. Run this in your database client:") + "[/]")
     print(result["sql"])
 
 

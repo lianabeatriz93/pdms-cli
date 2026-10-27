@@ -379,7 +379,8 @@ function viewActions(row, info) {
       loadViews();
     })));
   }
-  if (row.exists) cell.append(button(info.can_create ? t("Drop") : t("SQL to drop it"), () => dropView(row), { class: "btn small bad" }));
+  if (row.exists && row.changed) cell.append(button(t("Refresh data"), () => refreshView(row)));
+  if (row.exists) cell.append(button(t("Drop"), () => dropView(row), { class: "btn small bad" }));
   return cell;
 }
 
@@ -430,13 +431,26 @@ async function createView(row, confirmed = false) {
   showSql(t("Run this in your database client"), t("Your user cannot create views in {db}. This SQL (your checkout's, with the suffix) makes {name}; then Check again, and Have services read it.", { db: dataView.views.db, name: data.name }), data.sql);
 }
 
+async function refreshView(row, confirmed = false) {
+  toast(t("Refreshing {name}…", { name: row.name }), "info");
+  const { status, data } = await post("/api/views/refresh", { view: row.view, name: row.name, confirmed });
+  if (status === 409 && data.decision === "protected_database") {
+    if (await confirmDialog(t("Refresh {name} in {db}?", { name: row.name, db: data.name }),
+      t("{db} is a protected database: only the test copy is recomputed.", { db: data.name }), t("Refresh"))) refreshView(row, true);
+    return;
+  }
+  if (status >= 400) { toast(data.error || t("pdms ui answered {status}", { status })); return; }
+  if (data.refreshed) toast(t("{name} has today's data.", { name: row.name }), "info");
+  else showSql(t("Run this in your database client"), t("Only the owner of {name} can refresh it: this recomputes its data.", { name: row.name }), data.sql);
+}
+
 async function dropView(row, confirmed = false) {
   if (!confirmed && !await confirmDialog(t("Drop {name}?", { name: row.name }), t("Services read the real {view} again; the copy and its indexes go.", { view: row.view }), t("Drop"))) return;
   const { status, data } = await post("/api/views/drop", { view: row.view, name: row.name, confirmed });
   if (status === 409 && data.decision === "protected_database") { dropView(row, true); return; }
   if (status >= 400) { toast(data.error || t("pdms ui answered {status}", { status })); return; }
   if (!data.dropped) {
-    showSql(t("Run this in your database client"), t("Your user cannot drop it. Services already read the real {view}.", { view: row.view }), data.sql);
+    showSql(t("Run this in your database client"), t("Only its owner can drop it. Services already read the real {view}.", { view: row.view }), data.sql);
   } else toast(t("{name} is gone.", { name: row.name }), "info");
   loadViews();
 }
