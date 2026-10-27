@@ -1,3 +1,13 @@
+## v0.4.8 (2026-10-27)
+
+### Feat
+
+- **services**: ask before recreating a virtualenv on a Python the project no longer accepts
+
+### Fix
+
+- **instances**: services started or woken at once no longer share a port
+
 ## v0.4.7 (2026-10-26)
 
 ### Feat
