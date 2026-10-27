@@ -1570,8 +1570,6 @@ ES: dict[str, str] = {
         "Clónalo en tu home de Linux (~/...) y vuelve a añadirlo (pdms repo add).",
     "Could not log in to AWS CodeArtifact: {error}":
         "No se pudo iniciar sesión en AWS CodeArtifact: {error}",
-    "Inside WSL pdms has no app menu nor tray in Windows: open pdms ui from the terminal, and it opens in your Windows browser.":
-        "Dentro de WSL pdms no tiene menú de aplicaciones ni bandeja en Windows: abre pdms ui desde la terminal y se abrirá en tu navegador de Windows.",
     "Inside WSL: make Windows trust the certificate of the web app (https://localhost:3000), so its browsers do not warn about it.":
         "Dentro de WSL: hace que Windows confíe en el certificado de la app web (https://localhost:3000), para que sus navegadores no avisen.",
     "Log in to AWS CodeArtifact for the web app's @alivi packages, as frontend/codeartifact-login.sh does (pdms front does it by itself when the token is over).":

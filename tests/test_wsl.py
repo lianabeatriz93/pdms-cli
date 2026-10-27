@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from typer.testing import CliRunner
 
-from pdms_cli import browser, cli, desktop, doctor, wsl
+from pdms_cli import browser, desktop, doctor, wsl
 from pdms_cli.config import Config, Repo
+
+# WSL is a Linux: its paths (/mnt/c/...) and lookups are Linux's, which Windows' pathlib does not follow.
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="pdms inside WSL runs on Linux")
 
 TEST_CA = """-----BEGIN CERTIFICATE-----
 MIICCjCCAXOgAwIBAgIUVj2TRwHrMQqn36jTw9hQmeRxVKgwDQYJKoZIhvcNAQEL
@@ -93,10 +97,38 @@ def test_the_extension_goes_where_windows_browsers_can_open_it(inside, monkeypat
     assert started[-1] == [str(edge), "C:\\Users\\ana\\AppData\\Local\\pdms\\browser-extension\\x.xpi"]
 
 
-def test_no_window_menu_or_tray_inside_wsl(monkeypatch) -> None:
-    monkeypatch.setattr(wsl, "detected", lambda: True)
-    result = CliRunner().invoke(cli.app, ["ui", "--install"])
-    assert result.exit_code == 1 and "WSL" in result.output
+def test_windows_start_menu_and_login_run_pdms_ui_inside_wsl(inside, monkeypatch) -> None:
+    """Shortcuts of Windows (made by its PowerShell) that run a script starting pdms ui in WSL, with no window."""
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
+    variables = {"APPDATA": "C:\\Users\\ana\\AppData\\Roaming", "LOCALAPPDATA": "C:\\Users\\ana\\AppData\\Local"}
+    monkeypatch.setattr(wsl, "windows_variable", lambda name: variables.get(name, ""))
+    wsl.to_linux(variables["APPDATA"]).mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(wsl, "to_windows", lambda path: "C:\\" + str(path.relative_to(inside)).replace("/", "\\"))
+    monkeypatch.setattr(desktop, "pdms_executable", lambda gui=False: Path("/home/ana/.local/bin/pdms"))
+    made = []
+
+    def powershell(cmd, env, **kwargs):
+        made.append({key: env[key] for key in ("PDMS_LNK", "PDMS_TARGET", "PDMS_ARGS")} | {"WSLENV": env["WSLENV"]})
+        Path(wsl.to_linux(env["PDMS_LNK"])).write_text("lnk", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(desktop.subprocess, "run", powershell)
+    entry = desktop.install()
+    desktop.set_autostart(True)
+    programs = "C:\\Users\\ana\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs"
+    launcher = "C:\\Users\\ana\\AppData\\Local\\pdms\\pdms-ui.vbs"
+    assert made == [
+        {"PDMS_LNK": programs + "\\pdms.lnk", "PDMS_TARGET": "wscript.exe", "PDMS_ARGS": f'"{launcher}"',
+         "WSLENV": "PDMS_LNK:PDMS_TARGET:PDMS_ARGS:PDMS_ICON:PDMS_COMMENT"},
+        {"PDMS_LNK": programs + "\\Startup\\pdms.lnk", "PDMS_TARGET": "wscript.exe",
+         "PDMS_ARGS": f'"{launcher}" --no-browser', "WSLENV": "PDMS_LNK:PDMS_TARGET:PDMS_ARGS:PDMS_ICON:PDMS_COMMENT"},
+    ]
+    script = wsl.to_linux(launcher).read_text(encoding="utf-8")
+    assert "wsl.exe -d Ubuntu --cd ~ -e /home/ana/.local/bin/pdms ui --detached" in script and ", 0, False" in script
+    assert b"\r\n" in wsl.to_linux(launcher).read_bytes()  # a Windows script
+    assert entry.exists() and desktop.installed()
+    removed = desktop.uninstall()
+    assert len(removed) == 4 and not entry.exists() and not wsl.to_linux(launcher).exists()
 
 
 def test_the_certificate_windows_trusts_is_found_by_its_thumbprint(tmp_path, monkeypatch) -> None:
