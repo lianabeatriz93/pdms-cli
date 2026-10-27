@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+import io
 import sys
 
 
@@ -10,7 +10,8 @@ def main() -> None:
     if sys.stdin is None:
         # pdmsw.exe (the app menu shortcut on Windows) has no console, so Python gives it no stdin: an empty one
         # instead, which says it is not a terminal (sys.stdin.isatty() on None stopped pdms ui before it began).
-        sys.stdin = open(os.devnull, encoding="utf-8")  # noqa: SIM115 - lives as long as pdms
+        # Not os.devnull: Windows' NUL is a character device, and calls itself a terminal.
+        sys.stdin = io.StringIO()
     for stream in (sys.stdout, sys.stderr):
         # Redirected to a file on Windows the encoding is cp1252, which has no ✓: replace what it cannot write.
         if stream is not None and hasattr(stream, "reconfigure"):
