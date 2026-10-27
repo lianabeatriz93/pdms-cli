@@ -487,18 +487,36 @@ def start_service(
     """
     if install:
         install(launch.service)
-    if launch.on_demand and not awake:
-        return instances.register_asleep(
-            launch.service, host=launch.host, port=launch.port, user=launch.user_name, db=launch.db_name,
-            reload=launch.reload, events=launch.events.kind, parallel=launch.parallel,
+    deps, commit = installed_parts(launch.service), commit_of(cfg, launch.service)
+    with instances.registry_lock():  # the port is claimed and registered in one step
+        launch = claim_port(launch)
+        if launch.on_demand and not awake:
+            return instances.register_asleep(
+                launch.service, host=launch.host, port=launch.port, user=launch.user_name, db=launch.db_name,
+                reload=launch.reload, events=launch.events.kind, parallel=launch.parallel,
+            )
+        cmd, env = runner.direct(launch.service, launch.cmd, service_env(cfg, launch))
+        return instances.start(
+            launch.service, cmd, env, host=launch.host, port=launch.port,
+            user=launch.user_name, db=launch.db_name, reload=launch.reload, deps=deps,
+            events=launch.events.kind, queue=launch.queue, parallel=launch.parallel, commit=commit,
+            on_demand=launch.on_demand,
         )
-    cmd, env = runner.direct(launch.service, launch.cmd, service_env(cfg, launch))
-    return instances.start(
-        launch.service, cmd, env, host=launch.host, port=launch.port,
-        user=launch.user_name, db=launch.db_name, reload=launch.reload, deps=installed_parts(launch.service),
-        events=launch.events.kind, queue=launch.queue, parallel=launch.parallel, commit=commit_of(cfg, launch.service),
-        on_demand=launch.on_demand,
-    )
+
+
+def claim_port(launch: ServiceLaunch) -> ServiceLaunch:
+    """``launch`` on its port, or on the next free one when another instance took it since it was planned (an
+    install in between, or two services starting at once). Called holding :func:`instances.registry_lock`."""
+    if not launch.port:  # an SQS consumer listens on its queue
+        return launch
+    taken = instances.running_ports()
+    if launch.port not in taken and runner.port_is_free(launch.host, launch.port):
+        return launch
+    port = runner.next_free_port(launch.host, launch.port + 1, taken)
+    cmd = list(launch.cmd)
+    if "--port" in cmd:
+        cmd[cmd.index("--port") + 1] = str(port)
+    return replace(launch, port=port, cmd=cmd)
 
 
 def wake_service(cfg: Config, instance: instances.Instance) -> instances.Instance:
@@ -512,18 +530,21 @@ def wake_service(cfg: Config, instance: instances.Instance) -> instances.Instanc
             events_mode="local" if instance.events == "local" else "aws",
         )
 
-    instances.forget(instance.key)  # its port is kept for it while it is registered
-    try:
+    # Its port is kept for it while it is registered: freeing it, planning and starting is one step, or another
+    # service starting meanwhile (or woken by another request) could take the same port.
+    with instances.registry_lock():
+        instances.forget(instance.key)
         try:
-            launch = plan(instance.port)
-        except PortBusy as busy:  # someone else took it meanwhile
-            launch = plan(busy.free)
-        return start_service(cfg, launch, awake=True)
-    except Exception:
-        registry = instances.load()
-        registry.setdefault(instance.key, instance)  # asleep again: the next request tries once more
-        instances.save(registry)
-        raise
+            try:
+                launch = plan(instance.port)
+            except PortBusy as busy:  # someone else took it meanwhile
+                launch = plan(busy.free)
+            return start_service(cfg, launch, awake=True)
+        except Exception:
+            registry = instances.load()
+            registry.setdefault(instance.key, instance)  # asleep again: the next request tries once more
+            instances.save(registry)
+            raise
 
 
 def set_on_demand(cfg: Config, instance: instances.Instance, on: bool) -> instances.Instance:
