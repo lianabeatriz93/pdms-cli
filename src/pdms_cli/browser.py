@@ -74,6 +74,7 @@ BROWSERS = (
     Browser("firefox", "Firefox", "about:addons", ("firefox",), "firefox.exe", ("Mozilla Firefox",), "Firefox"),
 )
 BY_KEY = {browser.key: browser for browser in BROWSERS}
+APP_BROWSERS = ("edge", "chrome", "brave", "chromium")  # the ones that open a page as an app (not Firefox)
 
 
 def extension_dir() -> Path:
@@ -240,6 +241,20 @@ def installed() -> dict[str, str]:
         found = {browser.key: path for browser in BROWSERS if (path := executable(browser))}
         _found = (time.monotonic(), found)
     return found
+
+
+def open_app(url: str) -> bool:
+    """Open ``url`` as an app: a window of its own, without tabs or address bar (Chromium's ``--app``; Edge first,
+    which Windows always has). False when there is no such browser here."""
+    for key in APP_BROWSERS:
+        if program := installed().get(key):
+            try:
+                subprocess.Popen([program, f"--app={url}"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, **instances.detach_options())
+            except OSError:
+                continue
+            return True
+    return False
 
 
 def open_page(browser: Browser, target: str = "") -> bool:
