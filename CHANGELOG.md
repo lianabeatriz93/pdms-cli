@@ -1,3 +1,9 @@
+## v0.4.12 (2026-10-28)
+
+### Fix
+
+- **ui**: a service starts once; a remote request's service starts from Requests
+
 ## v0.4.11 (2026-10-28)
 
 ### Feat
