@@ -666,6 +666,7 @@ ES: dict[str, str] = {
         "No se pudo abrir la ventana: {error}. pdms ui la abre en el navegador.",
     "{key} is busy ({phase}).": "{key} está ocupada ({phase}).",
     "{key} is busy.": "{key} está ocupada.",
+    "{name} is already starting ({key}).": "{name} ya se está arrancando ({key}).",
     "There is no instance {key}.": "No hay ninguna instancia {key}.",
     "{key} is running; stop it first.": "{key} está corriendo; párala primero.",
     "{cmd} failed (exit code {code}).": "{cmd} falló (código de salida {code}).",

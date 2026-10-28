@@ -99,12 +99,17 @@ class Jobs:
                 setattr(job, name, value)
         self.on_change()
 
-    def run(self, key: str, action: str, phase: str, work: Callable[[Job], object]) -> Job:
-        """Start ``work`` in a thread; :class:`actions.ActionError` if something is already running on ``key``."""
+    def run(self, key: str, action: str, phase: str, work: Callable[[Job], object], *, once: str = "") -> Job:
+        """Start ``work`` in a thread; :class:`actions.ActionError` if something is already running on ``key``, or
+        (``once``: a service's name) a start of that service on any port: it would run twice."""
         with self._lock:
             current = self._jobs.get(key)
             if current and current.running:
                 raise actions.ActionError(_("{key} is busy ({phase}).", key=key, phase=current.phase))
+            starting = next((other for other, job in self._jobs.items() if once and job.running
+                             and job.action == "start" and other.rsplit("@", 1)[0] == once), "")
+            if starting:
+                raise actions.ActionError(_("{name} is already starting ({key}).", name=once, key=starting))
             job = self._jobs[key] = Job(key, action, phase, time.time())
         threading.Thread(target=self._work, args=(job, work), name=f"pdms-ui-{action}", daemon=True).start()
         self.on_change()
@@ -585,7 +590,7 @@ class Jobs:
             self.phase(job, "starting")
             actions.start_service(cfg, launch)
 
-        return self.run(key, "start", "starting", work)
+        return self.run(key, "start", "starting", work, once=launch.service.name)
 
     def views_first(self, cfg: Config, job: Job, needs: list[actions.TestViewNeed]) -> None:
         """Make the test copies of the views the user agreed to (see :func:`actions.check_test_views`)."""
@@ -1076,6 +1081,21 @@ def proxy_options(cfg: Config) -> dict:
         "port": cfg.defaults.proxy_port, "env": "dev" if "dev" in envs or not envs else envs[0], "envs": envs,
         "remote": repo_remote(cfg, root), "frontend": (root / "frontend").is_dir(),
     }
+
+
+def proxy_route(cfg: Config, method: str, path: str) -> dict:
+    """The service of the route a request took (``lead/lead-tp-list``; "" when none matches), to start it here."""
+    root, env = _proxy_repo(cfg)
+    route = routes.match(actions.proxy_routes(root, env), method, path)
+    return {"service": route.service if route else ""}
+
+
+def _proxy_repo(cfg: Config) -> tuple[Path, str]:
+    """The repo and environment of the running proxy, or the ones a proxy started now would use."""
+    running = proxy.running_proxy()
+    if running and running.get("repo"):
+        return Path(running["repo"]), running.get("env") or "dev"
+    return repo_root(cfg), "dev"
 
 
 def proxy_routes(cfg: Config, env: str | None = None) -> dict:

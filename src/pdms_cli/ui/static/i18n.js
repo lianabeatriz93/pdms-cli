@@ -741,6 +741,8 @@ const CATALOG = {
     "Reload on code changes": "Recargar al cambiar el código",
     "remote": "remota",
     "remote ({key} in another repo)": "remota ({key} en otro repo)",
+    "Start its service here": "Levantar su servicio aquí",
+    "No route of this repo's Terraform matches {path}.": "Ninguna ruta del Terraform de este repo coincide con {path}.",
     "Remote API": "API remota",
     "Remove": "Quitar",
     "Removed": "Eliminadas",

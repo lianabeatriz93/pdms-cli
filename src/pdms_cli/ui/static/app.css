@@ -669,6 +669,7 @@ td .found-note { color: var(--muted); }
 .req-body .sub { margin: .55rem 0 .1rem; font-size: .7rem; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 /* Requests: database share of each request, the N+1 flag, and the detail's time line and queries. */
 #req-rows .req-path .hint { display: block; font-size: .74rem; color: var(--muted); }
+#req-rows .req-path .req-start { float: right; margin-left: .4rem; } /* a remote request's service, started here */
 #req-rows td.slow { color: var(--warn); font-weight: 600; }
 .db-cell { display: inline-flex; align-items: center; gap: .45rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .db-bar { display: inline-flex; width: 70px; height: 7px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; }

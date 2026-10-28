@@ -401,16 +401,16 @@ export async function startAll(confirmed = false, python = null, migrate = null,
     if (status === 200 && !data.job) toast(t("Everything in your setup is already running."), "info");
     else if (status === 409 && data.decision === "test_views_pending") {
       const answer = await askViews(data.views);
-      if (answer !== null) startAll(confirmed, python, migrate, answer);
+      if (answer !== null) await startAll(confirmed, python, migrate, answer);
     } else if (status === 409 && data.decision === "migrations_pending") {
       const answer = await askMigrations(data.dbs);
-      if (answer !== null) startAll(confirmed, python, answer, views);
+      if (answer !== null) await startAll(confirmed, python, answer, views);
     } else if (status === 409 && data.decision === "python_mismatch") {
       const answer = await askPython(data.services);
-      if (answer !== null) startAll(confirmed, answer, migrate, views);
+      if (answer !== null) await startAll(confirmed, answer, migrate, views);
     } else if (status === 409 && data.decision === "protected_database") {
       if (await confirmDialog(t("'{name}' is a protected database. Use it anyway?", { name: data.name }),
-        t("The stack's services will run against it."), t("Use it"))) startAll(true, python, migrate, views);
+        t("The stack's services will run against it."), t("Use it"))) await startAll(true, python, migrate, views);
     } else if (status === 409 && data.decision === "port_busy") {
       toast(t("Port {port} is in use, so the frontend cannot start there. Free it, or start the frontend on another port from its tile.", { port: data.port }));
     } else if (status >= 400) {
