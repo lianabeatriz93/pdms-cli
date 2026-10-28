@@ -1,3 +1,10 @@
+## v0.4.10 (2026-10-28)
+
+### Fix
+
+- **views**: the services' user can read a test copy
+- **ui**: Copy works inside a dialog
+
 ## v0.4.9 (2026-10-27)
 
 ### Feat
