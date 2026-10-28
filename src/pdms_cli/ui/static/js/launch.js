@@ -11,7 +11,7 @@ import { askMigrations, askViews } from "./migrations.js";
 // set: several instances restarted together (their keys), from a stack when stack is its name.
 const launch = {
   path: null, confirmed: false, after: null, run: false, service: "", go: "start", set: false, stack: "", python: null,
-  migrate: null, views: null,
+  migrate: null, views: null, sending: false,
 };
 
 function goLabel() {
@@ -138,7 +138,7 @@ export async function fetchServices() {
   return null;
 }
 
-export async function openRun() {
+export async function openRun(service = "") {
   const found = await fetchServices();
   if (!found) return;
   const ports = runningOn(slashes(found.root));
@@ -161,7 +161,16 @@ export async function openRun() {
     user: state.user, db: state.db, go: "start", path: "/api/run", run: true,
     after: (_install, data) => openLogs(data.job),
   });
-  $("run-filter").focus();
+  const radio = service && [...$("run-services").querySelectorAll("input")].find((input) => input.value === service);
+  if (radio) {
+    radio.checked = true;
+    radio.dispatchEvent(new Event("change"));
+    $("run-filter").value = service;
+    filterRun();
+    $("restart-go").focus();
+  } else {
+    $("run-filter").focus();
+  }
 }
 
 export function servicesCount(n) {
@@ -189,6 +198,19 @@ export function openUp(stack) {
 
 export async function submitLaunch(event) {
   event.preventDefault();
+  if (launch.sending) return; // a second click while the first is still going would start the services twice
+  launch.sending = true;
+  try {
+    await sendLaunch();
+  } finally {
+    launch.sending = false;
+    $("restart-go").disabled = launch.set && !$("set-services").querySelector("input:checked");
+  }
+}
+
+// The form to the server; its questions (views, migrations, Python) are answered and it is sent again, all while the
+// button stays off.
+async function sendLaunch() {
   const install = { auto: null, force: true, skip: false }[$("restart-form").install.value];
   const body = {
     user: $("restart-user").value, db: $("restart-db").value, install, confirmed: launch.confirmed, python: launch.python,
@@ -235,7 +257,7 @@ export async function submitLaunch(event) {
       const answer = await askViews(data.views);
       if (answer !== null) {
         launch.views = answer;
-        submitLaunch(event);
+        await sendLaunch();
       }
       return;
     }
@@ -243,7 +265,7 @@ export async function submitLaunch(event) {
       const answer = await askMigrations(data.dbs);
       if (answer !== null) {
         launch.migrate = answer;
-        submitLaunch(event);
+        await sendLaunch();
       }
       return;
     }
@@ -251,7 +273,7 @@ export async function submitLaunch(event) {
       const answer = await askPython(data.services);
       if (answer !== null) {
         launch.python = answer;
-        submitLaunch(event);
+        await sendLaunch();
       }
       return;
     }
@@ -267,8 +289,6 @@ export async function submitLaunch(event) {
   } catch {
     $("restart-error").textContent = t("pdms ui is not reachable: is it still running?");
     $("restart-error").hidden = false;
-  } finally {
-    $("restart-go").disabled = launch.set && !$("set-services").querySelector("input:checked");
   }
 }
 

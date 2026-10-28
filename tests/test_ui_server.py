@@ -493,6 +493,26 @@ def test_start_one_service_takes_the_next_free_port(ui, repo, monkeypatch) -> No
     assert started[0].user_name == "agent" and started[0].db_name == "local"  # the last ones, like pdms run
 
 
+def test_a_service_starting_cannot_start_again_meanwhile(ui, repo, monkeypatch) -> None:
+    """A second click while the first start is going (any port): the service would run twice, one without its port."""
+    port, _hub, _states, jobs = ui
+    release, started = threading.Event(), []
+
+    def start_service(cfg, launch, install=None):
+        release.wait(5)
+        started.append(launch.port)
+
+    monkeypatch.setattr(actions, "start_service", start_service)
+    monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: False)
+    assert post(port, "/api/run", {"service": "lead/lead-get", "port": 9102}) == (202, {"job": "lead-get@9102"})
+    status, data = post(port, "/api/run", {"service": "lead/lead-get", "port": 9103})
+    assert status == 400 and data["error"] == "lead-get is already starting (lead-get@9102)."
+    release.set()
+    wait_until(lambda: started and not jobs.snapshot())
+    assert started == [9102]
+    assert post(port, "/api/run", {"service": "lead/lead-get", "port": 9103}) == (202, {"job": "lead-get@9103"})
+
+
 def test_a_stale_stack_says_so_without_terminal_markup(ui, repo) -> None:
     port, _hub, _states, _jobs = ui
     (repo / "lead/lead-get/main.py").unlink()
@@ -599,6 +619,11 @@ def test_proxy_options_and_routes(ui, proxy_repo) -> None:
     assert request(port, "/api/proxy/routes?env=../../etc", cookie(port))[0].status == 400
     response, raw, _conn = request(port, "/api/proxy/routes?env=prod", cookie(port))
     assert response.status == 400 and "No Terraform for 'prod'" in json.loads(raw)["error"]
+    # A request the remote API answered: the service of its route, to start it here.
+    _response, raw, _conn = request(port, "/api/proxy/route?method=GET&path=/api/v1/me%3Fx%3D1", cookie(port))
+    assert json.loads(raw) == {"service": "user/user-me"}
+    _response, raw, _conn = request(port, "/api/proxy/route?method=POST&path=/api/v1/me", cookie(port))
+    assert json.loads(raw) == {"service": ""}
 
 
 def test_proxy_start_asks_first_and_runs_as_a_job(ui, proxy_repo, machine, monkeypatch) -> None:

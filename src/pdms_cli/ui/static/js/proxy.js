@@ -1,9 +1,9 @@
 // Proxy: starting it, its requests with their detail (curl, replay) and its routes.
 
-import { $, act, button, copyText, el, failedText, phaseLabel, post, repoPath, toast, uptime } from "./core.js";
+import { $, act, button, copyText, el, failedText, getJson, iconButton, phaseLabel, post, repoPath, toast, uptime } from "./core.js";
 import { state } from "./state.js";
 import { nearBottom, openRequestLogs, showLogs } from "./logs.js";
-import { options } from "./launch.js";
+import { openRun, options } from "./launch.js";
 import { currentView } from "./router.js";
 
 const MAX_REQUESTS = 2000;
@@ -219,12 +219,26 @@ function requestRow(req) {
     el("td", { class: "mono muted" }, req.time),
     el("td", { class: "req-path" },
       el("span", { class: "method" }, req.method), " ", el("span", { class: "mono" }, ...slashBreaks(req.path)),
-      el("span", { class: `hint ${local ? "mono" : `target-${req.target === "other-repo" ? "other" : req.target}`}` }, req.target)),
+      el("span", { class: `hint ${local ? "mono" : `target-${req.target === "other-repo" ? "other" : req.target}`}` }, req.target),
+      ...(STARTABLE.has(req.target) ? [startHere(req)] : [])),
     el("td", { class: `num ${codeClass(req.status)}` }, String(req.status)),
     el("td", { class: `num ${req.ms >= SLOW_MS ? "slow" : "muted"}` }, duration(req.ms)),
     el("td", {}, dbBar(req)),
     queries,
   );
+}
+
+// Answered by the remote API (or by nothing): the service of its route can start here, in the Start a service form.
+const STARTABLE = new Set(["remote", "missing"]);
+
+function startHere(req) {
+  return iconButton("play", t("Start its service here"), async (event) => {
+    event.stopPropagation(); // not the row's detail
+    const { data, error } = await getJson(`/api/proxy/route?${new URLSearchParams({ method: req.method, path: req.path })}`);
+    if (error) toast(error);
+    else if (!data.service) toast(t("No route of this repo's Terraform matches {path}.", { path: req.path }));
+    else openRun(data.service);
+  }, { class: "ibtn req-start" });
 }
 
 function addRequests(lines) {

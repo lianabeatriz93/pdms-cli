@@ -390,7 +390,7 @@ def make_handler(
                     self.reply_json(200, ui_jobs.frontend_options(Config.load()))
                 except actions.ActionError as exc:
                     self.reply_json(400, {"error": plain(exc.message)})
-            elif url.path in ("/api/proxy/options", "/api/proxy/routes", "/api/proxy/request"):
+            elif url.path in ("/api/proxy/options", "/api/proxy/routes", "/api/proxy/route", "/api/proxy/request"):
                 self.proxy_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
             elif url.path in ("/api/events/queues", "/api/events/map", "/api/events/peek", "/api/events/template",
                               "/api/events/ready"):
@@ -513,6 +513,8 @@ def make_handler(
                     data = ui_jobs.proxy_options(cfg)
                 elif which == "request":
                     data = actions.proxy_request(query.get("id", [""])[0])
+                elif which == "route":
+                    data = ui_jobs.proxy_route(cfg, query.get("method", ["GET"])[0], query.get("path", [""])[0])
                 else:
                     data = ui_jobs.proxy_routes(cfg, env_name(env) if (env := query.get("env", [""])[0]) else None)
             except actions.ActionError as exc:
