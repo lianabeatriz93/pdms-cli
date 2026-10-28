@@ -43,6 +43,13 @@ def open_url(url: str) -> bool:
     return webbrowser.open(url)
 
 
+def open_app_window(url: str) -> bool:
+    """Open ``url`` in a window of its own of a Chromium browser (inside WSL, Windows' Edge), else in the browser."""
+    from . import browser
+
+    return browser.open_app(url) or open_url(url)
+
+
 def pdms_executable(gui: bool = False) -> Path:
     """This ``pdms`` (``pdmsw`` on Windows when ``gui``: no console window), else the one on the PATH."""
     running = Path(sys.argv[0])

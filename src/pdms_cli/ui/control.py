@@ -19,6 +19,8 @@ class Control:
         self.quitting = threading.Event()
         # The system's folder picker, with a window (None in the browser, where the page cannot reach it).
         self.pick_folder: Callable[[str], str] | None = None
+        # Inside WSL the window is one of Windows' Edge (or Chrome) opened as an app: pywebview needs a Linux desktop.
+        self.app_window = False
 
     def attach(self, show: Callable[[], None] | None, close: Callable[[], None]) -> None:
         """``show`` brings the window to the front (None: there is no window, the browser opens instead);
@@ -35,8 +37,8 @@ class Control:
         else:
             self.open_browser()
 
-    def open_browser(self) -> None:
-        desktop.open_url(self.url)
+    def open_browser(self) -> bool:
+        return (desktop.open_app_window if self.app_window else desktop.open_url)(self.url)
 
     def quit(self, restart: bool = False) -> None:
         self.restart = restart

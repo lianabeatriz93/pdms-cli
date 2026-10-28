@@ -40,8 +40,10 @@ def ui_cmd(
     if install or uninstall or at_login is not None:
         ui_setup(install, uninstall, at_login)
         return
-    if window and wsl.detected():
-        console.print(_("[dim]Inside WSL pdms ui opens in your Windows browser: the window needs a Linux desktop.[/]"))
+    # Inside WSL pywebview would need a Linux desktop: the window is Windows' Edge (or Chrome) opening the page as an
+    # app. Windows' Start menu runs pdms ui detached, so its shortcuts made before --window get the window too.
+    app_window = wsl.detected() and (window or detached)
+    if app_window:
         window = False
     from ..ui import control as ui_control
     from ..ui import instance as ui_instance
@@ -92,8 +94,10 @@ def ui_cmd(
     token = token or ui_server.new_token()
     url = f"http://127.0.0.1:{port}/?token={token}"
     relaunch = [str(desktop.pdms_executable(gui=detached)), "ui", "--port", str(port),
-                *(["--window"] if window else ["--no-browser"]), *(["--detached"] if detached else [])]
+                *(["--window"] if window or app_window else []), *([] if window else ["--no-browser"]),
+                *(["--detached"] if detached else [])]
     control = ui_control.Control(url, token, relaunch)
+    control.app_window = app_window
     try:
         extension.refresh_extension()  # after an update the extension loads the new files by itself
     except OSError:
@@ -133,7 +137,7 @@ def ui_cmd(
         else:
             control.attach(None, lambda: threading.Thread(target=server.shutdown, daemon=True).start())
             console.print(_("[dim]Only this machine can open it, and only with this link. Ctrl+C to stop it.[/]"))
-            if browser and not desktop.open_url(url):
+            if browser and not control.open_browser():
                 console.print(_("[yellow]Could not open a browser; open the URL manually.[/]"))
             try:
                 ui_server.serve(server, hub)

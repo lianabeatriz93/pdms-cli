@@ -1601,8 +1601,6 @@ ES: dict[str, str] = {
         "Windows no confía en él, así que sus navegadores avisan en https://localhost:3000 ({path})",
     "Windows trusts the web app's certificate: reload the page in the browser.":
         "Windows confía en el certificado de la app web: recarga la página en el navegador.",
-    "[dim]Inside WSL pdms ui opens in your Windows browser: the window needs a Linux desktop.[/]":
-        "[dim]Dentro de WSL pdms ui se abre en tu navegador de Windows: la ventana necesita un escritorio Linux.[/]",
     "none found for the pdms extension":
         "no se encontró ninguno para la extensión de pdms",
     "on a Windows drive ({path}): Poetry, yarn and --reload are much slower there":

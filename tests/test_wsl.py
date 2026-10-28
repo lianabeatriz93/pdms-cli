@@ -97,6 +97,56 @@ def test_the_extension_goes_where_windows_browsers_can_open_it(inside, monkeypat
     assert started[-1] == [str(edge), "C:\\Users\\ana\\AppData\\Local\\pdms\\browser-extension\\x.xpi"]
 
 
+def test_the_window_is_edge_opening_the_page_as_an_app(inside, monkeypatch) -> None:
+    """pywebview needs a Linux desktop: inside WSL the window is Windows' Edge (or Chrome) with --app."""
+    edge = inside / "Program Files (x86)" / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+    edge.parent.mkdir(parents=True)
+    edge.write_text("", encoding="utf-8")
+    started, opened = [], []
+    monkeypatch.setattr(browser.subprocess, "Popen", lambda cmd, **kwargs: started.append(cmd))
+    monkeypatch.setattr(wsl, "open_url", lambda url: opened.append(url) or True)
+    assert desktop.open_app_window("http://127.0.0.1:8765/?token=x")
+    assert started == [[str(edge), "--app=http://127.0.0.1:8765/?token=x"]] and not opened
+    monkeypatch.setattr(browser, "_found", (0.0, {}))
+    edge.unlink()  # no Chromium browser: the default one
+    assert desktop.open_app_window("http://127.0.0.1:8765/?token=x") and opened == ["http://127.0.0.1:8765/?token=x"]
+
+
+def test_pdms_ui_window_inside_wsl_opens_the_app_window(monkeypatch) -> None:
+    """``pdms ui --window`` (and Windows' Start menu, which runs it detached) opens Edge as an app, not pywebview."""
+    from typer.testing import CliRunner
+
+    from pdms_cli.cli import app
+    from pdms_cli.commands import ui as ui_command
+    from pdms_cli.ui import control as ui_control
+    from pdms_cli.ui import instance as ui_instance
+    from pdms_cli.ui import server as ui_server
+    from pdms_cli.ui import window as ui_window
+
+    monkeypatch.setattr(wsl, "detected", lambda: True)
+    monkeypatch.setattr(ui_instance, "running", lambda: None)
+    monkeypatch.setattr(ui_instance, "remember", lambda *args: None)
+    monkeypatch.setattr(ui_instance, "forget", lambda: None)
+    monkeypatch.setattr(ui_command.extension, "refresh_extension", lambda: None)
+    monkeypatch.setattr(ui_window, "open_window", lambda *args, **kwargs: pytest.fail("pywebview inside WSL"))
+    monkeypatch.setattr(ui_server, "serve", lambda server, hub: None)
+    monkeypatch.setattr(ui_command.instances, "watch_logs", lambda stopped: None)
+    controls, opened = [], []
+    real = ui_control.Control
+
+    def control(*args, **kwargs):
+        controls.append(real(*args, **kwargs))
+        return controls[-1]
+
+    monkeypatch.setattr(ui_control, "Control", control)
+    monkeypatch.setattr(desktop, "open_app_window", lambda url: opened.append(("app", url)) or True)
+    monkeypatch.setattr(desktop, "open_url", lambda url: opened.append(("browser", url)) or True)
+    result = CliRunner().invoke(app, ["ui", "--window", "--port", "0"])
+    assert result.exit_code == 0, result.output
+    assert [kind for kind, _url in opened] == ["app"] and controls[0].app_window
+    assert "--window" in controls[0].relaunch and "--no-browser" in controls[0].relaunch  # a restart reopens nothing
+
+
 def test_windows_start_menu_and_login_run_pdms_ui_inside_wsl(inside, monkeypatch) -> None:
     """Shortcuts of Windows (made by its PowerShell) that run a script starting pdms ui in WSL, with no window."""
     monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
