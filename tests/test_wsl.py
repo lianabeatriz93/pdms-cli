@@ -141,10 +141,37 @@ def test_pdms_ui_window_inside_wsl_opens_the_app_window(monkeypatch) -> None:
     monkeypatch.setattr(ui_control, "Control", control)
     monkeypatch.setattr(desktop, "open_app_window", lambda url: opened.append(("app", url)) or True)
     monkeypatch.setattr(desktop, "open_url", lambda url: opened.append(("browser", url)) or True)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     result = CliRunner().invoke(app, ["ui", "--window", "--port", "0"])
     assert result.exit_code == 0, result.output
     assert [kind for kind, _url in opened] == ["app"] and controls[0].app_window
     assert "--window" in controls[0].relaunch and "--no-browser" in controls[0].relaunch  # a restart reopens nothing
+
+
+def test_with_wslg_the_window_is_pywebviews_as_on_linux(monkeypatch) -> None:
+    """Windows 11 shows Linux windows (WSLg): pdms ui --window opens pywebview's, as before pdms knew about WSL."""
+    from typer.testing import CliRunner
+
+    from pdms_cli.cli import app
+    from pdms_cli.commands import ui as ui_command
+    from pdms_cli.ui import instance as ui_instance
+    from pdms_cli.ui import window as ui_window
+
+    monkeypatch.setattr(wsl, "detected", lambda: True)
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setattr(ui_window, "available", lambda: True)
+    monkeypatch.setattr(ui_instance, "running", lambda: None)
+    monkeypatch.setattr(ui_instance, "remember", lambda *args: None)
+    monkeypatch.setattr(ui_instance, "forget", lambda: None)
+    monkeypatch.setattr(ui_command.extension, "refresh_extension", lambda: None)
+    monkeypatch.setattr(ui_command.instances, "watch_logs", lambda stopped: None)
+    windows = []  # the server runs in a thread meanwhile: the window's closing shuts it down
+    monkeypatch.setattr(ui_window, "open_window", lambda url, control, hidden=False: windows.append(control.app_window))
+    monkeypatch.setattr(desktop, "open_app_window", lambda url: pytest.fail("Edge with WSLg"))
+    result = CliRunner().invoke(app, ["ui", "--window", "--port", "0"])
+    assert result.exit_code == 0, result.output
+    assert windows == [False]
 
 
 def test_windows_start_menu_and_login_run_pdms_ui_inside_wsl(inside, monkeypatch) -> None:

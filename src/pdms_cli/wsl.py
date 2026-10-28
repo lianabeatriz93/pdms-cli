@@ -112,6 +112,11 @@ def open_url(url: str) -> bool:
     return False
 
 
+def has_display() -> bool:
+    """Whether Linux windows show on Windows' desktop (WSLg, on Windows 11, sets these)."""
+    return bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"))
+
+
 def on_windows_drive(path: Path) -> bool:
     """A path on a Windows drive (``/mnt/c/...``): Linux tools see it through a slow bridge."""
     return bool(re.match(r"^/mnt/[a-zA-Z](/|$)", str(path)))

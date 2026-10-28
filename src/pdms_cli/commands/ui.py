@@ -40,16 +40,21 @@ def ui_cmd(
     if install or uninstall or at_login is not None:
         ui_setup(install, uninstall, at_login)
         return
-    # Inside WSL pywebview would need a Linux desktop: the window is Windows' Edge (or Chrome) opening the page as an
-    # app. Windows' Start menu runs pdms ui detached, so its shortcuts made before --window get the window too.
-    app_window = wsl.detected() and (window or detached)
-    if app_window:
-        window = False
     from ..ui import control as ui_control
     from ..ui import instance as ui_instance
     from ..ui import server as ui_server
     from ..ui import updates as ui_updates
     from ..ui import window as ui_window
+
+    # Inside WSL Windows' Start menu runs pdms ui detached (its shortcuts made before --window too): a window. With
+    # WSLg (Windows 11) pywebview's opens as on Linux; without its display or pywebview, Windows' Edge (or Chrome)
+    # opens the page as an app instead.
+    app_window = False
+    if wsl.detected():
+        window = window or (detached and browser)
+        if window and not (wsl.has_display() and ui_window.available()):
+            app_window, window = True, False
+        app_window = app_window or (detached and not window)  # at login: Start menu's later clicks show this one
 
     if detached:
         ui_instance.redirect_output()
