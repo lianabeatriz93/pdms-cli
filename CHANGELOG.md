@@ -1,3 +1,13 @@
+## v0.4.11 (2026-10-28)
+
+### Feat
+
+- **ui**: inside WSL the window is Edge opening pdms ui as an app
+
+### Fix
+
+- **ui**: with WSLg the window inside WSL is pywebview's again
+
 ## v0.4.10 (2026-10-28)
 
 ### Fix
