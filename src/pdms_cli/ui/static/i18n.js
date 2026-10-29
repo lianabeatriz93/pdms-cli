@@ -1185,6 +1185,8 @@ const CATALOG = {
     "Request body": "Cuerpo de la petición",
     "Response": "Respuesta",
     "Sent again: {status} in {ms} ms. It shows up at the bottom of the list.": "Enviada otra vez: {status} en {ms} ms. Aparece al final de la lista.",
+    "Hide or show the menu": "Ocultar o mostrar el menú",
+    "Hide or show the menu (Ctrl B)": "Ocultar o mostrar el menú (Ctrl B)",
     "Search or run…": "Buscar o ejecutar…",
     "Search or run a command": "Buscar o ejecutar un comando",
     "Search or run": "Buscar o ejecutar",
