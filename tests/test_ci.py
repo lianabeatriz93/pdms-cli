@@ -44,7 +44,8 @@ def test_code_the_tests_cover_a_dev_dependency_or_the_lock_leave_the_installers_
                  "pyproject.toml": PYPROJECT.replace('dev = ["pytest"]', 'dev = ["pytest", "playwright"]')
                  + "\n[tool.ruff]\nline-length = 120\n",
                  ".github/workflows/ci.yml": CI.replace("tests:\n    runs-on: ubuntu-latest",
-                                                        "tests:\n    runs-on: windows-latest")})
+                                                        "tests:\n    runs-on: windows-latest")
+                 .replace("  installers:\n", "  installers:\n    # a comment says nothing new to try\n")})
     assert changed.reasons(base) == []
 
 
