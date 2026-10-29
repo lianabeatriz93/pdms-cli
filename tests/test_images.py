@@ -65,9 +65,9 @@ def test_doctor_lists_the_images_with_a_download_button(monkeypatch) -> None:
 def test_pdms_ui_asks_with_the_images_and_pulls_only_known_ones(monkeypatch) -> None:
     from pdms_cli import actions
     from pdms_cli.ui import jobs as ui_jobs
-    from pdms_cli.ui import server as ui_server
+    from pdms_cli.ui import api as ui_api
 
-    body = ui_server.decision_body(images.Missing([images.IMAGES[images.FLYWAY]]))
+    body = ui_api.decision_body(images.Missing([images.IMAGES[images.FLYWAY]]))
     assert body["decision"] == "images_missing" and body["images"][0]["download_mb"] == 360
     jobs = ui_jobs.Jobs()
     with pytest.raises(actions.ActionError, match="not an image pdms uses"):
