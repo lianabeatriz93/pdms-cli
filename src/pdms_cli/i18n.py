@@ -1249,6 +1249,8 @@ ES: dict[str, str] = {
         "No están corriendo en el stack {name}: {names}",
     "Pick the services to restart.":
         "Elige los servicios que quieres reiniciar.",
+    "Pick the services to start.":
+        "Elige los servicios que quieres levantar.",
     "Restart background services (same ports; same user and DB by default).":
         "Reinicia servicios en segundo plano (mismos puertos; mismo usuario y BD por defecto).",
     "The running services of this stack (all, or the ones named).":

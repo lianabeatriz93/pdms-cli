@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from playwright.sync_api import Page, Route, expect
 
@@ -62,6 +63,31 @@ def test_a_service_starts_once_however_fast_one_clicks(ui: Page) -> None:
     assert len(sent) == 2, sent
     assert sent[0]["service"] == "lead/lead-tp-create" and sent[0]["user"] == "agent" and sent[0]["db"] == "local"
     assert sent[1]["migrate"] is True
+
+
+def test_several_services_start_at_once_or_become_a_stack(ui: Page) -> None:
+    sent: list[dict] = []
+    ui.route("**/api/run", lambda route: sent.append(json.loads(route.request.post_data or "{}"))
+             or answer(route, 202, {"jobs": ["lead-tp-create@28100", "driver-get@28101"]}))
+    ui.click('a[data-view="services"]')
+    ui.click("#run-new")
+    expect(ui.locator("#restart")).to_have_class(re.compile(r"\bl\b"))  # the list and the options side by side
+    ui.locator("#run-services label", has_text="lead-tp-create").click()
+    ui.locator("#run-services label", has_text="driver-get").click()
+    expect(ui.locator("#run-picked-list .run-chip")).to_have_count(2)
+    expect(ui.locator("#run-port-label")).to_be_hidden()  # each takes the next free port
+    expect(ui.locator("#restart-go")).to_have_text("Start 2")
+    ui.click("#restart-go")
+    expect(ui.locator("#restart")).to_be_hidden()
+    assert sent[0]["services"] == ["lead/lead-tp-create", "driver/driver-get"] and "service" not in sent[0]
+
+    ui.click("#run-new")
+    ui.fill("#run-filter", "lead")
+    ui.click("#run-all")
+    expect(ui.locator("#run-picked-list .run-chip")).to_have_count(2)
+    ui.click("#run-save-stack")
+    expect(ui.locator("#editor")).to_be_visible()
+    expect(ui.locator("#editor-services input:checked")).to_have_count(2)
 
 
 def test_settings_save_the_defaults_to_the_configuration(ui: Page) -> None:
