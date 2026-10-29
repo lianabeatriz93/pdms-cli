@@ -88,16 +88,16 @@ def test_the_terminal_asks_and_applies(cfg, monkeypatch, tmp_path) -> None:
 
 
 def test_the_page_gets_a_decision(cfg, monkeypatch) -> None:
-    from pdms_cli.ui import server as ui_server
+    from pdms_cli.ui import api as ui_api
 
     monkeypatch.setattr(migrations, "status", lambda repo, db, timeout: state("2026.10.05.544.01"))
     with pytest.raises(actions.MigrationsPending) as asked:
         actions.check_migrations(cfg, ["pdms-local"], None)
-    body = ui_server.decision_body(asked.value)
+    body = ui_api.decision_body(asked.value)
     assert body["decision"] == "migrations_pending" and body["dbs"][0]["count"] == 2 and "pdms-local" in body["error"]
-    assert ui_server.launch_options({"migrate": False})["migrate"] is False
+    assert ui_api.launch_options({"migrate": False})["migrate"] is False
     with pytest.raises(actions.ActionError):
-        ui_server.launch_options({"migrate": "yes"})
+        ui_api.launch_options({"migrate": "yes"})
 
 
 def test_changed_and_uncommitted_ones_are_told_apart(cfg, monkeypatch) -> None:

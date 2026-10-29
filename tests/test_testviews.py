@@ -259,13 +259,13 @@ def test_a_user_who_can_create_gets_the_copy_made(cfg, starting, monkeypatch) ->
 
 
 def test_the_page_gets_a_decision(cfg, starting) -> None:
-    from pdms_cli.ui import server as ui_server
+    from pdms_cli.ui import api as ui_api
 
     with pytest.raises(actions.TestViewsPending) as asked:
         actions.check_test_views(cfg, starting, None)
-    body = ui_server.decision_body(asked.value)
+    body = ui_api.decision_body(asked.value)
     assert body["decision"] == "test_views_pending" and body["views"][0]["name"] == "pdms_report_document_view_pdmp627"
-    assert ui_server.launch_options({"views": True})["views"] is True
+    assert ui_api.launch_options({"views": True})["views"] is True
 
 
 def test_a_copy_is_always_made_with_its_data(repo) -> None:

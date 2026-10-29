@@ -144,13 +144,13 @@ def test_doctor_tells_how_many_are_left_behind(tmp_path, found, monkeypatch) -> 
 
 
 def test_the_page_gets_a_decision_and_answers_it(tmp_path, found, monkeypatch) -> None:
-    from pdms_cli.ui import server as ui_server
+    from pdms_cli.ui import api as ui_api
 
     old = service(tmp_path, "old")
     with pytest.raises(actions.PythonMismatch) as asked:
         actions.check_pythons(Config(), [old], None, None)
-    body = ui_server.decision_body(asked.value)
+    body = ui_api.decision_body(asked.value)
     assert body["decision"] == "python_mismatch" and body["services"][0]["use"] == "3.12.3" and "old" in body["error"]
-    assert ui_server.launch_options({"python": True})["python"] is True
+    assert ui_api.launch_options({"python": True})["python"] is True
     with pytest.raises(actions.ActionError):
-        ui_server.launch_options({"python": "yes"})
+        ui_api.launch_options({"python": "yes"})
