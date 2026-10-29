@@ -261,13 +261,20 @@ dialog legend { font-size: .82rem; color: var(--muted); padding: 0 .3rem; }
 .btn.link { border-color: transparent; color: var(--accent); font-family: var(--mono); margin: 0; }
 .cards { display: grid; gap: .8rem; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
-/* Stacks: two columns of cards; each service a chip with its state and ports; stopped stacks folded to a line. */
-#stacks { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-@media (max-width: 1280px) { #stacks { grid-template-columns: minmax(0, 1fr); } }
+/* Stacks: one card per row, all with the same header (fold, name, state, who and where, actions); each service a chip
+   with its state and ports; stopped stacks folded to a line. */
+#stacks { grid-template-columns: minmax(0, 1fr); align-items: start; }
 .stack { display: grid; gap: .55rem; padding: .7rem .9rem .8rem; align-content: start; min-width: 0; }
-.stack header { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .6rem; }
+.stack header { display: flex; align-items: center; gap: .4rem .7rem; min-width: 0; }
 .stack h2 { margin: 0; font-size: .95rem; overflow-wrap: anywhere; }
-.stack-actions { margin-left: auto; display: flex; gap: .3rem; flex-wrap: wrap; }
+.stack header .st { flex: none; }
+.stack header .meta { flex: 1; min-width: 0; font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stack-actions { margin-left: auto; display: flex; gap: .3rem; flex: none; align-items: center; }
+.stack > .svc-chips, .stack > .folded-list { margin-left: calc(22px + .7rem); }
+@media (max-width: 900px) {
+  .stack header { flex-wrap: wrap; }
+  .stack header .meta { flex-basis: 100%; order: 5; white-space: normal; padding-left: calc(22px + .7rem); }
+}
 .fold { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
 .fold:hover:not(:disabled) { background: var(--bg); color: var(--ink); }
 .fold:disabled { cursor: default; opacity: .4; }
