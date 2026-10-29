@@ -492,8 +492,10 @@ uv tool install -e '.[desktop]' --force   # use the checkout as `pdms` (again wh
 With the editable install, a change to the page shows when you reload it, and a Python change when pdms ui (or the
 service) restarts.
 
-- `actions.py` does things without asking; a decision it needs is raised for the caller. The terminal
-  (`commands/`, one module per group; `cli.py` only wires them) and pdms ui both call it.
+- `actions/` does things without asking; a decision it needs is raised for the caller. The terminal
+  (`commands/`, one module per group; `cli.py` only wires them) and pdms ui both call it as `actions.<name>`. One
+  module per area (services, stacks, proxy, settings…); between them, functions are called through their module
+  (`services.plan_service`), so replacing `actions.<name>` in a test reaches every caller (`tests/test_actions_package.py`).
 - `ui/`: the server (`server.py`: who may ask, replies and streams; `api.py`: what each route does, as tables of
   methods; `jobs.py`, `state.py`) and the page in `static/`, plain ES modules with no build step (`js/`, one per
   screen). `tests/test_ui_api.py` fails when the page calls a route `api.py` does not have.
