@@ -281,3 +281,13 @@ def test_the_reloader_and_the_resource_tracker_are_left_alone(tmp_path) -> None:
         result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=60)
         assert result.stdout.strip() == "False", result.stderr
         assert "[pdms]" not in result.stderr
+
+
+def test_a_patch_that_fails_says_so_in_the_service_log(tmp_path) -> None:
+    """The service still starts, without that patch, and its log says which one is off and why."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("PDMS_", "PYTHONPATH"))}
+    env.update(PYTHONPATH=str(events.PATCH_DIR), PDMS_WARM_CONNECTIONS="two")
+    result = subprocess.run([sys.executable, "-c", "print('started')"], env=env, capture_output=True, text=True,
+                            timeout=60)
+    assert result.stdout.strip() == "started"
+    assert "[pdms] running requests in parallel is off: ValueError" in result.stderr

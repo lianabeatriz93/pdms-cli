@@ -229,7 +229,7 @@ def discover(root: Path, env: str = "dev") -> EventMap:
         if service == BROKER_SERVICE:
             event_map.broker_queue = queue
 
-    for name, (_path, body) in modules.items():
+    for _path, body in modules.values():
         service_dir = _unquote(body.get("lambda_path", "")).rstrip("/")
         if service_dir.endswith(BROKER_SERVICE):
             for key, value in (body.get("environment_variables") or {}).items():

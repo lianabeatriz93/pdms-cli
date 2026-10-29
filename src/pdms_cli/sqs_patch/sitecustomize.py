@@ -229,36 +229,41 @@ def helper_process():
     return "--reload" in argv or any("multiprocessing.resource_tracker" in arg for arg in argv)
 
 
+def _failed(what, error):
+    """A patch that failed leaves the service running without it: say so once, in the service's log."""
+    print(f"[pdms] {what} is off: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
+
+
 if not helper_process():
     try:
         _patch()
-    except Exception:  # noqa: BLE001 - a broken patch must never stop the service from starting
-        pass
+    except Exception as error:  # noqa: BLE001 - a broken patch must never stop the service from starting
+        _failed("local events, SNS and emails", error)
 
     try:
         import pdms_parallel  # this folder: requests in parallel and connections opened at start (see that module)
 
         pdms_parallel.install()
-    except Exception:  # noqa: BLE001 - same as above
-        pass
+    except Exception as error:  # noqa: BLE001 - same as above
+        _failed("running requests in parallel", error)
 
     try:
         import pdms_views  # this folder: test copies of materialized views instead of the real ones (see that module)
 
         pdms_views.install()
-    except Exception:  # noqa: BLE001 - same as above
-        pass
+    except Exception as error:  # noqa: BLE001 - same as above
+        _failed("reading test copies of views", error)
 
     try:
         import pdms_queries  # this folder: database time and queries of each request (see that module)
 
         pdms_queries.install()  # after pdms_parallel: it measures around the thread a request runs in
-    except Exception:  # noqa: BLE001 - same as above
-        pass
+    except Exception as error:  # noqa: BLE001 - same as above
+        _failed("measuring queries", error)
 
     try:
         import pdms_trace  # this folder: the request a service works for, through its logs and events (see that module)
 
         pdms_trace.install()  # last: its id must be current around what the others measure
-    except Exception:  # noqa: BLE001 - same as above
-        pass
+    except Exception as error:  # noqa: BLE001 - same as above
+        _failed("tracing requests", error)

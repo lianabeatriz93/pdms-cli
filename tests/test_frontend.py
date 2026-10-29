@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from pdms_cli import actions, frontend, instances
-from pdms_cli.config import Config, Database, DevUser, Repo, Setup, Stack
+from pdms_cli.config import Config, DevUser, Repo, Setup, Stack
 from pdms_cli.ui import state as ui_state
 
 from test_ui_server import cookie, machine, post, repo, request, ui, wait_until  # noqa: F401 - fixtures

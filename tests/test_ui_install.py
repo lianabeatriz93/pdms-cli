@@ -313,7 +313,7 @@ def test_update_restarts_the_ui_and_brings_the_proxy_back(ui_with_control, monke
     assert ran[0][1:4] == ["tool", "install", "--force"] and "9.0.0" in ran[0][-1]
     note = json.loads(ui_instance.after_update_path().read_text())
     assert note["to"] == "9.0.0" and note["proxy"]["port"] == 8000
-    assert ui_updates.log_path().read_text().startswith(f"# pdms ")
+    assert ui_updates.log_path().read_text().startswith("# pdms ")
 
     # The new pdms ui (here still this version: the update did not happen) says so and starts the proxy again.
     started = []
