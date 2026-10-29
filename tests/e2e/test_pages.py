@@ -178,3 +178,26 @@ def test_requests_shows_the_proxy_requests_and_their_problems(ui: Page, machine)
         ui.click(f'#req-seg button[data-show="{show}"]')
         expect(rows).to_have_count(count)
     expect(rows.nth(1)).to_contain_text("lead-tp-create@28100")
+
+
+def test_a_rows_more_menu_runs_an_action_and_closes(ui: Page) -> None:
+    ui.evaluate("""() => import("/static/js/core.js").then(({ moreButton }) => {
+        window.ran = [];
+        const more = moreButton("More", () => [
+            { icon: "debug", label: "Debug", run: () => window.ran.push("debug") }, "-",
+            { icon: "stop", label: "Stop", bad: true, run: () => window.ran.push("stop") }]);
+        more.id = "more";
+        document.querySelector("#view-home").append(more);
+    })""")
+    ui.click("#more")
+    menu = ui.locator(".row-menu")
+    expect(menu.get_by_role("menuitem")).to_have_count(2)
+    expect(ui.locator("#more")).to_have_attribute("aria-expanded", "true")
+    ui.keyboard.press("Escape")
+    expect(menu).to_have_count(0)
+    expect(ui.locator("#more")).to_be_focused()
+    ui.click("#more")
+    ui.keyboard.press("ArrowDown")
+    ui.keyboard.press("Enter")
+    expect(menu).to_have_count(0)
+    assert ui.evaluate("window.ran") == ["stop"]

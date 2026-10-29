@@ -131,6 +131,65 @@ export function iconLink(name, label, href) {
   return el("a", { class: "ibtn", href, target: "_blank", rel: "noopener noreferrer", title: label, "aria-label": label }, icon(name));
 }
 
+// The rest of a row's actions behind a ⋯ button. entries() gives { icon, label, run } items (href instead of run for
+// a link, bad for a destructive one) and "-" for a line between groups. One menu is open at a time; a click elsewhere,
+// Esc, scrolling its button away or resizing closes it.
+let shownMenu = null;
+
+export function moreButton(label, entries) {
+  return iconButton("more", label, (event) => toggleMenu(event.currentTarget, entries()), { "aria-haspopup": "menu", "aria-expanded": "false" });
+}
+
+function toggleMenu(anchor, entries) {
+  const again = shownMenu && shownMenu.anchor === anchor;
+  closeMenu();
+  if (again) return;
+  const items = entries.filter((entry, i) => entry !== "-" || (i > 0 && entries[i - 1] !== "-" && i < entries.length - 1));
+  const menu = el("div", { class: "menu row-menu", role: "menu" }, ...items.map((entry) => {
+    if (entry === "-") return el("hr");
+    const inside = [icon(entry.icon), el("span", {}, entry.label)];
+    if (entry.href) {
+      return el("a", { role: "menuitem", href: entry.href, target: "_blank", rel: "noopener noreferrer", onclick: () => closeMenu() }, ...inside);
+    }
+    return el("button", { type: "button", role: "menuitem", class: entry.bad ? "bad" : "", onclick: () => { closeMenu(); entry.run(); } }, ...inside);
+  }));
+  document.body.append(menu);
+  const box = anchor.getBoundingClientRect();
+  const below = box.bottom + 4 + menu.offsetHeight <= window.innerHeight;
+  menu.style.top = `${below ? box.bottom + 4 : Math.max(4, box.top - 4 - menu.offsetHeight)}px`;
+  menu.style.right = `${Math.max(4, window.innerWidth - box.right)}px`;
+  anchor.setAttribute("aria-expanded", "true");
+  shownMenu = { menu, anchor, top: box.top };
+  menu.querySelector("[role=menuitem]").focus();
+}
+
+export function closeMenu(refocus = false) {
+  if (!shownMenu) return;
+  const { menu, anchor } = shownMenu;
+  shownMenu = null;
+  menu.remove();
+  anchor.setAttribute("aria-expanded", "false");
+  if (refocus && anchor.isConnected) anchor.focus();
+}
+
+document.addEventListener("click", (event) => {
+  if (shownMenu && !shownMenu.menu.contains(event.target) && !shownMenu.anchor.contains(event.target)) closeMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (!shownMenu) return;
+  if (event.key === "Escape") { event.preventDefault(); closeMenu(true); return; }
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  event.preventDefault();
+  const items = [...shownMenu.menu.querySelectorAll("[role=menuitem]")];
+  const at = items.indexOf(document.activeElement);
+  items[(at + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+});
+// Only a scroll that moved its button closes it (not a late scroll event from bringing the button into view).
+document.addEventListener("scroll", () => {
+  if (shownMenu && Math.abs(shownMenu.anchor.getBoundingClientRect().top - shownMenu.top) > 1) closeMenu();
+}, true);
+window.addEventListener("resize", () => closeMenu());
+
 export function button(label, onclick, attrs = {}) {
   return el("button", { class: "btn small", type: "button", onclick, ...attrs }, label);
 }
