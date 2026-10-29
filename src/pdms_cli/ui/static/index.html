@@ -14,6 +14,7 @@
      serve the new page's scripts. Pure CSS, so even that old server shows it. -->
 <p class="boot-fail" id="boot-fail" role="alert">pdms ui could not load its page. If pdms was just updated, restart pdms ui: <b>Quit pdms ui</b> in the tray icon (or Ctrl+C in its terminal), then open it again.</p>
 <header class="titlebar">
+  <button class="side-toggle" id="side-toggle" type="button" aria-controls="side" aria-expanded="true" aria-label="Hide or show the menu" title="Hide or show the menu (Ctrl B)"><svg class="i" aria-hidden="true"><use href="#i-panel"/></svg></button>
   <span class="brand" translate="no"><img src="/static/icon.svg" alt="" width="20" height="20"> pdms</span>
   <span class="live" id="live" title="Connecting…"></span>
   <button class="search" id="palette-open" type="button" aria-haspopup="dialog" aria-label="Search or run a command"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><span class="lbl">Search or run…</span><kbd id="palette-key">Ctrl K</kbd></button>
@@ -44,9 +45,10 @@
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
   <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></symbol>
   <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7.5 15h9"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M9 4.5v15"/></symbol>
   <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></symbol>
 </svg>
-<nav class="side" aria-label="Views">
+<nav class="side" id="side" aria-label="Views">
   <a href="#home" data-view="home" title="Home"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg><span class="lbl">Home</span></a>
   <a href="#services" data-view="services" title="Services"><svg class="i" aria-hidden="true"><use href="#i-services"/></svg><span class="lbl">Services</span><span class="cnt" id="count"></span><span class="badge bad" id="svc-badge" hidden></span></a>
   <a href="#stacks" data-view="stacks" title="Stacks"><svg class="i" aria-hidden="true"><use href="#i-stacks"/></svg><span class="lbl">Stacks</span><span class="cnt" id="stack-count"></span></a>

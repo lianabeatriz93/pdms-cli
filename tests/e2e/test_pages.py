@@ -23,6 +23,19 @@ def test_every_screen_opens(ui: Page) -> None:
         expect(ui.locator(f"#view-{screen}")).to_be_visible()
 
 
+def test_the_menu_folds_to_its_icons_and_stays_so(ui: Page) -> None:
+    ui.set_viewport_size({"width": 1440, "height": 900})
+    label = ui.locator('nav a[data-view="services"] .lbl')
+    expect(label).to_be_visible()
+    ui.click("#side-toggle")
+    expect(label).to_be_hidden()
+    expect(ui.locator("#side-toggle")).to_have_attribute("aria-expanded", "false")
+    ui.reload()
+    expect(label).to_be_hidden()
+    ui.keyboard.press("Control+b")
+    expect(label).to_be_visible()
+
+
 def test_a_service_starts_once_however_fast_one_clicks(ui: Page) -> None:
     """While a start waits for the server or for an answer (migrations here), its button stays off (0.4.12)."""
     sent: list[dict] = []

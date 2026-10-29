@@ -254,8 +254,21 @@ $("palette-input").addEventListener("keydown", (event) => {
     runPalette(palette.index);
   }
 });
+// The sidebar folded to its icons or open, as this browser last left it (no storage, as in a private window: open).
+const SIDE_KEY = "pdms-side-folded";
+function foldSide(folded, remember = true) {
+  document.body.classList.toggle("side-folded", folded);
+  $("side-toggle").setAttribute("aria-expanded", String(!folded));
+  if (!remember) return;
+  try { localStorage.setItem(SIDE_KEY, folded ? "1" : "0"); } catch { /* the choice lasts until the page reloads */ }
+}
+try { foldSide(localStorage.getItem(SIDE_KEY) === "1", false); } catch { /* open */ }
+$("side-toggle").addEventListener("click", () => foldSide(!document.body.classList.contains("side-folded")));
 document.addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "b" && !document.querySelector("dialog[open]")) {
+    event.preventDefault();
+    foldSide(!document.body.classList.contains("side-folded"));
+  } else if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") {
     event.preventDefault();
     if ($("palette").open) $("palette").close(); else openPalette();
   } else if (event.key === "/" && !event.ctrlKey && !event.metaKey && !typing(event.target) && !document.querySelector("dialog[open]")) {

@@ -537,8 +537,27 @@ button.st-item:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .spark.lv-warn path { stroke: var(--warn); } .spark.lv-warn circle { fill: var(--warn); }
 .spark.lv-bad path { stroke: var(--bad); } .spark.lv-bad circle { fill: var(--bad); }
 
-/* A narrow window: the sidebar keeps only its icons (their names show on hover). */
+/* The sidebar folded (the button left of the logo, or Ctrl B; remembered by the browser): only its icons, as in a
+   narrow window. */
+.side-toggle {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; margin-right: -.2rem; border-radius: 7px;
+  border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer;
+}
+.side-toggle:hover { border-color: var(--line); background: var(--bg); color: var(--ink); }
+.side-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.side-toggle[aria-expanded="false"] { color: var(--accent); }
+@media (min-width: 641px) {
+  body.side-folded { grid-template-columns: 56px minmax(0, 1fr); }
+  body.side-folded .side { padding: .7rem .4rem; }
+  body.side-folded .side a { justify-content: center; padding: .5rem 0; }
+  body.side-folded .side a .lbl, body.side-folded .side a .cnt, body.side-folded .side a .new { display: none; }
+  body.side-folded .side a .sdot, body.side-folded .side a .badge { position: absolute; top: 3px; right: 6px; }
+  body.side-folded .side a .badge { padding: 0 .25rem; font-size: .6rem; }
+}
+
+/* A narrow window: the sidebar keeps only its icons (their names show on hover), whatever the button says. */
 @media (max-width: 1080px) {
+  .side-toggle { display: none; }
   body { grid-template-columns: 56px minmax(0, 1fr); }
   .side { padding: .7rem .4rem; }
   .side a { justify-content: center; padding: .5rem 0; }
