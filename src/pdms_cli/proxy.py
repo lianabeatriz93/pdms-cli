@@ -294,11 +294,14 @@ class Gateway:
         return slept
 
     def watch_idle(self, stopped: threading.Event) -> None:
+        failed = ""
         while not stopped.wait(IDLE_CHECK_EVERY):
             try:
                 self.put_idle_to_sleep()
-            except Exception:  # noqa: BLE001 - a failed look must not stop the watch
-                pass
+            except Exception as error:  # noqa: BLE001 - a failed look must not stop the watch
+                if str(error) != failed:  # once, not every few seconds
+                    failed = str(error)
+                    print(f"[pdms] could not put idle services to sleep: {error}", file=sys.stderr, flush=True)
 
     def spec_for(self, key: str) -> dict | None:
         specs = dict(self.local_specs())

@@ -71,8 +71,8 @@ def plan_proxy(cfg: Config, root: Path, repo_routes: list[routes.Route], port: i
     port = proxy_port(port)
     while True:
         try:
-            return settle(lambda: actions.plan_proxy(
-                cfg, root, repo_routes, port=port, env=env, remote=remote, user_name=as_user, frontend=frontend,
+            return settle(lambda: actions.plan_proxy(  # settle calls it right away, with this iteration's frontend
+                cfg, root, repo_routes, port=port, env=env, remote=remote, user_name=as_user, frontend=frontend,  # noqa: B023
                 timeout=timeout,
             ))
         except actions.PointFrontend:

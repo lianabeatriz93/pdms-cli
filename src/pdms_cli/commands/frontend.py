@@ -45,7 +45,8 @@ def front_cmd(
     while True:
         try:
             with console.status(_("Checking node, yarn and node_modules...")):
-                plan = settle(lambda: actions.plan_frontend(cfg, mode=mode, port=port, install=install, rebuild=rebuild))
+                # settle calls it right away, so it sees this iteration's port
+                plan = settle(lambda: actions.plan_frontend(cfg, mode=mode, port=port, install=install, rebuild=rebuild))  # noqa: B023
             break
         except actions.PortBusy as busy:
             prompts.require_tty()

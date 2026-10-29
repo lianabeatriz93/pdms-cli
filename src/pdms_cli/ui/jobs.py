@@ -7,8 +7,6 @@ an answer (a protected database, the local ElasticMQ) is checked before the job 
 
 from __future__ import annotations
 
-import os
-import subprocess
 import threading
 import time
 from collections.abc import Callable

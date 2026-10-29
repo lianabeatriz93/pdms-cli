@@ -79,13 +79,16 @@ def notes(target: str) -> list[dict]:
 
 def watch(cfg_loader: Callable[[], Config], on_change: Callable[[], None], stopped: threading.Event) -> None:
     """Refresh the cached latest version when the daily check is due, for as long as pdms ui runs."""
+    failed = ""
     while not stopped.is_set():
         try:
             if update.checks_enabled(cfg_loader().defaults.update_check) and update.check_due(channel()):
                 update.refresh(channel(), timeout=10)
                 on_change()
-        except Exception:  # noqa: BLE001 - only a hint: never stop pdms ui for it
-            pass
+        except Exception as error:  # noqa: BLE001 - only a hint: never stop pdms ui for it
+            if str(error) != failed:  # once, not every hour
+                failed = str(error)
+                print(f"[pdms] could not look for a new pdms: {error}", file=sys.stderr, flush=True)
         stopped.wait(CHECK_EVERY)
 
 

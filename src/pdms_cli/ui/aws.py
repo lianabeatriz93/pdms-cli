@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from datetime import datetime
@@ -173,9 +174,12 @@ class Aws:
             self.on_change()
 
     def watch(self, stopped: threading.Event) -> None:
+        failed = ""
         while not stopped.is_set():
             try:
                 self.check()
-            except Exception:  # noqa: BLE001 - next time it may work
-                pass
+            except Exception as error:  # noqa: BLE001 - next time it may work
+                if str(error) != failed:  # once, not every time
+                    failed = str(error)
+                    print(f"[pdms] could not check the AWS session: {error}", file=sys.stderr, flush=True)
             stopped.wait(EVERY)

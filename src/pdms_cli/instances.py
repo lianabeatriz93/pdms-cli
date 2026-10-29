@@ -110,14 +110,17 @@ FORGET_LOGS_EVERY = 6 * 3600
 def watch_logs(stopped: threading.Event) -> None:
     """What pdms ui does while it runs: logs kept small every minute, old instances' logs deleted now and then."""
     forgot = 0.0
+    failed = ""
     while not stopped.is_set():
         try:
             keep_logs_small()
             if time.monotonic() - forgot > FORGET_LOGS_EVERY or not forgot:
                 forget_old_logs()
                 forgot = time.monotonic()
-        except Exception:  # noqa: BLE001 - a log that cannot be cut must not stop the watch
-            pass
+        except Exception as error:  # noqa: BLE001 - a log that cannot be cut must not stop the watch
+            if str(error) != failed:  # once, not every few seconds
+                failed = str(error)
+                print(f"[pdms] could not trim the logs: {error}", file=sys.stderr, flush=True)
         stopped.wait(LOG_CHECK_EVERY)
 
 

@@ -50,6 +50,24 @@ packages = ["src/pdms_cli"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+# Errors and likely bugs only, no style: syntax errors, pyflakes, bugbear.
+select = ["E9", "F", "B"]
+ignore = [
+    "B008",  # typer.Option(...) as a default argument is how typer declares options
+    "B010",  # setattr(func, "_pdms_…", True) marks a patched function without upsetting type checkers
+    "B904",  # raise typer.Exit inside except: the CLI already told the user why
+    "B905",  # zip(strict=) where lengths match by construction would only add noise
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Fixtures imported from another test module look unused, then redefined by the tests that take them.
+"tests/*" = ["F811"]
+
 [tool.commitizen]
 name = "cz_conventional_commits"
 version_provider = "uv"

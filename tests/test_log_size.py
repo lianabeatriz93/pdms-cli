@@ -143,3 +143,22 @@ def test_windows_never_cuts_a_log_in_use(tmp_path, monkeypatch) -> None:
     log = tmp_path / "svc@3.log"
     log.write_bytes(f"# pdms 2026-10-03 10:00:00{instances.APPENDS} - uvicorn\n".encode() + b"x" * 2000)
     assert instances.keep_log_small(log, limit=1000) is False and log.stat().st_size > 2000
+
+
+def test_a_watch_that_keeps_failing_says_so_once(monkeypatch, capsys) -> None:
+    import threading
+
+    stopped = threading.Event()
+    calls = []
+
+    def broken() -> None:
+        calls.append(1)
+        if len(calls) == 3:
+            stopped.set()
+        raise PermissionError("the log is locked")
+
+    monkeypatch.setattr(instances, "keep_logs_small", broken)
+    monkeypatch.setattr(instances, "LOG_CHECK_EVERY", 0)
+    instances.watch_logs(stopped)
+    assert len(calls) == 3
+    assert capsys.readouterr().err.count("[pdms] could not trim the logs: the log is locked") == 1
