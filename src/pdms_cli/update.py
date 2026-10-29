@@ -38,6 +38,11 @@ def is_prerelease(version: str) -> bool:
     return bool(match and match.group(4))
 
 
+def wants_pre(channel: str, current: str = __version__) -> bool:
+    """Whether pre-releases count: on the beta channel, or while running one (its stable comes after it)."""
+    return channel == "beta" or is_prerelease(current)
+
+
 def latest_version(pre: bool = False, timeout: float = 10) -> str:
     """Version of the latest release; with ``pre``, alpha/beta/rc releases count too.
 
@@ -120,20 +125,26 @@ def installed_version() -> str:
         return __version__
 
 
-def release_notes(target: str, current: str = __version__, timeout: float = 10) -> list[dict]:
-    """The notes of every release after ``current`` up to ``target``, newest first: ``{version, url, body}``."""
+def releases(timeout: float = 10) -> list[dict]:
+    """The last 30 published releases, newest first: ``{version, url, body, date, prerelease}``."""
     request = urllib.request.Request(f"{API_RELEASES}?per_page=30", headers={"Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         data = json.load(response)
-    notes = []
+    found = []
     for release in data:
         tag = str(release.get("tag_name", ""))
         if release.get("draft") or not VERSION.match(tag):
             continue
         version = tag.lstrip("v")
-        if is_newer(version, current) and not is_newer(version, target):
-            notes.append({"version": version, "url": release.get("html_url", ""), "body": release.get("body") or ""})
-    return sorted(notes, key=lambda note: parse_version(note["version"]), reverse=True)
+        found.append({"version": version, "url": release.get("html_url", ""), "body": release.get("body") or "",
+                      "date": str(release.get("published_at") or "")[:10], "prerelease": is_prerelease(version)})
+    return sorted(found, key=lambda release: parse_version(release["version"]), reverse=True)
+
+
+def release_notes(target: str, current: str = __version__, timeout: float = 10) -> list[dict]:
+    """The notes of every release after ``current`` up to ``target``, newest first: ``{version, url, body}``."""
+    return [{key: release[key] for key in ("version", "url", "body")} for release in releases(timeout)
+            if is_newer(release["version"], current) and not is_newer(release["version"], target)]
 
 
 # --------------------------------------------------------------------------- Windows
@@ -254,12 +265,37 @@ def cached_latest(pre: bool) -> tuple[str, float]:
     return str(cache.get("latest") or ""), float(cache.get("checked_at") or 0)
 
 
+def skipped() -> str:
+    """The version the user went back from: never offered again, though a newer one is."""
+    return str(load_cache().get("skipped") or "")
+
+
+def skip(version: str) -> None:
+    cache = load_cache()
+    cache["skipped"] = version
+    save_cache(cache)
+
+
+def offered(latest: str, current: str = __version__) -> str:
+    """``latest`` when it is worth offering (newer than ``current`` and not skipped), else ""."""
+    return latest if latest and is_newer(latest, current) and latest != skipped() else ""
+
+
+def remember_choice(target: str, current: str = __version__) -> None:
+    """Before installing ``target``: going back to an older version skips the one left, so pdms stops offering it
+    (a newer one is offered again); reaching or passing the skipped version forgets it."""
+    if is_newer(current, target):
+        skip(current)
+    elif skipped() and not is_newer(skipped(), target):
+        skip("")
+
+
 def notice_due(pre: bool, current: str = __version__, now: float | None = None) -> str | None:
     """The newer version to announce, at most once per ``CHECK_INTERVAL``; marks it as announced."""
     cache = load_cache()
     now = time.time() if now is None else now
     latest = cache.get("latest")
-    if not latest or cache.get("pre") != pre or not is_newer(latest, current):
+    if not latest or cache.get("pre") != pre or not offered(latest, current):
         return None
     if cache.get("notified") == latest and now - float(cache.get("notified_at", 0)) < CHECK_INTERVAL:
         return None

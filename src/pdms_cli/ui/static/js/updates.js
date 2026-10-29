@@ -1,12 +1,17 @@
 // Updates of pdms: the title bar chip, the release notes and Update and restart.
 
-import { $, copyText, el, failedText, getJson, phaseLabel, post, toast } from "./core.js";
+import { $, button, copyText, el, failedText, getJson, phaseLabel, post, toast } from "./core.js";
 import { state } from "./state.js";
+import { confirmDialog } from "./stacks.js";
 
 export const UPDATE_JOB = "update";
 
 // loaded: the version this page came with; notes: the release notes fetched for notesFor.
 export const updateView = { loaded: null, notesFor: "", notes: null };
+
+// Settings → Versions: versions as GitHub lists them (null while loading, a string for an error), the one whose notes
+// show.
+const versionsView = { versions: null, picked: "" };
 
 // What there is to offer: a newer release, or a version that pdms self-update installed and this pdms ui does not run.
 export function updateOffer() {
@@ -37,6 +42,7 @@ export function paintUpdate() {
   chip.title = offer ? offerTitle(offer) : "";
   paintVersion();
   if ($("update-dialog").open) paintUpdateDialog();
+  if ($("versions-dialog").open) paintVersionsPhase();
 }
 
 function paintVersion() {
@@ -49,9 +55,11 @@ function paintVersion() {
   else if (offer) note = offerTitle(offer);
   else if (info.checked_at) note = t("the latest version (checked {when}).", { when: new Date(info.checked_at).toLocaleString() });
   else note = t("not checked yet.");
+  if (info.kind !== "editable" && info.skipped) note += " " + t("{version} skipped.", { version: info.skipped });
   if (info.kind !== "editable" && !info.checks) note += " " + t("Automatic checks are off.");
   $("version-note").textContent = note;
   $("version-check").disabled = info.kind === "editable";
+  $("version-list").disabled = info.kind === "editable";
   $("version-open").hidden = !offer;
 }
 
@@ -84,12 +92,18 @@ function inlineNodes(text) {
   return parts;
 }
 
-// The Markdown of a release (headings, lists, paragraphs), as nodes.
+// The Markdown of a release (headings, lists, paragraphs, ``` blocks), as nodes.
 function notesNodes(text) {
   const nodes = [];
   let list = null;
+  let block = null; // the lines of an open ``` block
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
+    if (line.startsWith("```")) {
+      if (block) { nodes.push(el("pre", {}, block.join("\n"))); block = null; } else { block = []; list = null; }
+      continue;
+    }
+    if (block) { if (line) block.push(line); continue; }
     const heading = line.match(/^#{1,6}\s+(.*)$/);
     const item = line.match(/^[-*]\s+(.*)$/);
     if (!line) list = null;
@@ -150,6 +164,7 @@ function paintUpdateDialog() {
   $("update-error").hidden = !(job && job.error);
   $("update-error").textContent = job && job.error ? failedText(job) : "";
   $("update-log").hidden = !job;
+  $("update-skip").hidden = !updating || busy;
   $("update-go").hidden = !offer || (updating && !info.updates_itself);
   $("update-go").disabled = busy;
   $("update-go").textContent = offer && offer.kind === "restart" ? t("Restart pdms ui") : t("Update and restart");
@@ -188,4 +203,100 @@ export async function submitUpdate(event) {
 
 export function copyCommand() {
   copyText(state.update.command, t("Copied."));
+}
+
+// Never offer this one again (a newer one, yes).
+export async function skipOffered() {
+  const offer = updateOffer();
+  if (!offer) return;
+  const { status, data } = await post("/api/update/skip", { version: offer.version });
+  if (status >= 400) { toast(data.error || t("pdms ui answered {status}", { status })); return; }
+  $("update-dialog").close();
+  toast(t("pdms will not offer {version} again; a newer version, yes.", { version: offer.version }), "info");
+}
+
+export async function openVersions() {
+  versionsView.versions = null;
+  versionsView.picked = "";
+  $("versions-error").hidden = true;
+  paintVersions();
+  if (!$("versions-dialog").open) $("versions-dialog").showModal();
+  const { data, error } = await getJson("/api/update/versions");
+  versionsView.versions = error ? t("Could not reach GitHub: {error}", { error }) : data.versions;
+  paintVersions();
+}
+
+function paintVersions() {
+  const box = $("versions-list");
+  const versions = versionsView.versions;
+  $("versions-command-hint").hidden = !state.update || state.update.updates_itself;
+  if (versions === null) { box.replaceChildren(el("p", { class: "muted" }, t("Loading the versions…"))); return; }
+  if (typeof versions === "string") { box.replaceChildren(el("p", { class: "muted" }, versions)); return; }
+  const current = state.update ? state.update.current : "";
+  const canInstall = Boolean(state.update && state.update.updates_itself);
+  box.replaceChildren(...versions.map((release) => {
+    const tags = [];
+    if (release.current) tags.push(el("span", { class: "tag current" }, t("you have it")));
+    if (release.skipped) tags.push(el("span", { class: "tag skipped" }, t("skipped")));
+    if (release.prerelease) tags.push(el("span", { class: "tag dev" }, "beta"));
+    const older = !release.current && newerThan(current, release.version);
+    const actions = [button(t("Notes"), () => pickVersion(release.version), { class: "btn small ghost" })];
+    if (canInstall && !release.current) {
+      actions.push(button(older ? t("Go back to it") : t("Install it"), () => installVersion(release.version, older), { class: "btn small" }));
+    }
+    return el("div", { class: `version-item${release.version === versionsView.picked ? " picked" : ""}` },
+      el("span", { class: "mono" }, release.version), el("span", { class: "muted" }, release.date), ...tags,
+      el("span", { class: "push" }, ...actions));
+  }));
+  const picked = versions.find((release) => release.version === versionsView.picked);
+  $("versions-notes").replaceChildren(...(picked ? [
+    el("h3", {}, `pdms ${picked.version} `, ...(picked.url ? [el("a", { href: picked.url, target: "_blank", rel: "noreferrer" }, t("on GitHub"))] : [])),
+    ...(picked.body ? notesNodes(picked.body) : [el("p", { class: "muted" }, t("This release has no notes."))]),
+  ] : []));
+  paintVersionsPhase();
+}
+
+function pickVersion(version) {
+  versionsView.picked = versionsView.picked === version ? "" : version;
+  paintVersions();
+}
+
+// Like the server's comparison, for a.b.c with an optional a/b/rc suffix (an earlier version to go back to).
+function versionKey(text) {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?$/.exec(text || "");
+  if (!match) return [0, 0, 0, -1, 0];
+  return [+match[1], +match[2], +match[3], match[4] ? { a: 0, b: 1, rc: 2 }[match[4]] : 3, +(match[5] || 0)];
+}
+
+function newerThan(a, b) {
+  const [x, y] = [versionKey(a), versionKey(b)];
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+
+async function installVersion(version, older) {
+  const title = older ? t("Go back to pdms {version}?", { version }) : t("Install pdms {version}?", { version });
+  const text = older
+    ? t("pdms ui installs it and restarts with it; the services, the proxy and the frontend keep running. pdms will not offer {current} again, but a newer version, yes.", { current: state.update.current })
+    : t("pdms ui installs it and restarts with it; the services, the proxy and the frontend keep running.");
+  if (!(await confirmDialog(title, text, older ? t("Go back to it") : t("Install it")))) return;
+  $("versions-error").hidden = true;
+  const { status, data } = await post("/api/update/install", { version, restart_proxy: true });
+  if (status >= 400) {
+    $("versions-error").textContent = data.error || t("pdms ui answered {status}", { status });
+    $("versions-error").hidden = false;
+  }
+  paintVersionsPhase();
+}
+
+function paintVersionsPhase() {
+  const job = state.jobs[UPDATE_JOB];
+  const busy = Boolean(job && !job.error);
+  $("versions-phase").hidden = !busy;
+  $("versions-phase").textContent = busy ? phaseLabel(job.phase) : "";
+  if (job && job.error) {
+    $("versions-error").textContent = failedText(job);
+    $("versions-error").hidden = false;
+  }
+  for (const action of $("versions-list").querySelectorAll(".push .btn:not(.ghost)")) action.disabled = busy;
 }

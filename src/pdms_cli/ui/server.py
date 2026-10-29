@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from rich.errors import MarkupError
 from rich.text import Text
 
-from .. import actions, browser, emails, events, frontend, health, i18n, images, instances, proxy, testruns, testviews
+from .. import actions, browser, bugreport, emails, events, frontend, health, i18n, images, instances, proxy, testruns, testviews
 from ..config import Config
 from ..i18n import _
 from ..logview import LogFollower
@@ -395,6 +395,11 @@ def make_handler(
             elif url.path in ("/api/events/queues", "/api/events/map", "/api/events/peek", "/api/events/template",
                               "/api/events/ready"):
                 self.events_info(url.path.rsplit("/", 1)[-1], parse_qs(url.query))
+            elif url.path == "/api/update/versions":
+                try:
+                    self.reply_json(200, {"versions": ui_updates.versions(Config.load())})
+                except actions.ActionError as exc:
+                    self.reply_json(502, {"error": plain(exc.message)})
             elif url.path == "/api/update/notes":
                 try:
                     self.reply_json(200, {"notes": ui_updates.notes(parse_qs(url.query).get("version", [""])[0])})
@@ -600,6 +605,8 @@ def make_handler(
                 return 200, ui_jobs.stop_strays(body)
             if path.startswith("/api/update/"):
                 return self.act_on_update(path.rsplit("/", 1)[-1], body)
+            if path == "/api/bug-report":
+                return 200, {"path": str(bugreport.write(Config.load()))}
             if path == "/api/doctor/run":
                 databases = body.get("databases", False)
                 if not isinstance(databases, bool):
@@ -793,12 +800,19 @@ def make_handler(
 
         def act_on_update(self, verb: str, body: dict) -> tuple[int, dict]:
             if verb == "check":
-                return 200, ui_updates.check_now()
+                return 200, ui_updates.check_now(Config.load())
             if verb == "install":
                 restart_proxy = body.get("restart_proxy", True)
                 if not isinstance(restart_proxy, bool):
                     raise actions.ActionError("restart_proxy must be true or false")
-                return 202, {"job": jobs.update(control, restart_proxy=restart_proxy).key}
+                version = body.get("version") or ""
+                if not isinstance(version, str):
+                    raise actions.ActionError("version must be a version")
+                return 202, {"job": jobs.update(control, restart_proxy=restart_proxy, version=version).key}
+            if verb == "skip":
+                ui_updates.skip(_body_text(body, "version"))
+                hub.poke()
+                return 200, {}
             if verb == "restart":  # updated from the CLI: start again with the version on disk
                 control.quit(restart=True)
                 return 202, {}

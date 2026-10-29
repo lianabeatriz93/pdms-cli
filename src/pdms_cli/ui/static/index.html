@@ -494,6 +494,7 @@
     <span class="muted" id="doctor-running" hidden>Checking…</span>
     <div class="bar-actions push">
       <button class="btn" id="doctor-copy" type="button">Copy report</button>
+      <button class="btn" id="doctor-bug-report" type="button" title="Versions, these checks, the services and their logs, without passwords: a file to send with a problem">Bug report</button>
       <button class="btn primary" id="doctor-run" type="button">Run again</button>
     </div>
   </div>
@@ -609,6 +610,7 @@
       <span><b>pdms <span class="mono" id="version-current"></span></b> <span class="muted" id="version-note"></span></span>
       <div class="bar-actions push">
         <button class="btn" id="version-check" type="button">Check now</button>
+        <button class="btn" id="version-list" type="button">Versions</button>
         <button class="btn primary" id="version-open" type="button" hidden>See what is new</button>
       </div>
     </div>
@@ -1018,6 +1020,21 @@
   </form>
 </dialog>
 
+<dialog id="versions-dialog">
+  <form method="dialog">
+    <h2>Versions</h2>
+    <p class="muted">If a version fails you, go back to an earlier one: pdms ui installs it and restarts, and does not offer the one you left again (a newer one, yes).</p>
+    <p class="muted" id="versions-command-hint" hidden>This pdms was not installed with uv tool, so it cannot change version by itself: <code>pdms self-update --version &lt;version&gt;</code> in a terminal does.</p>
+    <div class="versions-list" id="versions-list"></div>
+    <div class="release-notes" id="versions-notes"></div>
+    <p class="muted" id="versions-phase" hidden></p>
+    <p class="error" id="versions-error" hidden></p>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="versions-close">Close</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="update-dialog">
   <form method="dialog" id="update-form">
     <h2 id="update-title"></h2>
@@ -1032,6 +1049,7 @@
     <p class="error" id="update-error" hidden></p>
     <div class="actions">
       <button class="btn ghost" type="button" id="update-log" hidden>Log</button>
+      <button class="btn ghost" type="button" id="update-skip" hidden>Skip this version</button>
       <button class="btn ghost" type="button" id="update-cancel">Close</button>
       <button class="btn primary" type="submit" id="update-go">Update and restart</button>
     </div>

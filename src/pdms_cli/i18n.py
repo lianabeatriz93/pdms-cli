@@ -743,8 +743,32 @@ ES: dict[str, str] = {
     "live specs of the services running locally": "specs en vivo de los servicios que corren en local",
     "remote docs": "docs remotas",
     # ------------------------------------------------------------------ versions / updates
-    "Update pdms to the latest release (or to --version).": "Actualiza pdms a la última versión (o a --version).",
-    "Install this version instead of the latest.": "Instalar esta versión en lugar de la última.",
+    "Update pdms to the latest release (or to --version, also an earlier one).":
+        "Actualiza pdms a la última versión (o a --version, también una anterior).",
+    "Install this version instead of the latest: an earlier one goes back to it.":
+        "Instalar esta versión en lugar de la última: una anterior vuelve a ella.",
+    "List the latest releases, to pick one for --version.": "Listar las últimas versiones, para elegir una para --version.",
+    "'{version}' is not a pdms version (like 0.4.11): pdms self-update --list shows them.":
+        "'{version}' no es una versión de pdms (como 0.4.11): pdms self-update --list las muestra.",
+    "'{version}' is not a pdms version.": "'{version}' no es una versión de pdms.",
+    "pdms {version} is the version you have.": "pdms {version} es la versión que tienes.",
+    "Current version: {current} · going back to: {target}": "Versión actual: {current} · volviendo a: {target}",
+    "[dim]pdms will not offer {current} again; a newer version, yes.[/]":
+        "[dim]pdms no volverá a ofrecer {current}; una versión más nueva, sí.[/]",
+    "[dim]pdms self-update --version <version> installs one, also an earlier one.[/]":
+        "[dim]pdms self-update --version <versión> instala una, también una anterior.[/]",
+    "you have it": "la tienes",
+    "skipped": "saltada",
+    "Stable": "Estable",
+    "Beta: new versions before everyone else": "Beta: las versiones nuevas antes que nadie",
+    "Which new versions?": "¿Qué versiones nuevas?",
+    "Save a report to send with a problem: versions, doctor, services and their logs, without passwords.":
+        "Guarda un informe para enviar con un problema: versiones, doctor, servicios y sus logs, sin contraseñas.",
+    "Where to save it (default: Downloads).": "Dónde guardarlo (por defecto: Descargas).",
+    "Also test the database connections.": "Probar también las conexiones a las bases de datos.",
+    "Bug report saved in {path}": "Informe de errores guardado en {path}",
+    "[dim]Read it before sending it: passwords are left out, but it has your paths and logs.[/]":
+        "[dim]Léelo antes de enviarlo: no lleva contraseñas, pero sí tus rutas y logs.[/]",
     "Only tell whether there is a newer version.": "Solo decir si hay una versión más nueva.",
     "pdms {version} runs from a local checkout (editable install): update it with git pull.":
         "pdms {version} se ejecuta desde una copia local (instalación editable): actualízalo con git pull.",
@@ -761,8 +785,8 @@ ES: dict[str, str] = {
     "New pdms version available: {current} → {latest} · update with: pdms self-update":
         "Hay una versión nueva de pdms: {current} → {latest} · actualiza con: pdms self-update",
     "Tell me when a new pdms version is available?": "¿Avisarme cuando haya una versión nueva de pdms?",
-    "Include alpha/beta pre-releases (automatic if you run one).":
-        "Incluir versiones previas alpha/beta (automático si ya usas una).",
+    "Include beta pre-releases (automatic on the beta channel, or if you run one).":
+        "Incluir versiones beta (automático en el canal beta, o si ya usas una).",
     # ------------------------------------------------------------------ doctor
     "Check that everything pdms needs is in place (tools, configuration, databases, repo, ports).":
         "Comprueba que está todo lo que pdms necesita (herramientas, configuración, bases de datos, repo, puertos).",

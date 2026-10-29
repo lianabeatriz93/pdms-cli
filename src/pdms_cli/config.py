@@ -18,6 +18,7 @@ LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 # Where services publish SQS events (see ``Defaults.events``).
 EVENTS_MODES = ("auto", "local", "aws")
 THEMES = ("system", "light", "dark")  # pdms ui: like the system, or always light or dark
+UPDATE_CHANNELS = ("stable", "beta")  # new versions: stable releases only, or pre-releases too
 # The known front of each environment but production (infra/infra_auto/environments/*/terraform.tfvars of pdms_v2).
 FRONT_HOSTS = ("dev-pdm.alivi.com", "qa-pdm.alivi.com", "uat-pdm.alivi.com")
 
@@ -95,6 +96,8 @@ class Defaults:
     banner: bool = True
     # Tell when a new pdms version is published (checked at most once a day).
     update_check: bool = True
+    # Which releases count as new: "stable" or "beta" (pre-releases too, before the stable one comes out).
+    update_channel: str = "stable"
     # Open pdms ui (in the tray, without its window) when the user logs in to the computer.
     ui_at_login: bool = False
     # Seconds to wait when testing a database connection.

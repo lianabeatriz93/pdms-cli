@@ -36,6 +36,7 @@ const DEFAULTS = [
   ["idle_minutes", N_("Minutes before an idle service sleeps"), "number", N_("For services on demand: minutes without requests through the proxy before it stops them. Applies to the running proxy.")],
   ["banner", N_("Show the PDMS banner"), "check", N_("When the interactive menu opens.")],
   ["update_check", N_("Tell me about new pdms versions"), "check", N_("Checked at most once a day.")],
+  ["update_channel", N_("Versions"), "select", N_("Beta: try each version before it reaches everyone, and help find its bugs. If one fails you, go back to an earlier version from Versions, at the top of this tab.")],
   ["ui_at_login", N_("Open pdms ui when I log in"), "check", N_("In the tray, without its window. To have it in the app menu too: pdms ui --install.")],
   ["parallel_requests", N_("Requests in parallel"), "check", N_("Each request of a service runs in its own thread, so a slow database query only holds up its own request. Applies when a service starts.")],
   ["query_stats", N_("Database time per request"), "check", N_("Each request of a service says how long it spent in the database and which queries it ran; Proxy shows them with the request. Applies when a service starts.")],

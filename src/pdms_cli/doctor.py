@@ -57,7 +57,7 @@ def check_pdms() -> list[Check]:
     if kind != "editable":
         cache = update.load_cache()
         latest = cache.get("latest")
-        if latest and update.is_newer(latest):
+        if update.offered(latest or ""):
             checks.append(Check(section, _("Updates"), WARN, _("{latest} is available", latest=latest),
                                 "pdms self-update", fix="update"))
         elif latest:

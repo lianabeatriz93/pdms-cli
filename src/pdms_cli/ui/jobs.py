@@ -393,14 +393,22 @@ class Jobs:
 
     # ------------------------------------------------------------------ pdms itself
 
-    def update(self, control: Control, *, restart_proxy: bool = True) -> Job:
-        """Install the latest version and restart pdms ui with it (see :mod:`.updates`)."""
+    def update(self, control: Control, *, restart_proxy: bool = True, version: str = "") -> Job:
+        """Install the latest version, or ``version`` (an earlier one too), and restart pdms ui with it (see
+        :mod:`.updates`)."""
         if not update.updates_itself():
             raise actions.ActionError(_("This pdms was not installed with uv tool, so it cannot update itself; "
                                         "run the command shown."))
-        target, _checked = update.cached_latest(ui_updates.channel())
-        if not target or not update.is_newer(target):
-            raise actions.ActionError(_("pdms {version} is the latest version.", version=__version__))
+        if version:
+            if not update.VERSION.match(version):
+                raise actions.ActionError(_("'{version}' is not a pdms version.", version=version))
+            if version == __version__:
+                raise actions.ActionError(_("pdms {version} is the version you have.", version=version))
+            target = version
+        else:
+            target, _checked = update.cached_latest(ui_updates.channel(Config.load()))
+            if not target or not update.is_newer(target):
+                raise actions.ActionError(_("pdms {version} is the latest version.", version=__version__))
         return self.run(ui_updates.KEY, "update", "starting", lambda job: ui_updates.install(
             control, target, restart_proxy, lambda phase: self.phase(job, phase, log_key=ui_updates.KEY)))
 
@@ -1266,7 +1274,8 @@ def settings(cfg: Config) -> dict:
         "defaults": asdict(cfg.defaults),
         "roles": actions.known_roles(cfg),
         "sections": list(transfer.SECTIONS),
-        "choices": {"language": i18n.LANGUAGES, "logging_level": list(LOG_LEVELS), "events": list(EVENTS_MODES), "theme": list(THEMES)},
+        "choices": {"language": i18n.LANGUAGES, "logging_level": list(LOG_LEVELS), "events": list(EVENTS_MODES), "theme": list(THEMES),
+                    "update_channel": {"stable": _("Stable"), "beta": _("Beta: new versions before everyone else")}},
     }
 
 
