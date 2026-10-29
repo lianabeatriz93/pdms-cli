@@ -1025,7 +1025,8 @@
 <dialog id="versions-dialog" class="m">
   <form method="dialog">
     <h2>Versions</h2>
-    <p class="muted">If a version fails you, go back to an earlier one: pdms ui installs it and restarts, and does not offer the one you left again (a newer one, yes).</p>
+    <p class="muted" id="versions-intro">If a version fails you, go back to an earlier one: pdms ui installs it and restarts, and does not offer the one you left again (a newer one, yes).</p>
+    <p class="muted" id="versions-checkout-hint" hidden>This pdms runs from a local checkout: to try another version, <code>git checkout v&lt;version&gt;</code> in it, then restart pdms ui.</p>
     <p class="muted" id="versions-command-hint" hidden>This pdms was not installed with uv tool, so it cannot change version by itself: <code>pdms self-update --version &lt;version&gt;</code> in a terminal does.</p>
     <div class="versions-list" id="versions-list"></div>
     <div class="release-notes" id="versions-notes"></div>

@@ -28,6 +28,7 @@ const CATALOG = {
     "Beta: try each version before it reaches everyone, and help find its bugs. If one fails you, go back to an earlier version from Versions, at the top of this tab.": "Beta: prueba cada versión antes de que llegue a todos, y ayuda a encontrar sus errores. Si una te falla, vuelve a una anterior desde Versiones, arriba en esta pestaña.",
     "If a version fails you, go back to an earlier one: pdms ui installs it and restarts, and does not offer the one you left again (a newer one, yes).": "Si una versión te falla, vuelve a una anterior: pdms ui la instala y se reinicia, y no vuelve a ofrecer la que dejaste (una más nueva, sí).",
     "This pdms was not installed with uv tool, so it cannot change version by itself: <code>pdms self-update --version &lt;version&gt;</code> in a terminal does.": "Este pdms no se instaló con uv tool, así que no puede cambiar de versión solo: lo hace <code>pdms self-update --version &lt;versión&gt;</code> en una terminal.",
+    "This pdms runs from a local checkout: to try another version, <code>git checkout v&lt;version&gt;</code> in it, then restart pdms ui.": "Este pdms corre desde un checkout local: para probar otra versión, <code>git checkout v&lt;versión&gt;</code> en él, y luego reinicia pdms ui.",
     "Loading the versions…": "Cargando las versiones…",
     "Could not reach GitHub: {error}": "No se pudo contactar con GitHub: {error}",
     "you have it": "la tienes",
