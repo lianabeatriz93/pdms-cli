@@ -47,9 +47,10 @@ def packaging(text: str) -> dict:
 
 
 def installers_job(text: str) -> str:
-    """The installers job of ci.yml, as text: from its key to the next job's."""
+    """The installers job of ci.yml, as text without its comments: from its key to the next job's."""
     match = re.search(r"^  installers:\n(.*?)(?=^  [\w-]+:\n|\Z)", text, re.M | re.S)
-    return match.group(0) if match else ""
+    lines = match.group(0).splitlines() if match else []
+    return "\n".join(line for line in lines if not line.lstrip().startswith("#"))
 
 
 def reasons(base: str, head: str = "HEAD") -> list[str]:
