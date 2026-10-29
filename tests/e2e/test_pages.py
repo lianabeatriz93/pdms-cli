@@ -210,3 +210,34 @@ def test_a_screen_opened_by_its_link_loads_its_data(ui: Page) -> None:
         ui.reload()
     expect(ui.locator("#data-pg-where")).not_to_be_empty()
     expect(ui.locator("#data-dbs .sk-row")).to_have_count(0)
+
+
+def test_reinstalling_old_code_from_home_asks_about_another_python(ui: Page) -> None:
+    """Restarting the services that run old code: a Python their project no longer accepts is asked, not a dead end."""
+    stale = {"head": "c5b6e786ac02", "pending": [], "commits": [],
+             "stale": [{"key": "lead-tp-create@28100", "service": "lead/lead-tp-create", "parts": ["core"]}]}
+
+    def with_stale(route: Route) -> None:
+        state = route.fetch().json()
+        answer(route, 200, {**state, "changes": stale})
+
+    sent: list[dict] = []
+
+    def restart(route: Route) -> None:
+        sent.append(json.loads(route.request.post_data or "{}"))
+        if len(sent) == 1:
+            answer(route, 409, {"decision": "python_mismatch", "services": [
+                {"service": "lead-tp-create", "have": "3.10", "wants": ">=3.12", "use": "3.12", "program": ""}]})
+        else:
+            answer(route, 202, {"jobs": ["lead-tp-create@28100"]})
+
+    ui.route("**/api/state", with_stale)
+    ui.route("**/api/stream", lambda route: route.fulfill(status=200, content_type="text/event-stream", body=""))
+    ui.route("**/api/instances/restart", restart)
+    ui.reload()
+    ui.get_by_role("button", name="Reinstall and restart 1").click()
+    expect(ui.locator("#python-dialog")).to_be_visible()
+    with ui.expect_request("**/api/instances/restart"):
+        ui.click("#python-recreate")
+    expect(ui.locator(".toast").last).to_contain_text("Restarting 1")
+    assert sent == [{"keys": ["lead-tp-create@28100"]}, {"keys": ["lead-tp-create@28100"], "python": True}]

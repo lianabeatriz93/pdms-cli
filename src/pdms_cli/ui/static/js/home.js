@@ -289,9 +289,7 @@ function attention() {
       t("{parts} changed since they started: {names}.", { parts: parts.join(", "), names: stale.map((item) => item.key).join(", ") }),
       [button(t("See what changed"), () => $("home-changes").scrollIntoView({ behavior: "smooth", block: "start" })),
         button(stale.length === 1 ? t("Reinstall and restart 1") : t("Reinstall and restart {n}", { n: stale.length }),
-          () => act("/api/instances/restart", { keys: stale.map((item) => item.key) },
-            (data) => toast(t("Restarting {n}: each row shows its progress.", { n: data.jobs.length }), "info")),
-          { class: "btn small primary" })]]);
+          (event) => restartStale(event.currentTarget, stale.map((item) => item.key)), { class: "btn small primary" })]]);
   }
   // The databases in use, measured each minute: fresher than Doctor, whose tunnel check is then left out here.
   const tunnelsDown = [];
@@ -405,6 +403,35 @@ export function paintHome() {
   $("home-attn-card").hidden = !items.length;
   $("home-attn-count").textContent = String(items.length);
   $("home-attn-count").className = `st ${items.some((item) => item[0] === "bad") ? "fail" : "warn"}`;
+}
+
+// The services that run old code, restarted with their install. Their questions (another Python, migrations, test
+// views) are asked here, as Services' restart dialog does, and the restart goes on with the answer.
+async function restartStale(trigger, keys, answers = {}) {
+  trigger.disabled = true; // a second click would restart them twice
+  try {
+    const { status, data } = await post("/api/instances/restart", { keys, ...answers });
+    if (status === 202) {
+      toast(t("Restarting {n}: each row shows its progress.", { n: data.jobs.length }), "info");
+      return;
+    }
+    if (status === 409 && data.decision === "python_mismatch") {
+      const python = await askPython(data.services);
+      if (python !== null) await restartStale(trigger, keys, { ...answers, python });
+    } else if (status === 409 && data.decision === "migrations_pending") {
+      const migrate = await askMigrations(data.dbs);
+      if (migrate !== null) await restartStale(trigger, keys, { ...answers, migrate });
+    } else if (status === 409 && data.decision === "test_views_pending") {
+      const views = await askViews(data.views);
+      if (views !== null) await restartStale(trigger, keys, { ...answers, views });
+    } else {
+      toast(data.error || t("pdms ui answered {status}", { status }));
+    }
+  } catch {
+    toast(t("pdms ui is not reachable: is it still running?"));
+  } finally {
+    trigger.disabled = false;
+  }
 }
 
 export function toggleAttention() {
