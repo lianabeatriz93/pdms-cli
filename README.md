@@ -485,6 +485,7 @@ passwords you already have and backs up the configuration first. Repos are never
 git clone git@github.com:lianabeatriz93/pdms-cli.git ~/Code/Alivi/pdms-cli && cd ~/Code/Alivi/pdms-cli
 uv sync && uv run pytest
 uvx ruff check src tests                  # errors and likely bugs only, as the CI runs it
+PDMS_E2E=1 uv run pytest tests/e2e        # pdms ui in a browser (Playwright's Chromium, else your Google Chrome)
 uv tool install -e '.[desktop]' --force   # use the checkout as `pdms` (again when dependencies change)
 ```
 
@@ -500,7 +501,9 @@ service) restarts.
   there; the tests fail when one is missing.
 
 **CI** runs once per commit of a pull request and on every push to `main`: Linux with Python 3.10 and 3.12, macOS and
-Windows with 3.12, plus ruff. `gh workflow run ci.yml --ref <branch>` runs all three systems with both Pythons. The installers only when `installer/`, `pyproject.toml`,
+Windows with 3.12, plus ruff and pdms ui in Chromium (`tests/e2e`: the real server and page, with what would start
+processes answered by the test). `gh workflow run ci.yml --ref <branch>` runs all three systems with both Pythons; a
+`bump:` commit only runs ruff, since its tag's release runs the tests. The installers only when `installer/`, `pyproject.toml`,
 `uv.lock` or the workflows change. Markdown-only changes run nothing.
 
 ### Releasing
