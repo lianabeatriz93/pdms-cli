@@ -11,6 +11,8 @@ on:
     paths-ignore: ["**.md"]
   workflow_dispatch:
 
+# A version bump on main (bump: ...) changes only the version: its tag's release.yml runs the tests, so here only lint
+# does, and no macOS or Windows runner is waited for.
 # A new commit to a pull request cancels the run of the previous one.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -19,6 +21,7 @@ concurrency:
 jobs:
   tests:
     name: tests (${{ matrix.os }}, py${{ matrix.python }})
+    if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +89,31 @@ jobs:
       - name: Ruff
         run: uvx ruff@0.17.3 check --output-format github src tests
 
+  e2e:
+    name: e2e (pdms ui in Chromium)
+    if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
+    runs-on: ubuntu-latest
+    env:
+      PDMS_E2E: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: uv sync --locked
+      - name: Chromium
+        run: uv run playwright install --with-deps chromium
+      - name: Tests
+        run: uv run pytest -q tests/e2e --tracing retain-on-failure --output e2e-results
+      - name: Traces of the failed tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-traces
+          path: e2e-results
+          retention-days: 7
+
   changes:
     name: what changed
     runs-on: ubuntu-latest
@@ -111,7 +139,7 @@ jobs:
     name: installer (${{ matrix.os }})
     # Only when they (or what they install) changed in a pull request; always on main.
     needs: changes
-    if: needs.changes.outputs.installers == 'true'
+    if: needs.changes.outputs.installers == 'true' && !startsWith(github.event.head_commit.message, 'bump:')
     strategy:
       fail-fast: false
       matrix:
@@ -168,6 +196,7 @@ jobs:
 
   flyway:
     name: flyway (pdms migrate, real image)
+    if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
     runs-on: ubuntu-latest
     services:
       postgres:
