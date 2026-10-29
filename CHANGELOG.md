@@ -1,3 +1,13 @@
+## v0.4.14b0 (2026-10-29)
+
+### Fix
+
+- **ui**: Copy in a dialog over another, and dialogs never taller than the window
+
+### Refactor
+
+- **ui**: the API's routes in tables of their own, out of the HTTP handler
+
 ## v0.4.13 (2026-10-29)
 
 ### Feat
