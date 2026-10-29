@@ -124,20 +124,21 @@ jobs:
         with:
           fetch-depth: 0
       - id: diff
-        name: Did the installers or the packaging change?
+        name: Did what the installers try change?
         shell: bash
+        # Against the pull request's base, or the previous commit of main; run by hand, always (see that script).
         run: |
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "installers=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '^(installer/|pyproject\.toml$|uv\.lock$|\.github/workflows/)'; then
-            echo "installers=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "installers=false" >> "$GITHUB_OUTPUT"
-          fi
+          case "${{ github.event_name }}" in
+            pull_request) base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)" ;;
+            push) base="${{ github.event.before }}" ;;
+            *) base="" ;;
+          esac
+          python3 .github/installers_changed.py "$base" | tee changed.txt
+          tail -n 1 changed.txt >> "$GITHUB_OUTPUT"
 
   installers:
     name: installer (${{ matrix.os }})
-    # Only when they (or what they install) changed in a pull request; always on main.
+    # Only when what they try changed (.github/installers_changed.py), on pull requests and main alike.
     needs: changes
     if: needs.changes.outputs.installers == 'true' && !startsWith(github.event.head_commit.message, 'bump:')
     strategy:
