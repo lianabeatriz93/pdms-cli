@@ -1,6 +1,6 @@
 // Stacks: their cards, starting and stopping them, and the stack editor.
 
-import { $, act, button, el, failedText, getJson, icon, phaseLabel, post, toast } from "./core.js";
+import { $, act, button, el, failedText, getJson, icon, moreButton, phaseLabel, post, toast } from "./core.js";
 import { state } from "./state.js";
 import { showLogs } from "./logs.js";
 import { dbLabel, fetchServices, openRestartSet, openUp, options, runningNote, runningOn } from "./launch.js";
@@ -73,12 +73,14 @@ function stackCard(stack) {
     if (up) actions.append(button(t("Restart…"), () => restartStack(stack)));
     if (up) actions.append(button(t("Stop"), () => act(`${stackPath(stack.name)}/down`), { class: "btn small bad" }));
     actions.append(button(t("Edit"), () => openEditor(stack)));
-    actions.append(button(t("Delete"), () => removeStack(stack), { class: "btn small ghost" }));
+    actions.append(moreButton(t("More for {key}", { key: stack.name }), () => [
+      { icon: "forget", label: t("Delete"), bad: true, run: () => removeStack(stack) }]));
   }
+  const meta = t("user {user} · db {db}", { user: stack.user || ask(), db: stack.db || ask() })
+    + (Object.keys(stack.overrides || {}).length ? ` · ${t("{n} with their own user or database", { n: Object.keys(stack.overrides).length })}` : "");
+  // Every stack the same row: fold, name, state, who and where, then its actions at the right edge.
   const card = el("article", { class: `card stack${open ? "" : " folded"}` },
-    el("header", {}, toggle, el("h2", { class: "mono" }, stack.name), status, actions),
-    el("p", { class: "muted meta" }, t("user {user} · db {db}", { user: stack.user || ask(), db: stack.db || ask() })
-      + (Object.keys(stack.overrides || {}).length ? ` · ${t("{n} with their own user or database", { n: Object.keys(stack.overrides).length })}` : "")),
+    el("header", {}, toggle, el("h2", { class: "mono" }, stack.name), status, el("span", { class: "muted meta", title: meta }, meta), actions),
   );
   const overrides = stack.overrides || {};
   if (open) card.append(el("ul", { class: "svc-chips" }, ...stack.services.map((svc) => stackChip(svc, text, overrides[svc.path]))));
