@@ -10,7 +10,9 @@ import { adoptStrays, paintServices, pickAllShown, pickedItems, servicesView, st
 import {
   addAllLogs, addLogSource, clearLog, clearRequestFilter, closeLogs, setLogFilter, showLogs, switchLogTab, toggleDock,
 } from "./logs.js";
-import { filterRun, openRestartSet, openRun, resetConfirmation, setChange, setPick, submitLaunch } from "./launch.js";
+import {
+  clearPicked, filterRun, openRestartSet, openRun, pickShown, resetConfirmation, saveRunAsStack, setChange, setPick, submitLaunch,
+} from "./launch.js";
 import { filterEditor, openEditor, openFromRunning, paintStacks, saveEditor } from "./stacks.js";
 import {
   closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyView, requestLogs, resetProxyPort, showDetailTab,
@@ -106,6 +108,9 @@ $("stack-filter").addEventListener("input", () => state && paintStacks());
 $("stack-running").addEventListener("change", () => state && paintStacks());
 $("run-new").addEventListener("click", () => state && openRun());
 $("run-filter").addEventListener("input", filterRun);
+$("run-all").addEventListener("click", pickShown);
+$("run-clear").addEventListener("click", clearPicked);
+$("run-save-stack").addEventListener("click", saveRunAsStack);
 $("run-filter").addEventListener("keydown", (event) => { if (event.key === "Enter") event.preventDefault(); });
 $("run-port").addEventListener("input", resetConfirmation);
 $("restart-form").addEventListener("submit", submitLaunch);

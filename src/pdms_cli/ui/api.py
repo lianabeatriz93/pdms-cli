@@ -376,7 +376,13 @@ class Api:
     # starting and stopping
 
     def run(self, body: dict) -> tuple[int, dict]:
-        return 202, {"job": self.jobs.start(**run_options(body)).key}
+        """One service (``service``) or several (``services``), each on the next free port."""
+        if "services" not in body:
+            return 202, {"job": self.jobs.start(**run_options(body)).key}
+        options = run_options({**body, "service": "-", "port": None})
+        del options["service"], options["port"]
+        started = self.jobs.start_many(_strings(body, "services", "service paths"), **options)
+        return 202, {"jobs": [job.key for job in started]}
 
     def start_proxy(self, body: dict) -> tuple[int, dict]:
         return 202, {"job": self.jobs.start_proxy(**proxy_options(body)).key}

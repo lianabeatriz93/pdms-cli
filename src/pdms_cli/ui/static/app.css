@@ -294,6 +294,20 @@ dialog input:not([type]), dialog input[type="search"], dialog input[type="number
 .picker-bar input { flex: 1; min-width: 0; }
 .picker-bar span { font-size: .78rem; white-space: nowrap; }
 .picker-list { max-height: 40vh; overflow: auto; padding: .3rem .2rem; }
+/* Starting services or restarting a set: the list on the left, what applies to all of them on the right. */
+#restart.l .launch-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+#restart.l .launch-pick .picker { margin: 0; }
+#restart.l .launch-pick .picker-list { max-height: min(52vh, 28rem); }
+@media (max-width: 760px) { #restart.l .launch-grid { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+.run-picked { border: 1px solid var(--line); border-radius: 6px; margin-bottom: .7rem; }
+.run-chips { display: flex; flex-wrap: wrap; gap: .3rem; padding: .45rem; max-height: 7.5rem; overflow: auto; }
+.run-chip {
+  display: inline-flex; align-items: center; gap: .3rem; font: .76rem var(--mono); padding: .1rem .2rem .1rem .5rem;
+  border-radius: 5px; border: 0; background: var(--accent-soft); color: var(--accent); cursor: pointer;
+}
+.run-chip:hover { background: color-mix(in srgb, var(--accent-soft) 70%, var(--accent)); }
+.run-chip .i { width: 12px; height: 12px; }
+.actions .lead { margin-right: auto; }
 dialog label.pick { display: flex; align-items: center; gap: .45rem; margin: 0; padding: .15rem .4rem; color: var(--ink); font-size: .8rem; border-radius: 4px; }
 dialog label.pick:hover { background: var(--code); }
 dialog label.pick .muted { margin-left: auto; font-size: .75rem; white-space: nowrap; }

@@ -493,6 +493,31 @@ def test_start_one_service_takes_the_next_free_port(ui, repo, monkeypatch) -> No
     assert started[0].user_name == "agent" and started[0].db_name == "local"  # the last ones, like pdms run
 
 
+def test_start_several_services_each_on_its_own_port_asking_once(ui, repo, machine, monkeypatch) -> None:
+    port, _hub, _states, jobs = ui
+    started = []
+    monkeypatch.setattr(actions, "start_service", lambda cfg, launch, install=None: started.append(launch))
+    monkeypatch.setattr(actions, "needs_install", lambda cfg, service, install: False)
+    monkeypatch.setattr(actions.runner, "port_is_free", lambda host, port: port != 28101)
+
+    assert post(port, "/api/run", {"services": []}) == (400, {"error": "Pick the services to start."})
+    assert post(port, "/api/run", {"services": "lead/lead-get"})[0] == 400
+    assert post(port, "/api/run", {"services": ["lead/lead-get", "user/nope"]}) == (
+        400, {"error": "Not services of the current repo: user/nope"},
+    )
+    services = ["lead/lead-get", "lead/lead-list", "user/user-me"]
+    status, data = post(port, "/api/run", {"services": services, "db": "shared"})
+    assert status == 409 and data == {"decision": "protected_database", "name": "shared"}
+    assert not started and not jobs.snapshot()
+
+    status, data = post(port, "/api/run", {"services": services, "user": "boss", "db": "shared", "confirmed": True})
+    assert status == 202 and data == {"jobs": ["lead-get@28100", "lead-list@28102", "user-me@28103"]}
+    wait_until(lambda: len(started) == 3 and not jobs.snapshot())
+    assert sorted(launch.port for launch in started) == [28100, 28102, 28103]
+    assert {(launch.user_name, launch.db_name) for launch in started} == {("boss", "shared")}
+    assert machine.last_user == "boss" and machine.last_db == "shared"
+
+
 def test_a_service_starting_cannot_start_again_meanwhile(ui, repo, monkeypatch) -> None:
     """A second click while the first start is going (any port): the service would run twice, one without its port."""
     port, _hub, _states, jobs = ui

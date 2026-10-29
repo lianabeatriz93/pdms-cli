@@ -1,21 +1,29 @@
 // The dialog that starts, restarts and runs services and stacks (user, database, port, events).
 
-import { $, el, post, toast } from "./core.js";
+import { $, el, icon, post, toast } from "./core.js";
 import { state } from "./state.js";
 import { logs, openLogs } from "./logs.js";
-import { slashes } from "./stacks.js";
+import { openEditor, slashes } from "./stacks.js";
 import { askPython } from "./python.js";
 import { askMigrations, askViews } from "./migrations.js";
 
 // go: what the dialog's button does, "restart" or "start" (its label comes from goLabel).
 // set: several instances restarted together (their keys), from a stack when stack is its name.
+// picked: the services ticked to start (run), in the order they were ticked; consumers: those that read a queue.
 const launch = {
   path: null, confirmed: false, after: null, run: false, service: "", go: "start", set: false, stack: "", python: null,
-  migrate: null, views: null, sending: false,
+  migrate: null, views: null, sending: false, picked: [], consumers: new Set(),
 };
 
 function goLabel() {
+  if (launch.run && launch.picked.length > 1) return t("Start {n}", { n: launch.picked.length });
   return launch.go === "restart" ? t("Restart") : t("Start");
+}
+
+// The list and what applies to all side by side (l) when there is a list to pick from; a plain form (m) otherwise.
+function widen(wide) {
+  $("restart").classList.toggle("l", wide);
+  $("restart").classList.toggle("m", !wide);
 }
 
 function goOnPort(port) {
@@ -41,6 +49,8 @@ export function openLaunch({ title, key, hint, user, db, path, go, after, broker
   $("set-picker").hidden = $("set-change-label").hidden = $("set-remember-label").hidden = true;
   $("restart-user-label").hidden = $("restart-db-label").hidden = false;
   $("run-picker").hidden = $("run-port-label").hidden = $("run-on-demand-label").hidden = !run;
+  $("run-picked").hidden = $("run-save-stack").hidden = true;
+  widen(run);
   $("run-on-demand").checked = Boolean(state.on_demand);
   $("run-consumer").hidden = true;
   $("restart-broker-label").hidden = !broker;
@@ -67,6 +77,7 @@ export function openRestartSet({ items, stack = "", picked = null }) {
     after: (_install, data) => toast(t("Restarting {n}: each row shows its progress.", { n: data.jobs.length }), "info"),
   });
   Object.assign(launch, { set: true, stack });
+  widen(true);
   $("set-services").replaceChildren(...items.map((item) => {
     const box = el("input", { type: "checkbox", value: item.key });
     box.checked = !picked || picked.includes(item.key);
@@ -142,35 +153,77 @@ export async function openRun(service = "") {
   const found = await fetchServices();
   if (!found) return;
   const ports = runningOn(slashes(found.root));
-  const consumers = new Set(found.consumers || []);
+  launch.consumers = new Set(found.consumers || []);
+  launch.picked = [];
   $("run-filter").value = "";
   $("run-port").value = "";
   $("run-services").replaceChildren(...found.services.map((svc) => {
-    const radio = el("input", { type: "radio", name: "run-service", value: svc });
-    radio.addEventListener("change", () => {
-      const consumer = consumers.has(svc);
-      $("run-port-label").hidden = $("run-on-demand-label").hidden = consumer;
-      $("run-consumer").hidden = !consumer;
-      resetConfirmation();
-    });
-    return el("label", { class: "pick", "data-svc": svc.toLowerCase() }, radio, el("span", { class: "mono" }, svc), runningNote(ports[svc]));
+    const box = el("input", { type: "checkbox", value: svc });
+    box.addEventListener("change", () => pickService(svc, box.checked));
+    return el("label", { class: "pick", "data-svc": svc.toLowerCase() }, box, el("span", { class: "mono" }, svc), runningNote(ports[svc]));
   }));
   $("run-count").textContent = servicesCount(found.services.length);
+  $("run-all").hidden = true;
   openLaunch({
-    title: t("Start a service"), key: "", hint: t("In the background, like pdms run -b. It keeps running when pdms ui stops."),
+    title: t("Start services"), key: "", hint: t("In the background, like pdms run -b. They keep running when pdms ui stops."),
     user: state.user, db: state.db, go: "start", path: "/api/run", run: true,
-    after: (_install, data) => openLogs(data.job),
+    after: (_install, data) => {
+      if (data.job) openLogs(data.job);
+      else toast(t("Starting {n}: each row shows its progress.", { n: data.jobs.length }), "info");
+    },
   });
-  const radio = service && [...$("run-services").querySelectorAll("input")].find((input) => input.value === service);
-  if (radio) {
-    radio.checked = true;
-    radio.dispatchEvent(new Event("change"));
+  paintPicked();
+  if (service && found.services.includes(service)) {
+    pickService(service, true);
     $("run-filter").value = service;
     filterRun();
     $("restart-go").focus();
   } else {
     $("run-filter").focus();
   }
+}
+
+function pickService(svc, on) {
+  launch.picked = launch.picked.filter((name) => name !== svc);
+  if (on) launch.picked.push(svc);
+  const box = [...$("run-services").querySelectorAll("input")].find((input) => input.value === svc);
+  if (box) box.checked = on;
+  paintPicked();
+  resetConfirmation();
+}
+
+// What the picked services share: the port only for one service that is not a consumer, on demand unless all are
+// consumers, and the list of them with a ✕ each.
+function paintPicked() {
+  const picked = launch.picked;
+  const consumers = picked.filter((svc) => launch.consumers.has(svc)).length;
+  $("run-port-label").hidden = picked.length !== 1 || consumers === 1;
+  $("run-on-demand-label").hidden = picked.length > 0 && consumers === picked.length;
+  $("run-consumer").hidden = !(picked.length === 1 && consumers === 1);
+  $("run-picked").hidden = $("run-save-stack").hidden = picked.length === 0;
+  $("run-picked-count").textContent = t("{n} selected", { n: picked.length });
+  $("run-picked-list").replaceChildren(...picked.map((svc) => el("button", {
+    class: "run-chip", type: "button", title: t("Remove {name}", { name: svc }), "aria-label": t("Remove {name}", { name: svc }),
+    onclick: () => pickService(svc, false),
+  }, svc.split("/").pop(), icon("forget"))));
+}
+
+export function clearPicked() {
+  for (const svc of [...launch.picked]) pickService(svc, false);
+}
+
+// Tick every service the filter shows.
+export function pickShown() {
+  for (const item of $("run-services").children) {
+    if (!item.hidden) pickService(item.querySelector("input").value, true);
+  }
+}
+
+// The picked services as a new stack, with the user and database chosen here.
+export function saveRunAsStack() {
+  const preset = { services: [...launch.picked], user: $("restart-user").value, db: $("restart-db").value, overrides: {} };
+  $("restart").close();
+  openEditor(null, preset);
 }
 
 export function servicesCount(n) {
@@ -186,6 +239,8 @@ export function filterRun() {
   }
   const total = $("run-services").children.length;
   $("run-count").textContent = text ? t("{shown} of {total}", { shown, total }) : servicesCount(total);
+  $("run-all").hidden = !text || shown === 0;
+  $("run-all").textContent = t("Select the {n} shown", { n: shown });
 }
 
 export function openUp(stack) {
@@ -227,14 +282,17 @@ async function sendLaunch() {
   if (!$("restart-broker-label").hidden) body.broker = $("restart-broker").checked;
   if (launch.service) Object.assign(body, { service: launch.service, port: null });
   if (launch.run) {
-    const picked = $("run-services").querySelector("input:checked");
-    if (!picked) {
-      $("restart-error").textContent = t("Pick the service to start.");
+    if (!launch.picked.length) {
+      $("restart-error").textContent = t("Pick the services to start.");
       $("restart-error").hidden = false;
       return;
     }
-    body.service = picked.value;
-    body.port = $("run-port-label").hidden || !$("run-port").value ? null : Number($("run-port").value);
+    if (launch.picked.length === 1) {
+      body.service = launch.picked[0];
+      body.port = $("run-port-label").hidden || !$("run-port").value ? null : Number($("run-port").value);
+    } else {
+      body.services = [...launch.picked];
+    }
     body.on_demand = $("run-on-demand-label").hidden ? null : $("run-on-demand").checked;
   }
   $("restart-error").hidden = true;

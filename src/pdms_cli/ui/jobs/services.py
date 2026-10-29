@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from ... import actions, events, frontend, instances, proxy, repos
+from ... import actions, events, frontend, instances, proxy, repos, runner
 from ...config import Config
 from ...i18n import _
 from .. import state as ui_state
@@ -239,6 +239,58 @@ class ServiceJobs(JobsCore):
             actions.start_service(cfg, launch)
 
         return self.run(key, "start", "starting", work, once=launch.service.name)
+
+    def start_many(
+        self, services: list[str], *, user: str | None = None, db: str | None = None, install: bool | None = None,
+        confirmed: bool = False, on_demand: bool | None = None, python: bool | None = None, migrate: bool | None = None,
+        views: bool | None = None,
+    ) -> list[Job]:
+        """Start several services of the current repo with one user and database, each on its own free port and one
+        after the other (each its own job, waiting its turn). Everything is checked once, before anything starts:
+        unknown or busy services, a protected database, their Python, the migrations and the test views."""
+        if not services:
+            raise actions.ActionError(_("Pick the services to start."))
+        cfg = Config.load()
+        root, known = repo_info.repo_services(cfg)
+        unknown = [service for service in services if service not in known]
+        if unknown:
+            raise actions.ActionError(_("Not services of the current repo: {names}", names=", ".join(unknown)))
+        user, db = user or cfg.last_user, db or cfg.last_db
+        actions.require(cfg.users, _("user"), user)
+        actions.require(cfg.dbs, _("database"), db)
+        taken = set(instances.running_ports())  # the ports picked here too, so no two of them get the same one
+        launches = []
+        for service in dict.fromkeys(services):
+            port = runner.next_free_port(cfg.defaults.host, cfg.defaults.port, taken)
+            launch = actions.plan_service(cfg, root / service, user_name=user, db_name=db, port=port, on_demand=on_demand)
+            taken.add(launch.port)
+            launches.append(launch)
+        actions.check_database(cfg, db, confirmed)
+        keys = [instances.make_key(launch.service, launch.port) for launch in launches]
+        busy = [key for key in keys if self.busy(key)]
+        if busy:
+            raise actions.ActionError(_("{key} is busy.", key=", ".join(busy)))
+        recreate = actions.check_pythons(cfg, [launch.service for launch in launches], install, python)
+        behind = actions.check_migrations(cfg, [db], migrate)
+        needs = actions.check_test_views(cfg, [(launch.service, db) for launch in launches], views)
+        actions.remember_profile(cfg, user, db)
+        turn = threading.Lock()  # one at a time: installs and starts do not compete
+        prepared: list[bool] = []  # the migrations and test views, by the first start
+
+        def start_one(launch: actions.ServiceLaunch, key: str) -> Callable[[Job], None]:
+            def work(job: Job) -> None:
+                with turn:
+                    if not prepared:
+                        prepared.append(True)
+                        self.migrate_first(job, behind)
+                        self.views_first(cfg, job, needs)
+                    self.install(cfg, job, launch.service, key, install, recreate=recreate)
+                    self.phase(job, "starting")
+                    actions.start_service(cfg, launch)
+            return work
+
+        return [self.run(key, "start", "waiting", start_one(launch, key), once=launch.service.name)
+                for launch, key in zip(launches, keys)]
 
     def views_first(self, cfg: Config, job: Job, needs: list[actions.TestViewNeed]) -> None:
         """Make the test copies of the views the user agreed to (see :func:`actions.check_test_views`)."""

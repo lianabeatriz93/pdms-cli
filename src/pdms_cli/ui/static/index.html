@@ -676,38 +676,50 @@
   <form method="dialog" id="restart-form">
     <h2><span id="restart-title">Restart</span> <span class="mono" id="restart-key"></span></h2>
     <p class="muted" id="restart-hint"></p>
-    <div class="picker" id="run-picker" hidden>
-      <div class="picker-bar">
-        <input type="search" id="run-filter" placeholder="Filter services" aria-label="Filter services" autocomplete="off">
-        <span class="muted" id="run-count"></span>
+    <div class="launch-grid">
+      <div class="launch-pick">
+        <div class="picker" id="run-picker" hidden>
+          <div class="picker-bar">
+            <input type="search" id="run-filter" placeholder="Filter services" aria-label="Filter services" autocomplete="off">
+            <span class="muted" id="run-count"></span>
+            <button class="btn small ghost" type="button" id="run-all" hidden></button>
+          </div>
+          <div class="picker-list" id="run-services" role="group" aria-label="Services to start"></div>
+        </div>
+        <div class="picker" id="set-picker" hidden>
+          <div class="picker-bar">
+            <b id="set-count"></b>
+            <button class="btn small ghost push" type="button" id="set-all">All</button>
+            <button class="btn small ghost" type="button" id="set-none">None</button>
+          </div>
+          <div class="picker-list" id="set-services" aria-label="Services to restart"></div>
+        </div>
       </div>
-      <div class="picker-list" id="run-services" role="radiogroup" aria-label="Service"></div>
-    </div>
-    <label id="run-port-label" hidden>Port <input type="number" id="run-port" min="1" max="65535" placeholder="the next free one"></label>
-    <label class="inline" id="run-on-demand-label" hidden><input type="checkbox" id="run-on-demand"> On demand: it waits asleep until the proxy gets a request for it, and sleeps again when idle</label>
-    <p class="muted" id="run-consumer" hidden>An SQS consumer: it reads its queue from the local ElasticMQ and takes no port.</p>
-    <div class="picker" id="set-picker" hidden>
-      <div class="picker-bar">
-        <b id="set-count"></b>
-        <button class="btn small ghost push" type="button" id="set-all">All</button>
-        <button class="btn small ghost" type="button" id="set-none">None</button>
+      <div class="launch-opts">
+        <div class="run-picked" id="run-picked" hidden>
+          <div class="picker-bar"><b id="run-picked-count"></b><button class="btn small ghost push" type="button" id="run-clear">Clear</button></div>
+          <div class="run-chips" id="run-picked-list"></div>
+        </div>
+        <label id="run-port-label" hidden>Port <input type="number" id="run-port" min="1" max="65535" placeholder="the next free one"></label>
+        <label class="inline" id="run-on-demand-label" hidden><input type="checkbox" id="run-on-demand"> On demand: it waits asleep until the proxy gets a request for it, and sleeps again when idle</label>
+        <p class="muted" id="run-consumer" hidden>An SQS consumer: it reads its queue from the local ElasticMQ and takes no port.</p>
+        <label class="inline" id="set-change-label" hidden><input type="checkbox" id="set-change"> Change the user or the database of all of them</label>
+        <label class="inline" id="restart-broker-label" hidden><input type="checkbox" id="restart-broker" checked> Also run the broker (broker-sqs-event), which routes events to their queues as in AWS</label>
+        <label id="restart-user-label">User <select id="restart-user"></select></label>
+        <label id="restart-db-label">Database <select id="restart-db"></select></label>
+        <label class="inline" id="set-remember-label" hidden><input type="checkbox" id="set-remember"> Remember in the stack: pdms up starts them this way too</label>
+        <fieldset>
+          <legend>Install dependencies</legend>
+          <label class="inline"><input type="radio" name="install" value="auto" checked> Only if something changed</label>
+          <label class="inline"><input type="radio" name="install" value="force"> Always</label>
+          <label class="inline"><input type="radio" name="install" value="skip"> Never</label>
+        </fieldset>
+        <p class="warn" id="restart-warn" hidden></p>
+        <p class="error" id="restart-error" hidden></p>
       </div>
-      <div class="picker-list" id="set-services" aria-label="Services to restart"></div>
     </div>
-    <label class="inline" id="set-change-label" hidden><input type="checkbox" id="set-change"> Change the user or the database of all of them</label>
-    <label class="inline" id="restart-broker-label" hidden><input type="checkbox" id="restart-broker" checked> Also run the broker (broker-sqs-event), which routes events to their queues as in AWS</label>
-    <label id="restart-user-label">User <select id="restart-user"></select></label>
-    <label id="restart-db-label">Database <select id="restart-db"></select></label>
-    <label class="inline" id="set-remember-label" hidden><input type="checkbox" id="set-remember"> Remember in the stack: pdms up starts them this way too</label>
-    <fieldset>
-      <legend>Install dependencies</legend>
-      <label class="inline"><input type="radio" name="install" value="auto" checked> Only if something changed</label>
-      <label class="inline"><input type="radio" name="install" value="force"> Always</label>
-      <label class="inline"><input type="radio" name="install" value="skip"> Never</label>
-    </fieldset>
-    <p class="warn" id="restart-warn" hidden></p>
-    <p class="error" id="restart-error" hidden></p>
     <div class="actions">
+      <button class="btn ghost lead" type="button" id="run-save-stack" hidden>Save as a stack…</button>
       <button class="btn ghost" type="button" id="restart-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="restart-go">Restart</button>
     </div>
