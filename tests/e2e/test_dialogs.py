@@ -1,4 +1,5 @@
-"""Dialogs: copying from one opened over another, and their buttons always in sight however long they get."""
+"""Dialogs: copying from one opened over another, their buttons always in sight however long they get, and the same
+head with a close button on every one."""
 
 from __future__ import annotations
 
@@ -57,3 +58,18 @@ def test_a_long_dialog_keeps_its_buttons_in_the_window(ui: Page) -> None:
     expect(ui.locator("#views-apply")).to_be_in_viewport()
     ui.click("#views-dialog button[value=cancel]")
     expect(ui.locator("#restart-go")).to_be_in_viewport()
+
+
+def test_every_dialog_has_its_title_and_a_close_button(ui: Page) -> None:
+    missing = ui.evaluate("""() => [...document.querySelectorAll("dialog:not(.palette)")]
+        .filter((d) => !d.querySelector(".dialog-head > h2 + .dialog-close")).map((d) => d.id)""")
+    assert missing == []
+
+
+def test_the_close_button_cancels_like_esc(ui: Page) -> None:
+    ui.evaluate('import("/static/js/stacks.js").then((m) => { window.answered = m.confirmDialog("Stop?", "Sure?", "Stop"); })')
+    expect(ui.locator("#confirm")).to_be_visible()
+    expect(ui.locator("#confirm .actions button").first).to_be_focused()  # the first button, not the ✕
+    ui.click("#confirm .dialog-close")
+    expect(ui.locator("#confirm")).to_be_hidden()
+    assert ui.evaluate("window.answered") is False

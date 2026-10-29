@@ -672,7 +672,7 @@
   <div class="palette-foot"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> run</span><span><kbd>/</kbd> filter the current view</span></div>
 </dialog>
 
-<dialog id="restart">
+<dialog id="restart" class="m">
   <form method="dialog" id="restart-form">
     <h2><span id="restart-title">Restart</span> <span class="mono" id="restart-key"></span></h2>
     <p class="muted" id="restart-hint"></p>
@@ -714,7 +714,7 @@
   </form>
 </dialog>
 
-<dialog id="proxy-dialog">
+<dialog id="proxy-dialog" class="m">
   <form method="dialog" id="proxy-form">
     <h2>Start the proxy</h2>
     <p class="muted">One port for every service: local instances of the current repo answer, the rest goes to the remote API. It runs in the background, like <code>pdms proxy -b</code>.</p>
@@ -733,7 +733,7 @@
   </form>
 </dialog>
 
-<dialog id="front-dialog">
+<dialog id="front-dialog" class="m">
   <form method="dialog" id="front-form">
     <h2>Start the frontend</h2>
     <p class="muted">The PDMS web app of the current repo, in the background like <code>pdms front -b</code>. It keeps running when pdms ui stops.</p>
@@ -759,7 +759,7 @@
   </form>
 </dialog>
 
-<dialog id="send">
+<dialog id="send" class="m">
   <form method="dialog" id="send-form">
     <h2>Send an event</h2>
     <p class="muted">To an event type (through the broker, as a service would publish it) or straight to a queue.</p>
@@ -777,7 +777,7 @@
   </form>
 </dialog>
 
-<dialog id="setup-dialog">
+<dialog id="setup-dialog" class="s">
   <form method="dialog" id="setup-form">
     <h2>Save the setup</h2>
     <p class="muted">The stack, the proxy, the frontend and the local events chosen now, under a name to start them again with one click.</p>
@@ -790,7 +790,7 @@
   </form>
 </dialog>
 
-<dialog id="editor">
+<dialog id="editor" class="m">
   <form method="dialog" id="editor-form">
     <h2 id="editor-title">New stack</h2>
     <label id="editor-name-label">Name <input id="editor-name" autocomplete="off" pattern="[A-Za-z0-9_\-]+" required></label>
@@ -816,7 +816,7 @@
   </form>
 </dialog>
 
-<dialog id="repo-dialog">
+<dialog id="repo-dialog" class="m">
   <form method="dialog" id="repo-form" autocomplete="off">
     <h2 id="repo-title">Add repo</h2>
     <p class="muted" id="repo-hint"></p>
@@ -845,7 +845,7 @@
   </form>
 </dialog>
 
-<dialog id="switch-dialog">
+<dialog id="switch-dialog" class="m">
   <form method="dialog" id="switch-form">
     <h2 id="switch-title"></h2>
     <p class="muted" id="switch-text"></p>
@@ -864,7 +864,7 @@
   </form>
 </dialog>
 
-<dialog id="flyway-dialog">
+<dialog id="flyway-dialog" class="l">
   <div class="dialog-body">
     <h2 id="flyway-title"></h2>
     <p class="muted mono" id="flyway-repo"></p>
@@ -891,7 +891,7 @@
   </div>
 </dialog>
 
-<dialog id="db-dialog">
+<dialog id="db-dialog" class="m">
   <form method="dialog" id="db-form" autocomplete="off">
     <h2 id="db-title">New database</h2>
     <label id="db-name-label">Name <input id="db-name" pattern="[A-Za-z0-9_\-]+" required></label>
@@ -919,7 +919,7 @@
   </form>
 </dialog>
 
-<dialog id="user-dialog">
+<dialog id="user-dialog" class="m">
   <form method="dialog" id="user-form" autocomplete="off">
     <h2 id="user-title">New user</h2>
     <label id="user-name-label">Name <input id="user-name" pattern="[A-Za-z0-9_\-]+" required></label>
@@ -942,7 +942,7 @@
   </form>
 </dialog>
 
-<dialog id="export-dialog">
+<dialog id="export-dialog" class="s">
   <form method="dialog" id="export-form">
     <h2>Export the settings</h2>
     <p class="muted">A TOML file to share or keep, like <code>pdms config export</code>; <b>Import…</b> or <code>pdms config import</code> reads it back.</p>
@@ -960,7 +960,7 @@
   </form>
 </dialog>
 
-<dialog id="import-dialog">
+<dialog id="import-dialog" class="l">
   <form method="dialog" id="import-form">
     <h2>Import <span class="mono" id="import-name"></span></h2>
     <p class="muted" id="import-meta"></p>
@@ -993,7 +993,7 @@
   </form>
 </dialog>
 
-<dialog id="users-dialog">
+<dialog id="users-dialog" class="l">
   <form method="dialog" id="users-form">
     <h2>Import users from a database</h2>
     <p class="muted">From its <code>pdms_user</code> table, with their roles turned into <code>DEV_ROLES</code>. Users already imported are updated.</p>
@@ -1022,7 +1022,7 @@
   </form>
 </dialog>
 
-<dialog id="versions-dialog">
+<dialog id="versions-dialog" class="m">
   <form method="dialog">
     <h2>Versions</h2>
     <p class="muted">If a version fails you, go back to an earlier one: pdms ui installs it and restarts, and does not offer the one you left again (a newer one, yes).</p>
@@ -1037,7 +1037,7 @@
   </form>
 </dialog>
 
-<dialog id="update-dialog">
+<dialog id="update-dialog" class="m">
   <form method="dialog" id="update-form">
     <h2 id="update-title"></h2>
     <p class="muted" id="update-hint"></p>
@@ -1058,7 +1058,7 @@
   </form>
 </dialog>
 
-<dialog id="confirm">
+<dialog id="confirm" class="s">
   <form method="dialog">
     <h2 id="confirm-title"></h2>
     <p id="confirm-text"></p>
@@ -1069,7 +1069,7 @@
   </form>
 </dialog>
 
-<dialog id="views-dialog">
+<dialog id="views-dialog" class="l">
   <form method="dialog">
     <h2>Try your version of these views?</h2>
     <p>The services about to start read materialized views you changed in your checkout of pdms-db-migrations. They can read a test copy made from your SQL, with your ticket as a suffix, beside the real view: the deployed services keep reading the real one.</p>
@@ -1083,7 +1083,7 @@
   </form>
 </dialog>
 
-<dialog id="sql-dialog">
+<dialog id="sql-dialog" class="l">
   <form method="dialog">
     <h2 id="sql-title"></h2>
     <p id="sql-text"></p>
@@ -1095,7 +1095,7 @@
   </form>
 </dialog>
 
-<dialog id="pending-dialog">
+<dialog id="pending-dialog" class="m">
   <form method="dialog">
     <h2 id="pending-title">Apply the pending migrations first?</h2>
     <p id="pending-text">The services start on a local database that lacks migrations of pdms-db-migrations (your checkout). pdms can apply them with Flyway first, with the image of the pipeline.</p>
@@ -1109,7 +1109,7 @@
   </form>
 </dialog>
 
-<dialog id="python-dialog">
+<dialog id="python-dialog" class="m">
   <form method="dialog">
     <h2>Another Python for these services?</h2>
     <p>Their virtualenv runs a Python their project no longer accepts. pdms can make it again on an accepted one and install their dependencies there: the first install takes longer, since the packages download again.</p>
