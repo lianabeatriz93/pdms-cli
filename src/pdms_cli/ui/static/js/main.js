@@ -44,8 +44,10 @@ import {
   paintTests, pickAllTests, rerunFailed, runShown, showTests, startTestDb, stopTests, testsView,
 } from "./tests.js";
 import { lineCheck, measureNow } from "./status.js";
+import { frameDialogs } from "./dialogs.js";
 
 $("boot-fail").remove(); // the scripts loaded: the notice for an old pdms ui is not needed
+frameDialogs();
 $("db-pop-measure").addEventListener("click", measureNow);
 $("db-pop-line").addEventListener("click", lineCheck);
 document.addEventListener("click", (event) => { if (!$("db-pop").contains(event.target)) $("db-pop").hidden = true; });
