@@ -1,6 +1,6 @@
 // Home: what needs attention, Start everything, the tiles and the stacks.
 
-import { $, act, button, el, failedText, phaseLabel, post, statusLabel, toast } from "./core.js";
+import { $, act, button, el, failedText, icon, phaseLabel, post, statusLabel, toast } from "./core.js";
 import { state } from "./state.js";
 import { adoptStrays, servicesView, stopStrays } from "./services.js";
 import { showLogs } from "./logs.js";
@@ -22,7 +22,9 @@ import { lineCheck, measureNow, roundTrip } from "./status.js";
 
 export const HOME_JOB = "home";
 
-const home = { saving: 0 };
+// saving: setup saves on their way; allAttention: every Needs attention item shown, not only the first ones
+const home = { saving: 0, allAttention: false };
+const ATTENTION_SHOWN = 3;
 
 function homeJob() {
   return state.jobs[HOME_JOB] || null;
@@ -76,34 +78,37 @@ function phaseStep(phase) {
   return "stack";
 }
 
-function paintSteps() {
+// Where each tile stands in Start everything: its step's number, and whether it is done, starting or off.
+function stepStates() {
   const setup = state.setup || {};
   const job = homeJob();
   const busy = job && !job.error && job.action === "up" ? phaseStep(job.phase) : null;
   const stack = state.stacks.find((item) => item.name === setup.stack);
   const steps = [
-    ["events", setup.events, t("Local events"), t("ElasticMQ and the broker, so the services publish locally"), state.events.up],
-    ["stack", Boolean(stack), stack ? t("Stack {name}", { name: stack.name }) : t("No stack"),
-      stack ? servicesCount(stack.services.length) : t("only what is already running"), stack && stackUp(stack) === stack.services.length],
-    ["proxy", setup.proxy, t("Proxy"), t("local services answer, the rest goes to the remote API"), Boolean(state.proxy)],
-    ["frontend", setup.frontend && Boolean(state.frontend), t("Frontend"),
+    ["events", setup.events, t("ElasticMQ and the broker, so the services publish locally"), state.events.up],
+    ["stack", Boolean(stack), stack ? servicesCount(stack.services.length) : t("only what is already running"),
+      stack && stackUp(stack) === stack.services.length],
+    ["proxy", setup.proxy, t("local services answer, the rest goes to the remote API"), Boolean(state.proxy)],
+    ["frontend", setup.frontend && Boolean(state.frontend),
       setup.frontend_mode === "build" ? t("a production build, pointed to the proxy") : t("yarn dev, pointed to the proxy"),
       Boolean(state.frontend && state.frontend.running)],
   ];
   const order = steps.map(([key]) => key);
-  $("home-steps").replaceChildren(...steps.map(([key, on, title, text, done]) => {
+  const states = {};
+  for (const [key, on, text, done] of steps) {
     let kind = on ? "" : "off";
     if (on && done) kind = "done";
     if (on && busy) kind = key === busy ? "busy" : order.indexOf(key) < order.indexOf(busy) ? "done" : kind;
-    return el("li", kind ? { class: kind } : {}, el("b", {}, title), el("span", {}, on ? (key === busy ? phaseLabel(job.phase) : text) : t("off")));
-  }));
+    states[key] = { kind, text: on ? text : t("off") };
+  }
+  return states;
 }
 
 function tile({ title, status, kind = "", main, rows = [], hint = "", actions = [] }) {
   const list = el("dl", {});
   for (const [label, value] of rows) list.append(el("dt", {}, label), el("dd", typeof value === "string" ? { title: value } : {}, value));
   return el("article", { class: `card tile ${kind}`.trim() },
-    el("header", {}, el("h2", {}, title), status),
+    el("header", {}, el("span", { class: "step" }), el("h2", {}, title), status),
     el("div", { class: "tile-main" }, main),
     list,
     ...(hint ? [el("p", { class: "tile-hint" }, hint)] : []),
@@ -353,7 +358,6 @@ function recentText(entry) {
 
 export function paintHome() {
   paintSetup();
-  paintSteps();
   const job = homeJob();
   const busy = job && !job.error;
   const alive = state.instances.filter((i) => i.status !== "stopped").length;
@@ -367,10 +371,17 @@ export function paintHome() {
   $("home-error").hidden = !(job && job.error);
   $("home-error").textContent = job && job.error ? failedText(job) : "";
 
-  const tiles = [servicesTile(), proxyTile()];
-  if (state.frontend) tiles.push(frontendTile());
-  tiles.push(eventsTile());
-  $("home-tiles").replaceChildren(...tiles);
+  // In the order Start everything goes: events, the stack, the proxy, the frontend.
+  const steps = stepStates();
+  const tiles = [["events", eventsTile()], ["stack", servicesTile()], ["proxy", proxyTile()]];
+  if (state.frontend) tiles.push(["frontend", frontendTile()]);
+  tiles.forEach(([key, card], i) => {
+    const step = card.querySelector(".step");
+    step.className = `step ${steps[key].kind}`.trim();
+    step.title = t("Step {n} of Start everything: {what}", { n: i + 1, what: steps[key].text });
+    step.append(steps[key].kind === "done" ? icon("check") : String(i + 1));
+  });
+  $("home-tiles").replaceChildren(...tiles.map(([, card]) => card));
 
   $("home-stacks").replaceChildren(...state.stacks.map(homeStackRow));
   $("home-stacks-empty").hidden = state.stacks.length > 0;
@@ -383,14 +394,22 @@ export function paintHome() {
   paintChanges();
   paintSetups();
   const items = attention();
-  $("home-attn").replaceChildren(...items.map(([kind, title, detail, actions]) => el("li", {},
-    el("span", { class: `sev ${kind}` }),
+  const shown = home.allAttention || items.length <= ATTENTION_SHOWN + 1 ? items : items.slice(0, ATTENTION_SHOWN);
+  $("home-attn-more").hidden = items.length <= ATTENTION_SHOWN + 1;
+  $("home-attn-more").textContent = home.allAttention ? t("Show fewer") : t("Show {n} more", { n: items.length - shown.length });
+  $("home-attn").replaceChildren(...shown.map(([kind, title, detail, actions]) => el("li", {},
+    el("span", { class: `sev ${kind}` }, icon(kind === "db" ? "db" : kind === "info" ? "awake" : "alert")),
     el("div", {}, el("b", {}, title), el("small", {}, detail || "")),
     el("div", { class: "attn-actions" }, ...actions),
   )));
   $("home-attn-card").hidden = !items.length;
   $("home-attn-count").textContent = String(items.length);
   $("home-attn-count").className = `st ${items.some((item) => item[0] === "bad") ? "fail" : "warn"}`;
+}
+
+export function toggleAttention() {
+  home.allAttention = !home.allAttention;
+  paintHome();
 }
 
 export async function startAll(confirmed = false, python = null, migrate = null, views = null) {

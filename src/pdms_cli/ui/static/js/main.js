@@ -30,7 +30,7 @@ import {
 } from "./settings.js";
 import { hostsEdited, saveHosts, setRedirect } from "./browser.js";
 import { openFrontendStart, paintFrontendMode, resetFrontendPort, submitFrontendStart } from "./frontend.js";
-import { saveSetup, startAll, stopAll, submitSaveSetup } from "./home.js";
+import { saveSetup, startAll, stopAll, submitSaveSetup, toggleAttention } from "./home.js";
 import { UPDATE_JOB, checkNow, copyCommand, openUpdate, openVersions, skipOffered, submitUpdate } from "./updates.js";
 import { browseRepo, openRepo, paintRepos, repoForm, repoPathChanged, saveRepo, submitSwitch } from "./repos.js";
 import { flywayView, openFlyway, paintFlyway } from "./migrations.js";
@@ -296,6 +296,7 @@ $("update-cancel").addEventListener("click", () => $("update-dialog").close());
 $("update-copy").addEventListener("click", copyCommand);
 $("update-log").addEventListener("click", () => { $("update-dialog").close(); showLogs(UPDATE_JOB); });
 $("home-stop").addEventListener("click", stopAll);
+$("home-attn-more").addEventListener("click", toggleAttention);
 $("setup-form").addEventListener("submit", submitSaveSetup);
 $("setup-cancel").addEventListener("click", () => $("setup-dialog").close());
 for (const id of ["setup-stack", "setup-events", "setup-proxy", "setup-frontend", "setup-mode"]) $(id).addEventListener("change", saveSetup);

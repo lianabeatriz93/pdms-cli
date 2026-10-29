@@ -454,21 +454,6 @@ td.wrap-detail .st { white-space: nowrap; }
 }
 .launch .error { margin: 0; }
 /* What Start everything does, in order: numbered steps joined by a line that turns green as they are done. */
-.steps { list-style: none; margin: 0; padding: .2rem 0 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); counter-reset: step; }
-.steps li { counter-increment: step; position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 .55rem; padding-right: .6rem; font-size: .8rem; min-width: 0; }
-.steps li::before {
-  content: counter(step); grid-row: span 2; position: relative; z-index: 1; width: 1.4rem; height: 1.4rem; border-radius: 50%;
-  display: grid; place-items: center; font-size: .72rem; font-weight: 600; background: var(--code); color: var(--muted);
-  box-shadow: 0 0 0 3px var(--surface);
-}
-.steps li::after { content: ""; position: absolute; top: .65rem; left: 1.9rem; right: .3rem; height: 2px; background: var(--line); }
-.steps li:last-child::after { display: none; }
-.steps b { justify-self: start; position: relative; z-index: 1; background: var(--surface); padding-right: .45rem; }
-.steps li.done::before { content: "✓"; background: var(--ok); color: #fff; }
-.steps li.done::after { background: var(--ok); }
-.steps li.busy::before { background: var(--warn); color: #fff; }
-.steps li.off b { color: var(--muted); font-weight: 500; }
-.steps span { color: var(--muted); overflow-wrap: anywhere; }
 .tiles { display: grid; gap: .8rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 1280px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tile { display: grid; grid-template-rows: auto auto 1fr auto auto; gap: .4rem; padding: .75rem .85rem; min-width: 0; }
@@ -476,6 +461,15 @@ td.wrap-detail .st { white-space: nowrap; }
 .tile.warn { border-color: var(--warn); }
 .tile header { display: flex; align-items: center; gap: .5rem; }
 .tile h2 { margin: 0; font-size: .9rem; }
+/* The tile's step in Start everything: its number, a check once done. */
+.tile .step {
+  flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  font-size: .68rem; font-weight: 700; background: var(--code); color: var(--muted);
+}
+.tile .step.done { background: var(--ok-soft); color: var(--ok); }
+.tile .step.busy { background: var(--warn-soft); color: var(--warn); }
+.tile .step.off { opacity: .55; }
+.tile .step .i { width: 12px; height: 12px; stroke-width: 2.6; }
 .tile header .st { margin-left: auto; }
 .tile-main { font-size: .9rem; min-width: 0; }
 .tile-main .big { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
@@ -502,16 +496,19 @@ td.wrap-detail .st { white-space: nowrap; }
 .meter i { display: block; height: 100%; background: var(--ok); border-radius: 3px; }
 .mini { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .attn { list-style: none; margin: 0; padding: 0; }
-.attn li { display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; gap: .7rem; align-items: center; padding: .55rem .8rem .55rem 0; font-size: .82rem; }
+.attn li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: .7rem; align-items: center; padding: .55rem .8rem; font-size: .82rem; }
 .attn li + li { border-top: 1px solid var(--line); }
 .attn b { font-weight: 600; overflow-wrap: anywhere; }
 .attn small { display: block; color: var(--muted); overflow-wrap: anywhere; }
 .attn-actions { display: flex; gap: .3rem; flex-wrap: wrap; justify-content: flex-end; }
-.attn .sev { align-self: stretch; padding: 0; border-radius: 0 3px 3px 0; }
-.attn .sev.bad { background: var(--bad); }
-.attn .sev.warn { background: var(--warn); }
-.attn .sev.info { background: var(--accent); }
-.attn .sev.db { background: var(--db); }
+/* Each item's weight as an icon (red, amber, blue; purple for a database), not a coloured edge. */
+.attn .sev { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; align-self: start; }
+.attn .sev .i { width: 15px; height: 15px; }
+.attn .sev.bad { background: var(--bad-soft); color: var(--bad); }
+.attn .sev.warn { background: var(--warn-soft); color: var(--warn); }
+.attn .sev.info { background: var(--accent-soft); color: var(--accent); }
+.attn .sev.db { background: var(--db-soft); color: var(--db); }
+.attn-more { margin: 0 .8rem .6rem calc(.8rem + 26px + .7rem); font-size: .8rem; color: var(--accent); }
 .attn-card .panel-head .st { margin-left: auto; }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .15rem .8rem; margin: 0 0 .8rem; font-size: .82rem; }
 .facts dt { color: var(--muted); }
@@ -522,16 +519,18 @@ td.wrap-detail .st { white-space: nowrap; }
 @media (max-width: 900px) {
   .home-lower { grid-template-columns: 1fr; }
 }
-.setups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: .5rem; margin: .2rem 0 .6rem; }
-.setup-card { position: relative; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 0; }
+/* Saved setups as a row of chips: the current one outlined, its parts in small type. */
+.setups { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; }
+.setup-card { position: relative; display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 0; max-width: 100%; }
 .setup-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.setup-pick { display: grid; gap: .2rem; justify-items: start; width: 100%; padding: .55rem .7rem; border: 0; background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; border-radius: 8px; }
+.setup-pick { display: flex; align-items: baseline; gap: .5rem; min-width: 0; padding: .3rem .2rem .3rem .65rem; border: 0; background: none; text-align: left; font: inherit; font-size: .85rem; color: inherit; cursor: pointer; border-radius: 8px; }
+.setup-pick .st { display: none; }
 .setup-card.on .setup-pick { cursor: default; }
 .setup-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.setup-pick small { color: var(--muted); font-size: .74rem; overflow-wrap: anywhere; }
-.setup-remove { position: absolute; top: .3rem; right: .3rem; opacity: .5; }
+.setup-pick small { color: var(--muted); font-size: .74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.setup-remove { margin: 0 .3rem 0 0 !important; opacity: .5; }
 .setup-card:hover .setup-remove, .setup-remove:focus-visible { opacity: 1; }
-.setup-card.add { border-style: dashed; color: var(--muted); cursor: pointer; font: inherit; font-size: .84rem; padding: .55rem .7rem; }
+.setup-card.add { border-style: dashed; color: var(--muted); cursor: pointer; font: inherit; font-size: .84rem; padding: .3rem .7rem; }
 .setup-card.add:hover { border-color: var(--accent); color: var(--accent); }
 .changed, .commits { list-style: none; margin: 0; padding: .3rem 0; font-size: .82rem; }
 .changed li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .1rem .8rem; padding: .4rem .85rem; border-bottom: 1px solid var(--line); align-items: center; }
@@ -620,9 +619,8 @@ button.st-item:focus-visible { outline: 2px solid var(--accent); outline-offset:
   .side { grid-row: 5; position: sticky; bottom: 0; display: flex; justify-content: space-around; padding: .3rem; border-top: 1px solid var(--line); z-index: 4; }
   .side a { flex: 1; }
   .side a .sdot, .side a .badge { right: calc(50% - 18px); }
-  .steps, .tiles { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
-  .steps li::after { display: none; }
-  .attn li { grid-template-columns: 4px minmax(0, 1fr); }
+  .tiles { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+  .attn li { grid-template-columns: 26px minmax(0, 1fr); }
   .attn-actions { grid-column: 2; justify-content: flex-start; }
   .bar { flex-wrap: wrap; }
   .ctx { margin-left: 0; }

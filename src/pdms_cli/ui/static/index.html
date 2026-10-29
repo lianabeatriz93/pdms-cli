@@ -67,9 +67,12 @@
     <button class="btn bad push" id="home-stop" type="button" hidden>Stop everything</button>
   </div>
 
+  <div class="tiles" id="home-tiles" aria-label="What Start everything starts, in order"></div>
+
   <section class="card home-panel attn-card" id="home-attn-card" aria-labelledby="home-attn-title" hidden>
     <div class="panel-head"><h2 id="home-attn-title">Needs attention</h2><span class="st warn" id="home-attn-count"></span></div>
     <ul class="attn" id="home-attn"></ul>
+    <button class="link-btn attn-more" type="button" id="home-attn-more" hidden></button>
   </section>
 
   <section class="card launch" aria-labelledby="launch-title">
@@ -91,11 +94,8 @@
         </select>
       </span>
     </div>
-    <ol class="steps" id="home-steps" aria-label="What Start everything does, in order"></ol>
     <p class="error" id="home-error" hidden></p>
   </section>
-
-  <div class="tiles" id="home-tiles"></div>
 
   <div class="home-lower" id="home-changes" hidden>
     <section class="card home-panel" aria-labelledby="home-changed-title">
