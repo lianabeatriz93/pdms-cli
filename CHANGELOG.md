@@ -1,3 +1,25 @@
+## v0.4.14b2 (2026-10-29)
+
+### Feat
+
+- **ui**: Home starts with the tiles, numbered in the order Start everything goes
+- **ui**: every stack the same row, one under the other
+- **ui**: Services rows keep Logs and Restart in sight and the rest in a ⋯ menu
+- **ui**: start several services at once, or save them as a stack
+- **ui**: one frame for every dialog: a title that stays, a close button, three widths
+- **ui**: the menu folds to its icons, with a button or Ctrl B
+
+### Fix
+
+- **ui**: Reinstall and restart from Home asks about another Python instead of stopping
+- **ui**: screens show grey rows while loading, and Data loads when the page opens on it
+- **ui**: Versions opens from a local checkout too, with its notes and git checkout
+
+### Refactor
+
+- **ui**: jobs in one module per area, Jobs made of one class per kind
+- **actions**: one module per area, still answering as actions.<name>
+
 ## v0.4.14b1 (2026-10-29)
 
 ### Fix
