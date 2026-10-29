@@ -1,3 +1,9 @@
+## v0.4.13 (2026-10-29)
+
+### Feat
+
+- **update**: go back to an earlier version, a beta channel and pdms bug-report
+
 ## v0.4.12 (2026-10-28)
 
 ### Fix
