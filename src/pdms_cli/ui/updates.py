@@ -32,21 +32,22 @@ def log_path() -> Path:
     return instances.log_path(KEY)
 
 
-def channel() -> bool:
-    """Pre-releases count when this pdms is one."""
-    return update.is_prerelease(__version__)
+def channel(cfg: Config) -> bool:
+    """Whether pre-releases count: on the beta channel, or while this pdms is one."""
+    return update.wants_pre(cfg.defaults.update_channel)
 
 
 def state(cfg: Config) -> dict:
     """What the page needs: the versions (running, on disk, latest known) and how this install updates."""
     enabled = update.checks_enabled(cfg.defaults.update_check)
-    latest, checked_at = update.cached_latest(channel())
+    latest, checked_at = update.cached_latest(channel(cfg))
     kind = update.install_kind()
     running = proxy.running_proxy()
     return {
         "current": __version__,
         "installed": update.installed_version(),
-        "latest": latest if kind != "editable" and latest and update.is_newer(latest) else "",
+        "latest": update.offered(latest) if kind != "editable" else "",
+        "skipped": update.skipped(),
         "checks": enabled,
         "checked_at": datetime.fromtimestamp(checked_at).astimezone().isoformat(timespec="seconds") if checked_at else "",
         "kind": kind,
@@ -61,13 +62,32 @@ def command_text(version: str) -> str:
     return subprocess.list2cmdline(cmd) if sys.platform == "win32" else shlex.join(cmd)
 
 
-def check_now() -> dict:
+def check_now(cfg: Config) -> dict:
     """Ask GitHub now (Settings → Check now); :class:`actions.ActionError` when it cannot be reached."""
     try:
-        latest = update.check_now(channel())
+        latest = update.check_now(channel(cfg))
     except Exception as exc:  # noqa: BLE001 - network errors of any kind
         raise actions.ActionError(_("Could not reach GitHub: {error}", error=exc)) from exc
-    return {"latest": latest if update.is_newer(latest) else "", "current": __version__}
+    return {"latest": update.offered(latest), "current": __version__}
+
+
+def versions(cfg: Config) -> list[dict]:
+    """The releases one can install (Settings → Versions): the stable ones, and betas on the beta channel."""
+    try:
+        found = update.releases()
+    except Exception as exc:  # noqa: BLE001 - network errors of any kind
+        raise actions.ActionError(_("Could not reach GitHub: {error}", error=exc)) from exc
+    pre = channel(cfg)
+    skipped = update.skipped()
+    return [{**release, "current": release["version"] == __version__, "skipped": release["version"] == skipped}
+            for release in found if pre or not release["prerelease"] or release["version"] == __version__][:15]
+
+
+def skip(version: str) -> None:
+    """Stop offering ``version`` (a newer one is offered again)."""
+    if not update.VERSION.match(version):
+        raise actions.ActionError(_("'{version}' is not a pdms version.", version=version))
+    update.skip(version)
 
 
 def notes(target: str) -> list[dict]:
@@ -82,8 +102,9 @@ def watch(cfg_loader: Callable[[], Config], on_change: Callable[[], None], stopp
     failed = ""
     while not stopped.is_set():
         try:
-            if update.checks_enabled(cfg_loader().defaults.update_check) and update.check_due(channel()):
-                update.refresh(channel(), timeout=10)
+            cfg = cfg_loader()
+            if update.checks_enabled(cfg.defaults.update_check) and update.check_due(channel(cfg)):
+                update.refresh(channel(cfg), timeout=10)
                 on_change()
         except Exception as error:  # noqa: BLE001 - only a hint: never stop pdms ui for it
             if str(error) != failed:  # once, not every hour
@@ -127,6 +148,7 @@ def install(control: Control, target: str, restart_proxy: bool, report: Callable
     log.parent.mkdir(parents=True, exist_ok=True)
     with open(log, "w", encoding="utf-8") as fh:
         fh.write(f"# pdms {datetime.now():%Y-%m-%d %H:%M:%S} · {__version__} → {target} · {shlex.join(cmd)}\n")
+    update.remember_choice(target)
     if sys.platform == "win32":
         if after["proxy"]:
             report("stopping proxy")

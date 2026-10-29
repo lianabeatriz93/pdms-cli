@@ -1,6 +1,6 @@
 // Doctor: the checks of pdms doctor, their fixes and the sidebar badge.
 
-import { $, act, button, copyText, el, getJson, shortPaths, toast } from "./core.js";
+import { $, act, button, copyText, el, getJson, post, shortPaths, toast } from "./core.js";
 import { state } from "./state.js";
 import { adoptStrays } from "./services.js";
 import { matches, openDb, openUser } from "./settings.js";
@@ -145,4 +145,21 @@ export function doctorReport() {
   const lines = [`pdms ${state.version} · doctor · ${latest.at}`];
   for (const c of latest.checks) lines.push(`[${c.status}] ${c.section} · ${c.name}: ${c.detail}${c.hint && c.status !== "ok" ? `  → ${c.hint}` : ""}`);
   copyText(lines.join("\n"), t("Report copied: paste it in a chat or an issue."));
+}
+
+// A file to send with a problem (pdms bug-report): its path goes to the clipboard, to attach it.
+export async function saveBugReport() {
+  $("doctor-bug-report").disabled = true;
+  try {
+    const { status, data } = await post("/api/bug-report");
+    if (status >= 400) toast(data.error || t("pdms ui answered {status}", { status }));
+    else {
+      toast(t("Bug report saved in {path}. Read it before sending it: passwords are left out, but it has your paths and logs.", { path: data.path }), "info");
+      copyText(data.path, t("Its path is copied, to attach it."));
+    }
+  } catch {
+    toast(t("pdms ui is not reachable: is it still running?"));
+  } finally {
+    $("doctor-bug-report").disabled = false;
+  }
 }

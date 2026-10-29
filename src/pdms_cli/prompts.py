@@ -13,7 +13,7 @@ import questionary
 import typer
 
 from . import actions
-from .config import EVENTS_MODES, LOG_LEVELS, Database, Defaults, DevUser
+from .config import EVENTS_MODES, LOG_LEVELS, UPDATE_CHANNELS, Database, Defaults, DevUser
 from .i18n import LANGUAGES, _
 
 
@@ -155,6 +155,14 @@ def ask_defaults(current: Defaults) -> Defaults:
     update_check = questionary.confirm(
         _("Tell me when a new pdms version is available?"), default=current.update_check
     ).unsafe_ask()
+    update_channel = questionary.select(
+        _("Which new versions?"),
+        choices=[
+            questionary.Choice(_("Stable"), "stable"),
+            questionary.Choice(_("Beta: new versions before everyone else"), "beta"),
+        ],
+        default=current.update_channel if current.update_channel in UPDATE_CHANNELS else "stable",
+    ).unsafe_ask() if update_check else current.update_channel
     ui_at_login = questionary.confirm(
         _("Open pdms ui when you log in to the computer (in the tray)?"), default=current.ui_at_login
     ).unsafe_ask()
@@ -198,7 +206,8 @@ def ask_defaults(current: Defaults) -> Defaults:
     # What it does not ask (the ElasticMQ port, the look of pdms ui...) stays as it was.
     return replace(
         current, language=language, host=host.strip(), port=int(port), logging_level=level, reload=reload, install=install,
-        smart_install=smart_install if install else current.smart_install, update_check=update_check, events=events_mode, banner=banner,
+        smart_install=smart_install if install else current.smart_install, update_check=update_check,
+        update_channel=update_channel, events=events_mode, banner=banner,
         ui_at_login=ui_at_login, db_timeout=int(db_timeout), proxy_timeout=int(proxy_timeout),
         proxy_port=int(proxy_port), parallel_requests=parallel_requests, warm_connections=int(warm_connections),
         query_stats=query_stats, email_to=email_to.strip(), env=env,

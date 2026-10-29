@@ -28,7 +28,7 @@ import psutil
 
 from . import desktop, events, frontend, installer, instances, migrations, proxy, repos, routes, runner, transfer, userimport
 from . import awsenv, browser, captures, codeartifact, emails, health, pythons, testviews, trace, vscode
-from .config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaults, DevUser, Setup, Stack, config_path
+from .config import EVENTS_MODES, LOG_LEVELS, THEMES, UPDATE_CHANNELS, Config, Database, Defaults, DevUser, Setup, Stack, config_path
 from .i18n import LANGUAGES, _
 
 
@@ -1896,6 +1896,7 @@ def save_defaults(cfg: Config, defaults: Defaults) -> None:
         proxy_port=_number("proxy_port", defaults.proxy_port, 1, 65535),
         idle_minutes=_number("idle_minutes", defaults.idle_minutes, 1, MAX_IDLE_MINUTES),
         theme=_one_of("theme", defaults.theme, THEMES),
+        update_channel=_one_of("update_channel", defaults.update_channel, UPDATE_CHANNELS),
         email_to=check_email_to(defaults.email_to),
         test_views=dict(defaults.test_views), test_views_db=defaults.test_views_db,
         front_redirect_hosts=check_front_hosts(defaults.front_redirect_hosts),

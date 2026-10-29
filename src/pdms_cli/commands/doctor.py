@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Optional
+
 import typer
 
+from .. import bugreport
 from .. import doctor as diagnostics
 from ..config import Config
 from ..i18n import _
@@ -35,3 +39,16 @@ def doctor_cmd(
                     warn=counts[diagnostics.WARN], fail=counts[diagnostics.FAIL]))
     if counts[diagnostics.FAIL]:
         raise typer.Exit(1)
+
+
+@app.command("bug-report", help=_("Save a report to send with a problem: versions, doctor, services and their logs, "
+                                  "without passwords."))
+def bug_report_cmd(
+    folder: Optional[Path] = typer.Option(None, "--folder", "-o", help=_("Where to save it (default: Downloads).")),
+    db: bool = typer.Option(False, "--db", help=_("Also test the database connections.")),
+) -> None:
+    cfg = Config.load()
+    with console.status(_("Checking the environment...")):
+        path = bugreport.write(cfg, folder, databases=db)
+    console.print("[green]✓[/] " + _("Bug report saved in {path}", path=path), highlight=False)
+    console.print(_("[dim]Read it before sending it: passwords are left out, but it has your paths and logs.[/]"))

@@ -43,7 +43,7 @@ from .i18n import _
 # The order of pdms --help (commands of the groups follow their own module's order).
 COMMAND_ORDER = [
     "services", "run", "debug", "env", "test", "migrate", "urls", "ps", "adopt", "logs", "open", "stop", "restart",
-    "up", "down", "front", "ui", "setup", "doctor", "self-update",
+    "up", "down", "front", "ui", "setup", "doctor", "bug-report", "self-update",
 ]
 
 
@@ -54,7 +54,7 @@ def command_name(command: typer.models.CommandInfo) -> str:
 app.registered_commands.sort(key=lambda c: COMMAND_ORDER.index(command_name(c)))
 
 # Commands that do not depend on a repo, so they never trigger the "switch repo?" question.
-REPO_AGNOSTIC = {"repo", "config", "env", "db", "user", "self-update", "setup", "aws"}
+REPO_AGNOSTIC = {"repo", "config", "env", "db", "user", "self-update", "setup", "aws", "bug-report"}
 
 
 def show_version(value: bool) -> None:

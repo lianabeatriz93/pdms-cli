@@ -27,6 +27,9 @@ The installer sets up [uv](https://docs.astral.sh/uv/) if needed (it brings its 
 | | |
 | --- | --- |
 | Update | `pdms self-update` (`--check` only looks). pdms also tells you, at most once a day, when there is a new one |
+| Go back | `pdms self-update --list`, then `--version 0.4.11` (or Settings → **Versions** in pdms ui). pdms stops offering the version you left; a newer one, yes |
+| Betas | Settings → **Versions: Beta** (`update_channel = "beta"`): each version before it reaches everyone |
+| A problem | `pdms bug-report` (or **Bug report** in Doctor): a file with versions, doctor, services and logs, without passwords |
 | Version | `pdms --version` |
 | Uninstall | `uv tool uninstall pdms-cli` (the configuration in `~/.config/pdms` stays) |
 | Tab completion | `pdms --install-completion`, then a new terminal: `pdms run lead-tp-<Tab>`, `pdms up <Tab>`… |
@@ -75,7 +78,7 @@ The page and the CLI read and change the same files, so both can be used at once
 | **Events** | Local queues and their messages, sending events, event types, SNS publishes and **Emails** |
 | **Data** | Each database's round trip and tunnel, the local copy and its snapshots, the test databases, migrations, the AWS profile |
 | **Tests** | The services and packages your branch touches, run on the test databases, failures linked to VS Code |
-| **Doctor** | The checks of `pdms doctor`, with a button where pdms can fix it |
+| **Doctor** | The checks of `pdms doctor`, with a button where pdms can fix it; **Bug report** saves a file to send with a problem |
 | **Settings** | Repos, databases, users, defaults, export and import |
 
 **Ctrl K** finds and runs any action; `/` jumps to the screen's filter. The status bar shows the branch, user,
@@ -471,7 +474,8 @@ passwords you already have and backs up the configuration first. Repos are never
 | `pdms db`, `user`, `repo`, `config` | Databases (and `db local`), development users, repos, settings |
 | `pdms view` | Test copies of materialized views (`create`, `use`, `stop`, `drop`, `sql`) |
 | `pdms test`, `migrate` | Tests on a test database, Flyway |
-| `pdms self-update` | Update pdms |
+| `pdms self-update` | Update pdms (`--list`, `--version` to go back) |
+| `pdms bug-report` | A report to send with a problem, without passwords |
 
 `pdms <command> --help` shows every option.
 
@@ -495,8 +499,8 @@ service) restarts.
 - Every text is written in English inside `_()` (`i18n.py`) or `t()` (`static/i18n.js`) and translated to Spanish
   there; the tests fail when one is missing.
 
-**CI** runs once per commit of a pull request (Linux with Python 3.10 and 3.12, macOS and Windows with 3.12) and on
-every push to `main` (all three systems, both Pythons), plus ruff; the installers only when `installer/`, `pyproject.toml`,
+**CI** runs once per commit of a pull request and on every push to `main`: Linux with Python 3.10 and 3.12, macOS and
+Windows with 3.12, plus ruff. `gh workflow run ci.yml --ref <branch>` runs all three systems with both Pythons. The installers only when `installer/`, `pyproject.toml`,
 `uv.lock` or the workflows change. Markdown-only changes run nothing.
 
 ### Releasing
@@ -510,6 +514,19 @@ git commit -am "bump: version 0.4.1 → 0.4.2"
 git tag -a v0.4.2 -m v0.4.2
 git push origin main v0.4.2
 ```
+
+Before tagging, on a build of `main` (`uv tool install -e '.[desktop]' --force`), a few minutes by hand of what
+the tests cannot see:
+
+- [ ] `pdms ui --window` opens, and the screens the release changed work (start a service twice in a row too);
+- [ ] Linux, plus Windows or WSL whenever the release touches the window, the installers, updating or paths;
+- [ ] the CI of `main` is green (`gh workflow run ci.yml` for all three systems with both Pythons, when it touched
+      something system-specific).
+
+A change that is hard to try here goes first as a **beta** for whoever is on that channel:
+`cz bump --increment PATCH --prerelease beta --files-only --yes` makes `0.4.13b0` (the next one, `0.4.13b1`), committed,
+tagged and pushed the same way. GitHub marks it as a pre-release, so the installers and the stable channel never get
+it; once it works for them, `cz bump --increment PATCH --files-only --yes` makes the stable `0.4.13`.
 
 `--files-only` updates `pyproject.toml`, `uv.lock` and `CHANGELOG.md` without committing or tagging, since a plain
 `cz bump` makes a lightweight tag that `git push --follow-tags` leaves behind. The tag runs `release.yml`: it checks
