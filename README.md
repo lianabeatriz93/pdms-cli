@@ -495,9 +495,10 @@ service) restarts.
 - `actions/` does things without asking; a decision it needs is raised for the caller. The terminal
   (`commands/`, one module per group; `cli.py` only wires them) and pdms ui both call it as `actions.<name>`. One
   module per area (services, stacks, proxy, settings…); between them, functions are called through their module
-  (`services.plan_service`), so replacing `actions.<name>` in a test reaches every caller (`tests/test_actions_package.py`).
+  (`services.plan_service`), so replacing `actions.<name>` in a test reaches every caller (`forwarding.py`,
+  `tests/test_forwarding.py`).
 - `ui/`: the server (`server.py`: who may ask, replies and streams; `api.py`: what each route does, as tables of
-  methods; `jobs.py`, `state.py`) and the page in `static/`, plain ES modules with no build step (`js/`, one per
+  methods; `jobs/`: what runs in a thread, one module per area as in `actions/`; `state.py`) and the page in `static/`, plain ES modules with no build step (`js/`, one per
   screen). `tests/test_ui_api.py` fails when the page calls a route `api.py` does not have.
 - `sqs_patch/`: what pdms loads into the services it runs (`sitecustomize.py` and its modules).
 - Every text is written in English inside `_()` (`i18n.py`) or `t()` (`static/i18n.js`) and translated to Spanish

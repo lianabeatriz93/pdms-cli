@@ -9,15 +9,13 @@ One module per area (``__all__`` of each lists what it holds), and every name an
 always from its module: reading it gives what the module holds now, and replacing it (``monkeypatch.setattr(actions,
 "start_service", ...)``) replaces it there, for every caller. So the modules call each other's functions through
 the module (``services.plan_service(...)``), never with ``from .services import plan_service``: a replaced function
-would not reach a copy. Classes and constants, which nothing replaces, are imported by name.
+would not reach a copy (see forwarding.py). Only the errors, which depend on no other module, are imported by name.
 """
 
 from __future__ import annotations
 
 import subprocess  # noqa: F401 - tests replace actions.subprocess.run
-import sys
 import time  # noqa: F401 - and actions.time.sleep
-from types import ModuleType
 from typing import TYPE_CHECKING
 
 # The modules the actions use, reachable as actions.<module> as before (tests replace their functions there).
@@ -45,6 +43,7 @@ from .. import (  # noqa: F401
     userimport,
     vscode,
 )
+from ..forwarding import forward
 from . import (
     aws,
     checks,
@@ -64,37 +63,7 @@ from . import (
 
 MODULES = (errors, checks, local_events, services, outside, debugging, stacks, setups, local_proxy, local_frontend,
            repo_settings, settings, aws, views)
-HOME: dict[str, ModuleType] = {name: module for module in MODULES for name in module.__all__}
-
-
-class _Actions(ModuleType):
-    """``actions.<name>`` reads and writes the module that holds ``name``."""
-
-    def __getattr__(self, name: str):
-        module = HOME.get(name)
-        if module is None:
-            raise AttributeError(f"module 'pdms_cli.actions' has no attribute {name!r}")
-        return getattr(module, name)
-
-    def __setattr__(self, name: str, value) -> None:
-        module = HOME.get(name) if "HOME" in self.__dict__ else None
-        if module is not None:
-            setattr(module, name, value)
-        else:
-            super().__setattr__(name, value)
-
-    def __delattr__(self, name: str) -> None:
-        module = HOME.get(name)
-        if module is not None:
-            delattr(module, name)
-        else:
-            super().__delattr__(name)
-
-    def __dir__(self) -> list[str]:
-        return sorted({*super().__dir__(), *HOME})
-
-
-sys.modules[__name__].__class__ = _Actions
+HOME = forward(__name__, MODULES)
 
 if TYPE_CHECKING:  # what editors and type checkers see as actions.<name>
     from .aws import *  # noqa: F403
