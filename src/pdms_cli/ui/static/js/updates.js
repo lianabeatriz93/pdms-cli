@@ -42,7 +42,10 @@ export function paintUpdate() {
   chip.title = offer ? offerTitle(offer) : "";
   paintVersion();
   if ($("update-dialog").open) paintUpdateDialog();
-  if ($("versions-dialog").open) paintVersionsPhase();
+  if ($("versions-dialog").open) {
+    paintVersions(); // opened before the state said how this pdms is installed: its buttons follow it
+    paintVersionsPhase();
+  }
 }
 
 function paintVersion() {
@@ -59,7 +62,6 @@ function paintVersion() {
   if (info.kind !== "editable" && !info.checks) note += " " + t("Automatic checks are off.");
   $("version-note").textContent = note;
   $("version-check").disabled = info.kind === "editable";
-  $("version-list").disabled = info.kind === "editable";
   $("version-open").hidden = !offer;
 }
 
@@ -229,7 +231,10 @@ export async function openVersions() {
 function paintVersions() {
   const box = $("versions-list");
   const versions = versionsView.versions;
-  $("versions-command-hint").hidden = !state.update || state.update.updates_itself;
+  const checkout = Boolean(state.update) && state.update.kind === "editable";
+  $("versions-command-hint").hidden = !state.update || state.update.updates_itself || checkout;
+  $("versions-checkout-hint").hidden = !checkout;
+  $("versions-intro").hidden = checkout;
   if (versions === null) { box.replaceChildren(el("p", { class: "muted" }, t("Loading the versions…"))); return; }
   if (typeof versions === "string") { box.replaceChildren(el("p", { class: "muted" }, versions)); return; }
   const current = state.update ? state.update.current : "";
