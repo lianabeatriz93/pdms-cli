@@ -53,3 +53,76 @@ def no_aws(tmp_path_factory, monkeypatch):
         raise awsenv.AwsError("tests never call AWS")
 
     monkeypatch.setattr(awsenv, "_aws", refuse)
+
+
+class _Answers:
+    """The answers of an interactive command, in order: a value, or ``...`` for the question's default."""
+
+    def __init__(self) -> None:
+        self.queue: list = []
+        self.asked: list[tuple[str, str]] = []
+        self.then_defaults = False
+
+    def __call__(self, *answers, then_defaults: bool = False) -> _Answers:
+        self.queue.extend(answers)
+        self.then_defaults = then_defaults
+        return self
+
+    def question(self, kind: str):
+        def ask(message, *args, **kwargs):
+            choices = kwargs.get("choices") or (args[0] if args else [])
+            values = [getattr(choice, "value", choice) for choice in choices]
+
+            def unsafe_ask():
+                self.asked.append((kind, str(message)))
+                if not self.queue and not self.then_defaults:
+                    raise AssertionError(f"unexpected question ({kind}): {message}; asked before: {self.asked[:-1]}")
+                answer = self.queue.pop(0) if self.queue else ...
+                if answer is ...:
+                    default = kwargs.get("default")
+                    if kind == "confirm":
+                        return True if default is None else default
+                    if kind == "select":
+                        return default if default is not None else values[0]
+                    if kind == "checkbox":
+                        return [getattr(c, "value", c) for c in choices if getattr(c, "checked", False)]
+                    return default if default is not None else ""
+                if kind == "select":
+                    assert answer in values, f"{answer!r} is not a choice of {message!r}: {values}"
+                return answer
+
+            return type("Question", (), {"unsafe_ask": staticmethod(unsafe_ask), "ask": staticmethod(unsafe_ask)})()
+
+        return ask
+
+
+class _Terminal:
+    def isatty(self) -> bool:
+        return True
+
+    def readline(self) -> str:
+        return ""
+
+
+@pytest.fixture
+def answers(monkeypatch):
+    """A user at the terminal answering questionary's questions, in order (see :class:`_Answers`); fails on a
+    question nobody expected and on answers left over."""
+    import sys
+
+    import questionary
+
+    from pdms_cli import prompts
+    from pdms_cli.commands import common
+
+    script = _Answers()
+    for kind in ("text", "select", "confirm", "checkbox", "password", "path", "autocomplete"):
+        monkeypatch.setattr(questionary, kind, script.question(kind))
+    monkeypatch.setattr(prompts, "require_tty", lambda: None)
+    original = common.interactive_terminal  # imported by name in each module: replace every copy
+    for module in [m for name, m in sys.modules.items() if name.startswith("pdms_cli.commands")]:
+        if getattr(module, "interactive_terminal", None) is original:
+            monkeypatch.setattr(module, "interactive_terminal", lambda: True)
+    monkeypatch.setattr(sys, "stdin", _Terminal())
+    yield script
+    assert not script.queue, f"answers left over: {script.queue}; asked: {script.asked}"
