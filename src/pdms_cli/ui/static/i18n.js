@@ -14,12 +14,12 @@ const statics = []; // [node, English, how]: how is "text", "html" or an attribu
 
 // Texts that stay as they are in every language (the test accepts them without a translation).
 const KEEP = new Set([
-  ".env.local → proxy", "Broker", "DB", "DEV_FIRST_NAME", "DEV_LAST_NAME", "DEV_ROLES", "DEV_USERNAME",
+  ".env.local → proxy", "Broker", "DEV_FIRST_NAME", "DEV_LAST_NAME", "DEV_ROLES", "DEV_USERNAME",
   "DEV_USERNAME (email)", "DEV_USER_ID", "DEV_USER_ID (uuid)", "Endpoint", "Frontend", "Host",
   "LOGGING_LEVEL", "Log", "Logs", "Proxy", "Repo", "SNS", "Stacks", "Topic", "URL", "broker", "broker {name}", "db",
   "error", "https://….execute-api.us-east-1.amazonaws.com/dev", "ok", "poetry lock && poetry install.", "proxy",
   "repo", "uvicorn --reload.", "{n} stack", "{n} stacks", "✕", "API", "Node", "yarn install", "dev (yarn dev)", "pdms", "Doctor", "~/Code/Alivi/pdms",
-  "Ctrl K", "Esc", "dev-pdm.alivi.com, qa-pdm.alivi.com", "N+1", "Tests", "AWS", "aws", "Buckets", "1", "2", "3", "4", "6", "8", "Alias", "{when} · {seconds} s", "SQS / SNS", "{when} · CLI", "HTML",
+  "Ctrl K", "Esc", "dev-pdm.alivi.com, qa-pdm.alivi.com", "N+1", "Tests", "AWS", "aws", "Buckets", "1", "2", "3", "4", "6", "8", "Alias", "{when} · {seconds} s", "db {name}", "repo {name}", "SQS / SNS", "{when} · CLI", "HTML",
 ]);
 
 const CATALOG = {
@@ -736,6 +736,8 @@ const CATALOG = {
     "pdms ui is not reachable: is it still running?": "No se llega a pdms ui: ¿sigue corriendo?",
     "Pick the services to start.": "Elige los servicios que levantar.",
     "Remove {name}": "Quitar {name}",
+    "More for {key}": "Más acciones de {key}",
+    "user {name}": "usuario {name}",
     "Save as a stack…": "Guardar como stack…",
     "Select the {n} shown": "Elegir los {n} visibles",
     "Services to start": "Servicios que levantar",

@@ -6,6 +6,7 @@
   /* Filled buttons: white text needs a darker fill than the accent links use (WCAG AA, 4.5:1). */
   --primary: #1f5fd1; --danger: #c0392b;
   --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
 }
 /* Dark like the computer, unless Settings → Defaults → Look says light; or always dark when it says so. */
@@ -31,7 +32,7 @@
 [hidden] { display: none !important; }
 html { height: 100%; }
 body {
-  margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans);
   display: grid; grid-template: auto minmax(0, 1fr) auto auto / 196px minmax(0, 1fr);
 }
 .side { grid-row: 2 / 4; }
@@ -155,6 +156,10 @@ td.row-actions .ibtn + .ibtn, td.row-actions .btn + .ibtn, td.row-actions .ibtn 
 .tbl tr.current td.row-actions { background: var(--accent-soft); }
 #rows tr.group td { background: var(--bg); padding: .3rem .7rem; font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 #rows tr.group td .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
+/* What every row of a group shares (user, database) goes in its header; a row says it only where it differs. */
+#rows tr.group td .shared { margin-left: .6rem; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
+#rows tr.group td .shared::before { content: "· "; }
+#rows td .who { display: block; font: .74rem/1.3 var(--sans); color: var(--muted); }
 #rows tr.outside-row td { background: var(--warn-soft); background: color-mix(in srgb, var(--warn-soft) 45%, var(--surface)); }
 #rows tr.error-row td { background: var(--bad-soft); background: color-mix(in srgb, var(--bad-soft) 45%, var(--surface)); }
 #rows tr.trace-row td { padding-top: 0; white-space: normal; }
@@ -668,6 +673,15 @@ button.chip.repo-chip::after { content: "▾"; font-size: .7rem; }
 .menu button small { color: var(--muted); font-family: var(--mono); font-size: .72rem; }
 .menu button.cur b::before { content: "● "; color: var(--accent); }
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: .2rem 0; }
+/* A row's ⋯ menu: fixed under its button (core.js places it). */
+.row-menu { position: fixed; z-index: 6; min-width: 13rem; }
+.row-menu button, .row-menu a {
+  display: flex; align-items: center; gap: .55rem; text-align: left; font: inherit; font-size: .82rem; padding: .38rem .55rem;
+  border: 0; border-radius: 5px; background: transparent; color: var(--ink); cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.row-menu a:hover, .row-menu a:focus-visible { background: var(--code); }
+.row-menu .i { color: var(--muted); }
+.row-menu .bad, .row-menu .bad .i { color: var(--bad); }
 tr.current td { background: var(--accent-soft); }
 td.cur-dot { color: var(--accent); width: 1.5rem; padding-right: 0; }
 td .found-note { color: var(--muted); }

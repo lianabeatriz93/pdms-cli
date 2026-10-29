@@ -1,7 +1,7 @@
 // Services: the background instances, grouped by stack, and the processes outside pdms.
 
 import {
-  $, act, button, dateTime, el, failedText, iconButton, iconLink, phaseLabel, repoPath, statusLabel, toast, uptime,
+  $, act, button, dateTime, el, failedText, iconButton, moreButton, phaseLabel, repoPath, statusLabel, toast, uptime,
 } from "./core.js";
 import { state } from "./state.js";
 import { logs, openLogs } from "./logs.js";
@@ -34,6 +34,7 @@ function strayActions(cell, item) {
   return cell;
 }
 
+// Logs and Restart in sight; the rest (Swagger, Debug, on demand, Stop) in the ⋯ menu.
 function rowActions(item, job) {
   const cell = el("td", { class: "row-actions" });
   if (item.isStray) return strayActions(cell, item);
@@ -43,15 +44,21 @@ function rowActions(item, job) {
   if (busy || item.isSns) return cell;
   const asleep = item.status === "asleep";
   const alive = item.status !== "stopped" && !asleep;
-  if (alive && !item.queue && !item.isProxy) cell.append(iconLink("open", t("Swagger (/docs)"), `http://localhost:${item.port}/docs`));
-  if (alive && !item.isProxy) cell.append(iconButton("debug", t("Debug in VS Code"), () => debugInstance(item)));
   if (!item.isProxy && !item.placeholder) cell.append(iconButton("restart", asleep ? t("Start now") : t("Restart"), () => openRestart(item)));
-  if (onDemandCapable(item)) cell.append(onDemandButton(item, alive));
-  if (alive || asleep) {
-    cell.append(iconButton("stop", t("Stop"), () => act(`/api/instances/${encodeURIComponent(item.key)}/stop`), { class: "ibtn bad" }));
-  } else if (!item.placeholder) {
-    cell.append(iconButton("forget", t("Forget"), () => act(`/api/instances/${encodeURIComponent(item.key)}/forget`)));
+  const path = `/api/instances/${encodeURIComponent(item.key)}`;
+  const more = [];
+  if (alive && !item.queue && !item.isProxy) more.push({ icon: "open", label: t("Swagger (/docs)"), href: `http://localhost:${item.port}/docs` });
+  if (alive && !item.isProxy) more.push({ icon: "debug", label: t("Debug in VS Code"), run: () => debugInstance(item) });
+  if (onDemandCapable(item)) {
+    more.push("-");
+    if (!item.on_demand) more.push({ icon: "sleep", label: t("On demand: sleep when idle"), run: () => act(`${path}/on-demand`, { on: true }) });
+    else more.push({ icon: "awake", label: t("Always on"), run: () => act(`${path}/on-demand`, { on: false }) });
+    if (item.on_demand && alive) more.push({ icon: "sleep", label: t("Sleep now"), run: () => act(`${path}/sleep`) });
   }
+  more.push("-");
+  if (alive || asleep) more.push({ icon: "stop", label: t("Stop"), bad: true, run: () => act(`${path}/stop`) });
+  else if (!item.placeholder) more.push({ icon: "forget", label: t("Forget"), run: () => act(`${path}/forget`) });
+  if (more.some((entry) => entry !== "-")) cell.append(moreButton(t("More for {key}", { key: item.key }), () => more));
   return cell;
 }
 
@@ -85,16 +92,6 @@ function statusCell(item, job) {
 function onDemandCapable(item) {
   return !item.isProxy && !item.isSns && !item.isStray && !item.isFrontend && !item.placeholder && !item.queue
     && item.status !== "stopped";
-}
-
-function onDemandButton(item, alive) {
-  const path = `/api/instances/${encodeURIComponent(item.key)}`;
-  if (!item.on_demand) {
-    return iconButton("sleep", t("On demand: sleep when idle"), () => act(`${path}/on-demand`, { on: true }));
-  }
-  const menu = [iconButton("awake", t("Always on"), () => act(`${path}/on-demand`, { on: false }))];
-  if (alive) menu.push(iconButton("sleep", t("Sleep now"), () => act(`${path}/sleep`)));
-  return el("span", { class: "ibtn-group" }, ...menu);
 }
 
 // Asleep, or on demand and running: say what wakes it, and when nothing will.
@@ -132,7 +129,7 @@ function tracebackRow(item) {
       pre.append(el("span", EXCEPTION.test(line.text) ? { class: "exc" } : {}, line.text), "\n");
     }
   }
-  return el("tr", { class: "trace-row error-row" }, el("td", { colspan: "9" }, pre));
+  return el("tr", { class: "trace-row error-row" }, el("td", { colspan: "6" }, pre));
 }
 
 function lastPublish(item) {
@@ -163,7 +160,20 @@ function pickCell(item) {
   return el("td", { class: "pick" }, box);
 }
 
-function row(item) {
+// Who and where a row runs, when its group header does not already say it for every row.
+function whoNote(item, common) {
+  const parts = [];
+  if (item.user && item.user !== common.user) parts.push(item.user);
+  if (item.db && item.db !== common.db) parts.push(item.db);
+  if (manyRepos() && item.repo && item.repo !== common.repo) parts.push(item.repo);
+  return parts.length ? el("span", { class: "who" }, parts.join(" · ")) : "";
+}
+
+function manyRepos() {
+  return (state.repos || []).length > 1;
+}
+
+function row(item, common) {
   const job = state.jobs[item.key];
   const running = item.status !== "stopped" && item.started_at && !(job && !job.error);
   const uptimeCell = item.isSns
@@ -173,12 +183,9 @@ function row(item) {
     servicesView.selected.has(item.key) ? "chosen" : ""].filter(Boolean).join(" ");
   return el("tr", kind ? { class: kind } : {},
     pickCell(item),
-    el("td", { class: "mono" }, item.label || item.key, serialTag(item)),
+    el("td", { class: "mono" }, item.label || item.key, serialTag(item), whoNote(item, common)),
     statusCell(item, job),
     el("td", { class: "mono" }, item.url || ""),
-    el("td", {}, item.repo || "-"),
-    el("td", {}, item.user || "-"),
-    el("td", {}, item.db || "-"),
     uptimeCell,
     rowActions(item, job),
   );
@@ -245,6 +252,24 @@ function stackOf(key) {
   return stack ? stack.name : "";
 }
 
+// The user, database and repo every row of a group that has one shares ("" where they differ).
+function shared(items) {
+  const common = {};
+  for (const field of ["user", "db", "repo"]) {
+    const values = new Set(items.map((item) => item[field]).filter(Boolean));
+    common[field] = values.size === 1 ? [...values][0] : "";
+  }
+  return common;
+}
+
+function sharedNote(common) {
+  const parts = [];
+  if (common.user) parts.push(t("user {name}", { name: common.user }));
+  if (common.db) parts.push(t("db {name}", { name: common.db }));
+  if (manyRepos() && common.repo) parts.push(t("repo {name}", { name: common.repo }));
+  return parts.length ? el("span", { class: "shared" }, parts.join(" · ")) : "";
+}
+
 // Rows under a header per stack, then the rest, then what runs outside pdms.
 function groupedRows(items) {
   const groups = new Map();
@@ -257,7 +282,8 @@ function groupedRows(items) {
   const rows = [];
   for (const name of order) {
     const label = name === "\u0001other" ? t("Other") : name === "\u0002outside" ? t("Outside pdms") : t("Stack {name}", { name });
-    const head = el("td", { colspan: "8" }, label, el("span", { class: "muted" }, ` · ${groups.get(name).length}`));
+    const common = shared(groups.get(name));
+    const head = el("td", { colspan: "5" }, label, el("span", { class: "muted" }, ` · ${groups.get(name).length}`), sharedNote(common));
     const pickable = groups.get(name).filter(selectable).map((item) => item.key);
     if (name !== "\u0002outside" && pickable.length > 1) {
       const all = pickable.every((key) => servicesView.selected.has(key));
@@ -270,7 +296,7 @@ function groupedRows(items) {
     if (name === "\u0002outside" && groups.get(name).length > 1) extra.append(button(t("Adopt all"), () => adoptStrays(null)));
     rows.push(el("tr", { class: "group" }, head, extra));
     for (const item of groups.get(name)) {
-      rows.push(row(item));
+      rows.push(row(item, common));
       if (item.traceback && item.traceback.length && servicesView.traces.has(item.key)) rows.push(tracebackRow(item));
     }
   }
