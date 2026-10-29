@@ -1,7 +1,8 @@
 name: CI
 
 # Each commit of a branch runs once, through its pull request; main runs on push. macOS minutes cost 10 times
-# Linux ones (Windows, twice), so pull requests run a smaller matrix and main the whole of it.
+# Linux ones (Windows, twice) and their runners queue, so pull requests and main run a smaller matrix; the whole of it
+# only when asked for (gh workflow run ci.yml --ref <branch>).
 on:
   push:
     branches: [main]
@@ -21,9 +22,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Pull requests: both Pythons on Linux, the newest on macOS and Windows. main: every OS with both.
+        # Both Pythons on Linux, the newest on macOS and Windows; every OS with both when run by hand.
         include: >-
-          ${{ fromJSON(github.event_name == 'pull_request' && '[
+          ${{ fromJSON(github.event_name != 'workflow_dispatch' && '[
             {"os": "ubuntu-latest", "python": "3.10"}, {"os": "ubuntu-latest", "python": "3.12"},
             {"os": "macos-latest", "python": "3.12"}, {"os": "windows-latest", "python": "3.12"}
           ]' || '[
