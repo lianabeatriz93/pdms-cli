@@ -1,6 +1,6 @@
 // Events: the local ElasticMQ, its queues and messages, the event types, the local SNS and sending events.
 
-import { $, act, button, copyText, dateTime, el, getJson, phaseLabel, post, toast } from "./core.js";
+import { $, act, button, copyText, dateTime, el, getJson, phaseLabel, post, skeletonRows, toast } from "./core.js";
 import { state } from "./state.js";
 import { showLogs } from "./logs.js";
 import { openLaunch, servicesCount } from "./launch.js";
@@ -222,7 +222,10 @@ function queueRow(queue) {
 
 export function paintQueues() {
   const data = eventsView.queues;
-  if (!data) return;
+  if (!data) {
+    if (state.events.up && !$("queue-rows").children.length) $("queue-rows").replaceChildren(...skeletonRows($("queue-rows")));
+    return;
+  }
   const text = $("queue-filter").value.trim().toLowerCase();
   const busyOnly = $("queue-busy").checked;
   const shown = data.queues.filter((queue) => (!busyOnly || queue.visible || queue.in_flight)
@@ -233,7 +236,8 @@ export function paintQueues() {
   if (data.up) parts.push(waiting === 1 ? t("{n} message waiting", { n: waiting }) : t("{n} messages waiting", { n: waiting }));
   $("queue-count").textContent = parts.join(" · ");
   $("queue-purge-all").hidden = !data.up || !waiting;
-  $("queue-empty").textContent = data.up ? t("No queue matches the filter.") : "";
+  $("queue-empty").textContent = !data.up ? "" : data.queues.length ? t("No queue matches the filter.")
+    : t("No queues yet: a queue appears when a consumer starts or a service publishes to it.");
   $("queue-empty").hidden = shown.length > 0 || !data.up;
 }
 

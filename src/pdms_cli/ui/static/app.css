@@ -257,6 +257,15 @@ dialog legend { font-size: .82rem; color: var(--muted); padding: 0 .3rem; }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } .toast.leaving { transition: none; } }
 
 .view { display: grid; gap: .8rem; align-content: start; min-width: 0; }
+/* Loading: grey lines the shape of what comes (core.js skeletonRows). Empty: a table with no rows hides its column
+   names, and the line under it says why it is empty. */
+.sk { display: block; height: .7rem; border-radius: 4px; background: var(--code); animation: sk-pulse 1.1s ease-in-out infinite alternate; }
+.sk.w0 { width: 70%; } .sk.w1 { width: 45%; } .sk.w2 { width: 85%; }
+.sk-row td { padding-top: .75rem; padding-bottom: .75rem; }
+.sk-card { display: grid; gap: .8rem; padding: 1rem; }
+@keyframes sk-pulse { from { opacity: .55; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+.tbl table:has(> tbody:empty) > thead { display: none; }
 .btn.bad-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn.link { border-color: transparent; color: var(--accent); font-family: var(--mono); margin: 0; }
 .cards { display: grid; gap: .8rem; }

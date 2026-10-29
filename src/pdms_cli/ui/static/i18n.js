@@ -977,6 +977,8 @@ const CATALOG = {
     "Step {n} of Start everything: {what}": "Paso {n} de Levantar todo: {what}",
     "Show {n} more": "Ver {n} más",
     "Show fewer": "Ver menos",
+    "No queues yet: a queue appears when a consumer starts or a service publishes to it.": "Aún no hay colas: una cola aparece cuando arranca un consumidor o un servicio publica en ella.",
+    "Running the checks…": "Haciendo las comprobaciones…",
     "a production build, pointed to the proxy": "un build de producción, apuntando al proxy",
     "build (like production)": "build (como en producción)",
     "build: built as in production, served by vite preview": "build: construido como en producción, servido con vite preview",

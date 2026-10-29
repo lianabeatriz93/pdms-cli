@@ -105,7 +105,14 @@ export function paintDoctor() {
   $("doctor-run").disabled = Boolean(running);
   $("doctor-error").hidden = !(latest && latest.error);
   $("doctor-error").textContent = latest ? latest.error : "";
-  if (!latest) { $("doctor-checks").replaceChildren(); $("doctor-summary").replaceChildren(); $("doctor-when").textContent = ""; return; }
+  if (!latest) {
+    // The first run is on its way: grey lines where its sections go.
+    $("doctor-checks").replaceChildren(el("section", { class: "card sk-card", "aria-hidden": "true" },
+      ...[0, 1, 2, 0, 1].map((w) => el("span", { class: `sk w${w}` }))));
+    $("doctor-summary").replaceChildren();
+    $("doctor-when").textContent = t("Running the checks…");
+    return;
+  }
   const checks = latest.checks;
   const count = (status) => checks.filter((c) => c.status === status).length;
   const summary = [el("span", { class: "st ok" }, t("{n} ok", { n: count("ok") }))];
