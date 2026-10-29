@@ -183,9 +183,15 @@ tr.picked td { background: var(--code); }
   border-radius: 0 0 8px 8px; position: relative; /* offsetTop of a marked line */
 }
 
+/* At most the window's height: what does not fit scrolls, and the buttons stay at its bottom (.actions below). */
 dialog {
-  border: 1px solid var(--line); border-radius: 10px; padding: 1.1rem 1.2rem; width: min(26rem, calc(100vw - 32px));
+  border: 1px solid var(--line); border-radius: 10px; padding: 1.1rem 1.2rem 0; width: min(26rem, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain;
   background: var(--surface); color: var(--ink);
+}
+dialog .actions {
+  position: sticky; bottom: 0; z-index: 1; flex-wrap: wrap; margin: .6rem -1.2rem 0; padding: .7rem 1.2rem 1.1rem;
+  background: var(--surface); border-top: 1px solid var(--line);
 }
 dialog::backdrop { background: rgb(0 0 0 / .35); }
 dialog h2 { margin: 0 0 .2rem; font-size: 1rem; }

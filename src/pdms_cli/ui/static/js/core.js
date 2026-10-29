@@ -185,12 +185,16 @@ function copyByCommand(text) {
   const area = el("textarea", { readonly: "", style: "position:fixed;top:0;left:0;opacity:0" });
   area.value = text;
   const focused = document.activeElement;
-  // Inside the open modal dialog, if any: the rest of the page is inert then, and a selection there copies nothing.
-  (document.querySelector("dialog[open]") || document.body).append(area);
+  // Inside the dialog of the button that copies: with a modal open the rest of the page is inert, also a dialog
+  // opened before it (the SQL of the views over Start), and a selection there copies nothing (an empty clipboard).
+  const open = [...document.querySelectorAll("dialog[open]")];
+  (focused && focused.closest && focused.closest("dialog[open]") || open[open.length - 1] || document.body).append(area);
+  area.focus();
   area.select();
   let copied = false;
   try {
-    copied = document.execCommand("copy");
+    // An area that could not take the focus (an inert part of the page) copies nothing, though it says it did.
+    copied = document.activeElement === area && document.execCommand("copy");
   } catch {
     copied = false;
   }
