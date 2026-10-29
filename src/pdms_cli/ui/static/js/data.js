@@ -1,7 +1,9 @@
 // Data: the databases with their round trip and migrations, pdms's Postgres with the local copy (refresh, snapshots)
 // and the test databases. Reloaded when the screen opens and when one of its jobs ends.
 
-import { $, act, button, copyText, el, failedText, getJson, phaseLabel, post, postNeedingImages, toast } from "./core.js";
+import {
+  $, act, button, copyText, el, failedText, getJson, phaseLabel, post, postNeedingImages, skeletonRows, toast,
+} from "./core.js";
 import { state } from "./state.js";
 import { askMigrations, openFlyway } from "./migrations.js";
 import { openLogs } from "./logs.js";
@@ -11,7 +13,7 @@ import { dbLevel, roundTrip as roundTripText, routeText, sparkline } from "./sta
 
 // migrations: name → { loading, counts, flyway, error }, read once per database when the screen opens.
 export const dataView = {
-  data: null, loading: false, jobWas: false, testJobWas: false, migrations: {}, migrating: new Set(), views: null,
+  data: null, loading: false, failed: false, jobWas: false, testJobWas: false, migrations: {}, migrating: new Set(), views: null,
   viewsError: "",
 };
 
@@ -29,8 +31,10 @@ function when(iso) {
 export async function loadData() {
   if (dataView.loading) return;
   dataView.loading = true;
+  paintData(); // the first time, grey rows until it answers
   const { data, error } = await getJson("/api/data");
   dataView.loading = false;
+  dataView.failed = Boolean(error);
   if (error) { toast(error); return; }
   dataView.data = data;
   paintData();
@@ -61,7 +65,9 @@ export function syncData() {
   const visible = !document.getElementById("view-data").hidden;
   const testJob = state.jobs[TEST_JOB];
   const testRunning = Boolean(testJob && !testJob.error);
-  if (((dataView.jobWas && !running) || (dataView.testJobWas && !testRunning)) && visible) loadData();
+  // The page opened on Data before the state came: load now (once; after an error, opening the screen retries).
+  if (visible && !dataView.data && !dataView.failed) loadData();
+  else if (((dataView.jobWas && !running) || (dataView.testJobWas && !testRunning)) && visible) loadData();
   dataView.jobWas = running;
   dataView.testJobWas = testRunning;
   for (const name of [...dataView.migrating]) {
@@ -254,7 +260,16 @@ function paintTests(data) {
 
 export function paintData() {
   const data = dataView.data;
-  if (!data || !state) return;
+  if (!state) return;
+  if (!data) {
+    for (const id of ["data-dbs", "data-snaps", "data-tests", "data-views"]) {
+      if (!$(id).children.length) $(id).replaceChildren(...skeletonRows($(id), 2));
+    }
+    for (const id of ["data-pg-where", "data-copy-alias", "data-copy-source", "data-copy-when", "data-copy-size"]) {
+      if (!$(id).textContent) $(id).replaceChildren(el("span", { class: "sk w1" }));
+    }
+    return;
+  }
   paintConnections(data);
   paintPostgres(data);
   paintSnapshots(data);

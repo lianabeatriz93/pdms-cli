@@ -190,6 +190,14 @@ document.addEventListener("scroll", () => {
 }, true);
 window.addEventListener("resize", () => closeMenu());
 
+// Grey rows the shape of a table while its data is on its way (as many cells as its header has).
+export function skeletonRows(tbody, n = 3) {
+  const head = tbody.closest("table").tHead;
+  const cols = head ? head.rows[0].cells.length : 3;
+  return Array.from({ length: n }, (_, row) => el("tr", { class: "sk-row", "aria-hidden": "true" },
+    ...Array.from({ length: cols }, (_, col) => el("td", {}, el("span", { class: `sk w${(row + col) % 3}` })))));
+}
+
 export function button(label, onclick, attrs = {}) {
   return el("button", { class: "btn small", type: "button", onclick, ...attrs }, label);
 }

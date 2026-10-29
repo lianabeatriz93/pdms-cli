@@ -201,3 +201,12 @@ def test_a_rows_more_menu_runs_an_action_and_closes(ui: Page) -> None:
     ui.keyboard.press("Enter")
     expect(menu).to_have_count(0)
     assert ui.evaluate("window.ran") == ["stop"]
+
+
+def test_a_screen_opened_by_its_link_loads_its_data(ui: Page) -> None:
+    """Opening (or reloading) pdms ui on #data: the screen asks for its data once the state comes."""
+    ui.evaluate("location.hash = '#data'")
+    with ui.expect_response("**/api/data"):
+        ui.reload()
+    expect(ui.locator("#data-pg-where")).not_to_be_empty()
+    expect(ui.locator("#data-dbs .sk-row")).to_have_count(0)
