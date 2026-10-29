@@ -503,8 +503,10 @@ service) restarts.
 **CI** runs once per commit of a pull request and on every push to `main`: Linux with Python 3.10 and 3.12, macOS and
 Windows with 3.12, plus ruff and pdms ui in Chromium (`tests/e2e`: the real server and page, with what would start
 processes answered by the test). `gh workflow run ci.yml --ref <branch>` runs all three systems with both Pythons; a
-`bump:` commit only runs ruff, since its tag's release runs the tests. The installers only when `installer/`, `pyproject.toml`,
-`uv.lock` or the workflows change. Markdown-only changes run nothing.
+`bump:` commit only runs ruff, since its tag's release runs the tests. The installers (macOS runners can queue for long) only when
+what they try changed, on pull requests and on `main`: `installer/`, the package in `pyproject.toml` (not the dev
+dependencies nor `uv.lock`), the app menu entries or their own job (`.github/installers_changed.py` decides).
+Markdown-only changes run nothing.
 
 ### Releasing
 
