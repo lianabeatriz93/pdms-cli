@@ -16,6 +16,15 @@ def english():
 
 
 @pytest.fixture(autouse=True)
+def stable_pdms(monkeypatch):
+    """The same tests on a beta of pdms (release.yml runs them on 0.4.14b0 too): running a beta would make
+    pre-releases count by itself, so the channel decides unless a test names the version it runs."""
+    from pdms_cli import update
+
+    monkeypatch.setattr(update, "wants_pre", lambda channel, current="": channel == "beta" or update.is_prerelease(current))
+
+
+@pytest.fixture(autouse=True)
 def own_state(tmp_path_factory, monkeypatch):
     """Never touch the developer's own pdms state (a running pdms ui, its proxy...)."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path_factory.mktemp("state")))
