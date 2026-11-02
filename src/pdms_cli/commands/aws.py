@@ -182,7 +182,7 @@ def print_line(line: awslogs.Line, as_json: bool, short: bool, full: bool) -> No
     if as_json:
         print(json.dumps(line.to_dict(), ensure_ascii=False, default=str), flush=True)
         return
-    when = datetime.fromtimestamp(line.at / 1000).strftime("%Y-%m-%d %H:%M:%S")
+    when = awslogs.local_time(line.at)[:19].replace("T", " ")
     if not line.messages:
         style = {"ERROR": "red", "WARN": "yellow"}.get(line.level, "dim")
         text = line.raw.split("\n")[0] if short else line.raw

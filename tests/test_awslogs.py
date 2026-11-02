@@ -160,6 +160,16 @@ def test_keep_says_what_the_filter_of_aws_cannot() -> None:
     assert not awslogs.keep(event, grep="nothing like it")
 
 
+def test_a_time_the_system_cannot_say_in_local_time_is_said_in_utc(monkeypatch) -> None:
+    class Windows(datetime):  # datetime.astimezone() there fails for times near 1970
+        def astimezone(self, tz=None):
+            raise OSError(22, "Invalid argument")
+
+    assert awslogs.local_time(1_793_000_000_000)[:4] == "2026"
+    monkeypatch.setattr(awslogs, "datetime", Windows)
+    assert awslogs.local_time(1500) == "1970-01-01T00:00:01.500+00:00"
+
+
 def test_spans_and_moments() -> None:
     assert awslogs.since("15m") == timedelta(minutes=15) and awslogs.since("2d") == timedelta(days=2)
     assert awslogs.since("30s") == timedelta(seconds=30) and awslogs.since(" 1 H ") == timedelta(hours=1)

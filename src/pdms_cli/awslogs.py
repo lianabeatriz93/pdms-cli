@@ -20,7 +20,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import awsenv, events
@@ -325,7 +325,12 @@ def millis(when: datetime) -> int:
 
 
 def local_time(ms: int) -> str:
-    return datetime.fromtimestamp(ms / 1000).astimezone().isoformat(timespec="milliseconds")
+    """The moment in local time; in UTC where the system cannot say it (Windows, for times near 1970)."""
+    at = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+    try:
+        return at.astimezone().isoformat(timespec="milliseconds")
+    except (OSError, OverflowError, ValueError):
+        return at.isoformat(timespec="milliseconds")
 
 
 # --------------------------------------------------------------------------- asking AWS
