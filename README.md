@@ -331,6 +331,24 @@ Services get `AWS_PROFILE` and, from that account's Lambdas (read-only, once a d
 (`credential_process`), since the botocore they pin cannot refresh an SSO session: they keep working for the whole
 login.
 
+### What the dev Lambdas published (CloudWatch)
+
+```bash
+pdms aws logs                          # events and errors of the last hour: the broker and the SNS publishers
+pdms aws logs broker-sqs-event -s 1d -t lead-tp-export   # one Lambda, one day, one event type
+pdms aws logs --from "2026-11-02 09:00" --to 10:00 -g b786a8aa   # a time range and a text (an id, a file...)
+pdms aws logs -f                       # keep reading: once a minute (--every), Ctrl+C stops
+pdms aws logs --all -l error           # every line, not only events; only errors
+pdms aws logs --json | jq .messages    # one JSON object per line
+pdms aws lambdas --events              # Lambdas with logs, and which are the broker, SNS publishers, consumers
+```
+
+The Lambdas log at DEBUG, so botocore writes each SQS send and SNS publish with its queue or topic and the exact
+message; pdms reads those lines (and what the broker receives) with `aws logs filter-log-events`, always within a time
+range and with a filter AWS applies, and shows the events with their body. It only reads, with the profile of the
+services, and never uses Live Tail (billed by the minute): `-f` asks again for what came since the last read. Event
+bodies hold dev data: they are only printed, never kept.
+
 ### Local events (SQS)
 
 ```bash
@@ -470,7 +488,7 @@ passwords you already have and backs up the configuration first. Repos are never
 | `pdms proxy`, `front` | Local API gateway, the web app |
 | `pdms browser` | Extension that opens the local web app from the known front (`install`, `redirect`, `status`) |
 | `pdms events` | Local SQS (`map`, `up`, `status`, `send`, `peek`, `purge`, `down`) |
-| `pdms aws` | AWS profile (`profile`, `login`, `status`, `read`) |
+| `pdms aws` | AWS profile (`profile`, `login`, `status`, `read`), the Lambdas' logs and events (`logs`, `lambdas`) |
 | `pdms db`, `user`, `repo`, `config` | Databases (and `db local`), development users, repos, settings |
 | `pdms view` | Test copies of materialized views (`create`, `use`, `stop`, `drop`, `sql`) |
 | `pdms test`, `migrate` | Tests on a test database, Flyway |

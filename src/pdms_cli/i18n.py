@@ -1850,4 +1850,82 @@ ES: dict[str, str] = {
         "el usuario con el que se conectan los servicios",
     "{user} cannot read {name}: run in your database client: {sql}":
         "{user} no puede leer {name}: ejecuta en tu gestor de base de datos: {sql}",
+    # pdms aws logs / lambdas (awslogs.py)
+    "What the dev Lambdas wrote to CloudWatch and the events they sent (read-only). By default the events and errors "
+    "of the last hour of the broker and the Lambdas that publish to SNS.":
+        "Lo que los Lambdas de dev escribieron en CloudWatch y los eventos que enviaron (solo lectura). Por defecto, "
+        "los eventos y errores de la última hora del broker y de los Lambdas que publican en SNS.",
+    "Lambdas to read (pdms aws lambdas lists them).":
+        "Lambdas que leer (pdms aws lambdas los lista).",
+    "How far back: 30s, 15m, 1h, 2d.":
+        "Cuánto hacia atrás: 30s, 15m, 1h, 2d.",
+    "From this moment instead: 2026-11-02 09:00, or 09:00 today.":
+        "Desde este momento en su lugar: 2026-11-02 09:00, o 09:00 de hoy.",
+    "Up to this moment (default: now).":
+        "Hasta este momento (por defecto: ahora).",
+    "Only this event type (SQS type or SNS event).":
+        "Solo este tipo de evento (type de SQS o event de SNS).",
+    "Only this level: debug, info, warn, error.":
+        "Solo este nivel: debug, info, warn, error.",
+    "Only lines with this text (an id, a file name...).":
+        "Solo líneas con este texto (un id, un nombre de archivo...).",
+    "Every line, not only events and errors.":
+        "Todas las líneas, no solo eventos y errores.",
+    "Keep reading what comes (Ctrl+C stops).":
+        "Seguir leyendo lo que llegue (Ctrl+C para).",
+    "Seconds between two reads with --follow.":
+        "Segundos entre dos lecturas con --follow.",
+    "Lines read per Lambda.":
+        "Líneas leídas por Lambda.",
+    "One JSON object per line (for jq).":
+        "Un objeto JSON por línea (para jq).",
+    "One line per event, without its body.":
+        "Una línea por evento, sin su cuerpo.",
+    "The Lambdas of the account that have logs, and the part each one takes in events.":
+        "Los Lambdas de la cuenta que tienen logs, y el papel de cada uno en los eventos.",
+    "Only names with this text.":
+        "Solo los nombres con este texto.",
+    "Only the broker, SNS publishers and consumers.":
+        "Solo el broker, los que publican en SNS y los consumidores.",
+    "Events of the last hour (CloudWatch)":
+        "Eventos de la última hora (CloudWatch)",
+    "No Lambda named, and the repo's dev Terraform has no broker nor SNS publisher: pdms aws lambdas lists them.":
+        "No se nombró ningún Lambda, y el Terraform de dev del repo no tiene broker ni Lambdas que publiquen en SNS: "
+        "pdms aws lambdas los lista.",
+    "Reading {functions} (the broker and the Lambdas that publish to SNS).":
+        "Leyendo {functions} (el broker y los Lambdas que publican en SNS).",
+    "--follow reads up to now: leave --to out.":
+        "--follow lee hasta ahora: quita --to.",
+    "Asking CloudWatch about {count} Lambdas...":
+        "Preguntando a CloudWatch por {count} Lambdas...",
+    "Asking CloudWatch for the log groups of {profile}...":
+        "Pidiendo a CloudWatch los grupos de logs de {profile}...",
+    "The AWS session of {profile} is over: pdms aws login.":
+        "La sesión de AWS de {profile} terminó: pdms aws login.",
+    "More than {limit} lines in {functions}: these are the first ones; narrow the time or raise --limit.":
+        "Más de {limit} líneas en {functions}: estas son las primeras; acota el tiempo o sube --limit.",
+    "Nothing found from {start} to {end}.":
+        "No se encontró nada de {start} a {end}.",
+    "Following: a new read every {seconds} s (Ctrl+C stops).":
+        "Siguiendo: una lectura nueva cada {seconds} s (Ctrl+C para).",
+    "No Lambda found.":
+        "No se encontró ningún Lambda.",
+    "broker":
+        "broker",
+    "publishes to SNS":
+        "publica en SNS",
+    "consumes a queue":
+        "consume una cola",
+    "received":
+        "recibido",
+    "Your AWS role cannot read the logs of {function} (logs:FilterLogEvents).":
+        "Tu rol de AWS no puede leer los logs de {function} (logs:FilterLogEvents).",
+    "{function} has no logs: it does not exist or never ran.":
+        "{function} no tiene logs: no existe o nunca se ejecutó.",
+    "AWS asked to wait before reading {function} again (too many reads in the account).":
+        "AWS pidió esperar antes de volver a leer {function} (demasiadas lecturas en la cuenta).",
+    "{text} is not a span of time: use 30s, 15m, 1h or 2d.":
+        "{text} no es un lapso de tiempo: usa 30s, 15m, 1h o 2d.",
+    "{text} is not a date: use 2026-11-02 09:00, 2026-11-02 or 09:00 (today).":
+        "{text} no es una fecha: usa 2026-11-02 09:00, 2026-11-02 o 09:00 (hoy).",
 }
