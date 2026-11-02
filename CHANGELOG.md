@@ -1,3 +1,15 @@
+## v0.4.14b3 (2026-11-02)
+
+### Feat
+
+- **ui**: AWS logs shows one tab per lambda, and loads the rest of a long read
+- **ui**: AWS logs, the CloudWatch lines and events of the dev Lambdas
+- **aws**: pdms aws logs shows what the dev Lambdas sent, from CloudWatch
+
+### Fix
+
+- **aws**: times of log lines on Windows, where local time fails near 1970
+
 ## v0.4.14b2 (2026-10-29)
 
 ### Feat
