@@ -116,6 +116,20 @@ def event_targets(incomplete: str) -> list[str]:
     return _matching(sorted(event_map.routes) + sorted(event_map.queues), incomplete) if event_map else []
 
 
+def lambdas(incomplete: str) -> list[str]:
+    """The Lambdas of the repo's dev Terraform (no call to AWS: a Tab press must stay quick)."""
+    try:
+        from . import awsenv
+
+        cfg = _config()
+        if not cfg or not cfg.repo:
+            return []
+        names = {name for found in awsenv.terraform_names(cfg.repo.root).values() for name in found}
+        return _matching(sorted(names), incomplete)
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def flyway_commands(incomplete: str) -> list[str]:
     return _matching(["info", "validate", "migrate"], incomplete)
 
