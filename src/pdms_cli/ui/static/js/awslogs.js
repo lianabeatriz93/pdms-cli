@@ -17,8 +17,10 @@ const ROLES = { broker: N_("broker"), sns: N_("publishes to SNS"), consumer: N_(
 
 export const awsLogsView = {
   lambdas: null, flow: [], profile: "", loading: false, chosen: null, presets: {},
-  range: "1h", level: "", lines: [], ids: new Set(), errors: {}, more: [], problem: null,
+  range: "1h", level: "", lines: [], ids: new Set(), errors: {}, more: [], tokens: {}, query: null, problem: null,
   selected: null, tab: "event", reading: false, asked: 0, timer: null, paused: false, opened: "",
+  lambda: "", // the tab shown: "" for all the lambdas, else one of them
+  seenAt: {}, // lambda → the read whose lines its tab (or All) last showed: what came later is new
 };
 
 // ---- what is kept per repo, in this browser
@@ -31,6 +33,7 @@ function loadStored() {
   try {
     const kept = JSON.parse(localStorage.getItem(storeKey()) || "{}");
     awsLogsView.presets = kept.presets && typeof kept.presets === "object" ? kept.presets : {};
+    awsLogsView.lambda = typeof kept.lambda === "string" ? kept.lambda : "";
     return Array.isArray(kept.chosen) ? kept.chosen.filter((name) => typeof name === "string") : null;
   } catch {
     return null;
@@ -39,7 +42,9 @@ function loadStored() {
 
 function store() {
   try {
-    localStorage.setItem(storeKey(), JSON.stringify({ chosen: awsLogsView.chosen, presets: awsLogsView.presets }));
+    localStorage.setItem(storeKey(), JSON.stringify({
+      chosen: awsLogsView.chosen, presets: awsLogsView.presets, lambda: awsLogsView.lambda,
+    }));
   } catch { /* kept until the page reloads */ }
 }
 
@@ -100,23 +105,36 @@ function rangeOf(follow) {
   return { start: now - SPANS[range] };
 }
 
-export async function readNow(reset = true) {
+// reset: a new read (the screen opened, a filter changed); else Live's next round. more: the lines that came after the
+// first ones of the last read, with its very query (the tokens only go with it).
+export async function readNow(reset = true, more = false) {
   clearTimeout(awsLogsView.timer);
   awsLogsView.timer = null;
   if (awsLogsView.lambdas && !awsLogsView.profile) { awsLogsView.problem = { kind: "profile" }; paintAwsLogs(); return; }
   const chosen = awsLogsView.chosen || [];
   if (!chosen.length) { awsLogsView.problem = { kind: "none" }; paintAwsLogs(); return; }
-  const follow = !reset && awsLogsView.range === "live" && awsLogsView.asked > 0;
-  const { start, end } = rangeOf(follow);
-  const query = new URLSearchParams({ functions: chosen.join(","), start: String(Math.max(0, Math.round(start))) });
-  if (end !== undefined) query.set("end", String(Math.round(end)));
-  const type = $("awslogs-type").value.trim();
-  const grep = $("awslogs-grep").value.trim();
-  if (type) query.set("type", type);
-  if (grep) query.set("grep", grep);
-  if ($("awslogs-all").checked) query.set("all", "1");
+  let query;
+  if (more && awsLogsView.query) {
+    query = new URLSearchParams(awsLogsView.query);
+    query.set("functions", Object.keys(awsLogsView.tokens).join(","));
+    query.set("tokens", JSON.stringify(awsLogsView.tokens));
+  } else {
+    const follow = !reset && awsLogsView.range === "live" && awsLogsView.asked > 0;
+    const { start, end } = rangeOf(follow);
+    query = new URLSearchParams({ functions: chosen.join(","), start: String(Math.max(0, Math.round(start))) });
+    if (end !== undefined) query.set("end", String(Math.round(end)));
+    const type = $("awslogs-type").value.trim();
+    const grep = $("awslogs-grep").value.trim();
+    if (type) query.set("type", type);
+    if (grep) query.set("grep", grep);
+    if ($("awslogs-all").checked) query.set("all", "1");
+    if (reset) awsLogsView.query = query.toString();
+  }
+  const round = !reset && !more; // Live: what it brings is new for the tabs not shown
   awsLogsView.reading = true;
-  if (reset) { awsLogsView.lines = []; awsLogsView.ids = new Set(); awsLogsView.selected = null; }
+  if (reset && !more) {
+    awsLogsView.lines = []; awsLogsView.ids = new Set(); awsLogsView.selected = null; awsLogsView.seenAt = {};
+  }
   paintAwsLogs();
   const { data, error } = await getJson(`/api/aws-logs/read?${query}`);
   awsLogsView.reading = false;
@@ -127,14 +145,28 @@ export async function readNow(reset = true) {
     awsLogsView.problem = null;
     awsLogsView.profile = data.profile;
     const fresh = data.lines.filter((line) => !awsLogsView.ids.has(line.id));
-    for (const line of fresh) awsLogsView.ids.add(line.id);
-    awsLogsView.lines = [...fresh.reverse(), ...awsLogsView.lines].slice(0, MAX_LINES); // newest first
-    awsLogsView.errors = data.errors;
-    awsLogsView.more = data.more;
-    awsLogsView.asked = data.asked;
+    for (const line of fresh) {
+      awsLogsView.ids.add(line.id);
+      line.arrived = round ? data.asked : 0;
+    }
+    awsLogsView.lines = [...fresh, ...awsLogsView.lines]
+      .sort((a, b) => b.at - a.at || (a.id < b.id ? 1 : -1)).slice(0, MAX_LINES); // newest first
+    awsLogsView.errors = more ? { ...awsLogsView.errors, ...data.errors } : data.errors;
+    if (!round) { awsLogsView.more = data.more; awsLogsView.tokens = data.tokens || {}; }
+    if (!more) awsLogsView.asked = data.asked;
   }
   paintAwsLogs();
   schedule();
+}
+
+export function readMore() {
+  if (Object.keys(awsLogsView.tokens).length) readNow(true, true);
+}
+
+export function showLambda(name) {
+  awsLogsView.lambda = name;
+  store();
+  paintAwsLogs();
 }
 
 function schedule() {
@@ -338,14 +370,50 @@ function paintFilters() {
   $("awslogs-live-text").textContent = view.paused
     ? t("Paused")
     : t("Every minute while this screen is open · last read {when}", { when: view.asked ? dateTime(view.asked).slice(-8) : "-" });
-  const counts = { "": view.lines.length, INFO: 0, WARN: 0, ERROR: 0 };
-  for (const line of view.lines) if (line.level in counts) counts[line.level] += 1;
+  const lines = tabLines();
+  const counts = { "": lines.length, INFO: 0, WARN: 0, ERROR: 0 };
+  for (const line of lines) if (line.level in counts) counts[line.level] += 1;
   for (const node of $("awslogs-level").children) {
     node.setAttribute("aria-pressed", String(node.dataset.level === view.level));
     node.querySelector("span").textContent = String(counts[node.dataset.level]);
   }
   const types = [...new Set(view.lines.flatMap((line) => line.messages.map((m) => m.type)).filter(Boolean))].sort();
   $("awslogs-types").replaceChildren(...types.map((type) => el("option", { value: type })));
+}
+
+// ---- one tab per lambda (All first): only a filter of the lines read, never another read
+
+function tabLambda() {
+  const view = awsLogsView;
+  return view.lambda && (view.chosen || []).includes(view.lambda) ? view.lambda : "";
+}
+
+function tabLines() {
+  const name = tabLambda();
+  return name ? awsLogsView.lines.filter((line) => line.function === name) : awsLogsView.lines;
+}
+
+function paintTabs() {
+  const view = awsLogsView;
+  const current = tabLambda();
+  const chosen = view.chosen || [];
+  // What the tab shown now shows is seen; All shows every lambda's.
+  for (const name of current ? [current] : chosen) view.seenAt[name] = view.asked;
+  const tab = (name, label, lines) => {
+    const errors = lines.filter((line) => line.level === "ERROR").length;
+    const fresh = name ? lines.filter((line) => line.arrived > (view.seenAt[name] || 0)).length : 0;
+    const count = errors === 1 ? t("{n} · 1 error", { n: lines.length })
+      : errors ? t("{n} · {errors} errors", { n: lines.length, errors }) : String(lines.length);
+    return el("button", {
+      type: "button", role: "tab", class: "awslogs-tab", "aria-selected": String(name === current),
+      onclick: () => showLambda(name),
+    }, el("span", { class: name ? "mono" : "" }, label), el("span", { class: errors ? "cnt err" : "cnt" }, count),
+    ...(fresh ? [el("span", { class: "fresh" }, t("{n} new", { n: fresh }))] : []));
+  };
+  $("awslogs-tabs").hidden = chosen.length < 2;
+  $("awslogs-tabs").replaceChildren(tab("", t("All"), view.lines),
+    ...chosen.map((name) => tab(name, name, view.lines.filter((line) => line.function === name))));
+  $("awslogs-split").classList.toggle("one-lambda", Boolean(current) || chosen.length === 1);
 }
 
 function paintRows(shown) {
@@ -360,16 +428,17 @@ function paintRows(shown) {
     const extra = line.messages.length > 1 ? ` +${line.messages.length - 1}` : "";
     return el("tr", { class: view.selected === line.id ? "sel" : "", onclick: () => select(line.id) },
       el("td", { class: "mono" }, dateTime(line.at)),
-      el("td", { class: "mono" }, line.function),
+      el("td", { class: "mono fn" }, line.function),
       el("td", {}, line.level ? el("span", { class: `tag lv-${line.level}` }, line.level) : ""),
       el("td", { class: "event" }, ...(first ? [kindTag(first), " ", el("span", { class: "mono" }, eventText(first) + extra)]
         : [el("span", { class: "muted" }, firstLine(line.text).slice(0, 160))])),
       el("td", { class: "line", title: firstLine(line.text) }, firstLine(line.text)));
   }));
   $("awslogs-empty").hidden = shown.length > 0 || view.reading || Boolean(view.problem);
-  $("awslogs-empty").textContent = view.lines.length
-    ? t("No line has that level.")
-    : t("Nothing found in this time. Try a longer time, or every line.");
+  const own = tabLines();
+  $("awslogs-empty").textContent = own.length ? t("No line has that level.")
+    : view.lines.length ? t("{name} wrote nothing in this time.", { name: tabLambda() })
+      : t("Nothing found in this time. Try a longer time, or every line.");
 }
 
 function select(id) {
@@ -445,12 +514,16 @@ export function paintAwsLogs() {
   $("awslogs-errors").hidden = !errors.length && !view.more.length;
   $("awslogs-errors").replaceChildren(
     ...errors.map((error) => el("p", {}, error.message)),
-    ...(view.more.length ? [el("p", {}, t("More lines than were read in {names}: these are the first ones of the time; choose a shorter time.",
+    ...(view.more.length ? [el("p", {}, t("More lines than were read in {names}: Load more brings the rest.",
       { names: view.more.join(", ") }))] : []),
   );
-  const shown = view.lines.filter((line) => !view.level || line.level === view.level);
+  paintTabs();
+  const shown = tabLines().filter((line) => !view.level || line.level === view.level);
+  if (view.selected && !shown.some((line) => line.id === view.selected)) view.selected = null;
   paintRows(shown);
   $("awslogs-count").textContent = t("{shown} of {total} lines", { shown: shown.length, total: view.lines.length });
+  $("awslogs-more").hidden = !view.more.length || view.range === "live";
+  $("awslogs-more").disabled = view.reading;
   paintDetail();
   paintDot();
 }
