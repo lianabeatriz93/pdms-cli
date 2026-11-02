@@ -11,7 +11,7 @@ from playwright.sync_api import Page, Route, expect
 from pdms_cli import update
 from pdms_cli.config import Config
 
-SCREENS = ("home", "services", "stacks", "proxy", "events", "data", "tests", "doctor", "settings")
+SCREENS = ("home", "services", "stacks", "proxy", "events", "aws-logs", "data", "tests", "doctor", "settings")
 
 
 def answer(route: Route, status: int, body: dict) -> None:

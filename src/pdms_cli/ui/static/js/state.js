@@ -15,6 +15,7 @@ import { currentView } from "./router.js";
 import { paintStatus } from "./status.js";
 import { syncTests, watchStartDb } from "./tests.js";
 import { syncData } from "./data.js";
+import { syncAwsLogs } from "./awslogs.js";
 import { paintBrowser } from "./browser.js";
 
 export let state = null;
@@ -91,6 +92,7 @@ export function paint(next) {
   syncTests();
   watchStartDb();
   syncData();
+  syncAwsLogs();
   paintNewTags();
   if (wasUp !== undefined && wasUp !== eventsView.up && currentView() === "events") showEventsTab(eventsView.tab);
   if (logs.sources.length) paintDock();

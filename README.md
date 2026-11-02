@@ -349,6 +349,11 @@ range and with a filter AWS applies, and shows the events with their body. It on
 services, and never uses Live Tail (billed by the minute): `-f` asks again for what came since the last read. Event
 bodies hold dev data: they are only printed, never kept.
 
+In `pdms ui`, **AWS logs** (in the menu, under Events) does the same: choose the lambdas (or a preset, kept per repo
+in the browser), a time (Live, 15 min, 1 hour, 24 hours or from–to), a text, an event type and a level; a line opens
+its event with its body, the raw line, a link to CloudWatch and **Send to local events**. Events → Event types →
+**See in AWS** opens it on that type. It reads only while the screen is open; Live asks again once a minute.
+
 ### Local events (SQS)
 
 ```bash
