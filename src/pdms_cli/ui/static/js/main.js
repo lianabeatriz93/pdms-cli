@@ -46,6 +46,10 @@ import {
   paintTests, pickAllTests, rerunFailed, runShown, showTests, startTestDb, stopTests, testsView,
 } from "./tests.js";
 import { lineCheck, measureNow } from "./status.js";
+import {
+  choosePreset, closeDetail, hideOpened, openPicker, paintPicker, readNow, setLevel, setRange, showDetailTab as showAwsLogsTab,
+  submitPicker, togglePause,
+} from "./awslogs.js";
 import { frameDialogs } from "./dialogs.js";
 
 $("boot-fail").remove(); // the scripts loaded: the notice for an old pdms ui is not needed
@@ -89,6 +93,26 @@ $("data-aws-profile").addEventListener("change", chooseAwsProfile);
 $("data-aws-read-btn").addEventListener("click", readAws);
 $("data-aws-login-btn").addEventListener("click", loginAws);
 $("data-aws-check").addEventListener("click", checkAws);
+for (const node of $("awslogs-range").children) node.addEventListener("click", () => setRange(node.dataset.range));
+for (const node of $("awslogs-level").children) node.addEventListener("click", () => setLevel(node.dataset.level));
+for (const node of $("awslogs-d-tabs").children) node.addEventListener("click", () => showAwsLogsTab(node.dataset.tab));
+$("awslogs-refresh").addEventListener("click", () => readNow(true));
+$("awslogs-custom-go").addEventListener("click", () => readNow(true));
+$("awslogs-now").addEventListener("click", () => readNow(false));
+$("awslogs-pause").addEventListener("click", togglePause);
+$("awslogs-pick").addEventListener("click", openPicker);
+$("awslogs-preset").addEventListener("change", choosePreset);
+$("awslogs-opened-hide").addEventListener("click", hideOpened);
+$("awslogs-d-close").addEventListener("click", closeDetail);
+$("awslogs-all").addEventListener("change", () => readNow(true));
+for (const id of ["awslogs-grep", "awslogs-type"]) {
+  $(id).addEventListener("keydown", (event) => { if (event.key === "Enter") readNow(true); });
+  $(id).addEventListener("search", () => readNow(true)); // the ✕ of the field, or Enter
+}
+$("awslogs-pick-filter").addEventListener("input", paintPicker);
+$("awslogs-pick-events").addEventListener("change", paintPicker);
+$("awslogs-pick-cancel").addEventListener("click", () => $("awslogs-dialog").close());
+$("awslogs-form").addEventListener("submit", submitPicker);
 $("tests-run").addEventListener("click", runShown);
 $("tests-rerun").addEventListener("click", rerunFailed);
 $("tests-stop").addEventListener("click", stopTests);

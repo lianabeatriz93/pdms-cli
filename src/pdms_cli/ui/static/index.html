@@ -47,6 +47,7 @@
   <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7.5 15h9"/></symbol>
   <symbol id="i-more" viewBox="0 0 24 24"><path d="M5.5 12h.01M12 12h.01M18.5 12h.01" stroke-width="3"/></symbol>
   <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M9 4.5v15"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 8.5z"/></symbol>
   <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></symbol>
 </svg>
 <nav class="side" id="side" aria-label="Views">
@@ -55,6 +56,7 @@
   <a href="#stacks" data-view="stacks" title="Stacks"><svg class="i" aria-hidden="true"><use href="#i-stacks"/></svg><span class="lbl">Stacks</span><span class="cnt" id="stack-count"></span></a>
   <a href="#proxy" data-view="proxy" title="Requests"><svg class="i" aria-hidden="true"><use href="#i-proxy"/></svg><span class="lbl">Requests</span><span class="sdot" id="proxy-on"></span></a>
   <a href="#events" data-view="events" title="Events"><svg class="i" aria-hidden="true"><use href="#i-events"/></svg><span class="lbl">Events</span><span class="sdot" id="events-on"></span></a>
+  <a href="#aws-logs" data-view="aws-logs" title="AWS logs"><svg class="i" aria-hidden="true"><use href="#i-cloud"/></svg><span class="lbl">AWS logs</span><span class="sdot" id="awslogs-on"></span></a>
   <a href="#data" data-view="data" title="Data"><svg class="i" aria-hidden="true"><use href="#i-db"/></svg><span class="lbl">Data</span><span class="new" id="new-data" hidden>new</span></a>
   <a href="#tests" data-view="tests" title="Tests"><svg class="i" aria-hidden="true"><use href="#i-flask"/></svg><span class="lbl">Tests</span><span class="new" id="new-tests" hidden>new</span><span class="badge bad" id="tests-badge" hidden></span></a>
   <a href="#doctor" data-view="doctor" class="side-end" title="Doctor"><svg class="i" aria-hidden="true"><use href="#i-doctor"/></svg><span class="lbl">Doctor</span><span class="badge" id="doctor-badge" hidden></span></a>
@@ -344,6 +346,92 @@
     <p class="empty card" id="email-empty" hidden></p>
     <p class="muted note">Whatever a service run by pdms sends through SES shows here (<code>pdms logs emails</code>), with or without local events. Services already running change where their emails go when they restart.</p>
   </div>
+</section>
+
+<section class="view" id="view-aws-logs" hidden>
+  <div class="bar">
+    <h1>AWS logs</h1><span class="muted" id="awslogs-summary"></span>
+    <div class="bar-actions push">
+      <span class="chip" id="awslogs-profile"></span>
+      <button class="btn" id="awslogs-refresh" type="button">Read again</button>
+    </div>
+  </div>
+  <p class="note-bar" id="awslogs-opened" hidden><span id="awslogs-opened-text"></span>
+    <button class="btn small ghost" id="awslogs-opened-hide" type="button">Hide</button></p>
+
+  <section class="card awslogs-filters" aria-label="What to read">
+    <div class="awslogs-row">
+      <span class="awslogs-label">Lambdas</span>
+      <span class="awslogs-pills" id="awslogs-chosen"></span>
+      <button class="btn small" id="awslogs-pick" type="button">Choose lambdas…</button>
+      <label class="inline push">Preset <select id="awslogs-preset" aria-label="Saved set of lambdas"></select></label>
+    </div>
+    <div class="awslogs-row">
+      <span class="awslogs-label">Time</span>
+      <div class="seg" id="awslogs-range" role="group" aria-label="Time range">
+        <button type="button" data-range="live" aria-pressed="false">Live</button>
+        <button type="button" data-range="15m" aria-pressed="false">15 min</button>
+        <button type="button" data-range="1h" aria-pressed="true">1 hour</button>
+        <button type="button" data-range="24h" aria-pressed="false">24 hours</button>
+        <button type="button" data-range="custom" aria-pressed="false">Custom…</button>
+      </div>
+      <span class="awslogs-custom" id="awslogs-custom" hidden>
+        <label class="inline">From <input type="datetime-local" id="awslogs-from" step="60"></label>
+        <label class="inline">to <input type="datetime-local" id="awslogs-to" step="60"></label>
+        <button class="btn small" id="awslogs-custom-go" type="button">Read</button>
+      </span>
+      <span class="awslogs-live" id="awslogs-live" hidden>
+        <span class="muted" id="awslogs-live-text"></span>
+        <button class="btn small" id="awslogs-now" type="button">Check now</button>
+        <button class="btn small" id="awslogs-pause" type="button">Pause</button>
+      </span>
+    </div>
+    <div class="awslogs-row">
+      <span class="awslogs-label">Filter</span>
+      <input type="search" id="awslogs-grep" placeholder="Text, ids… (Enter reads)" aria-label="Text to look for" autocomplete="off">
+      <input type="search" id="awslogs-type" list="awslogs-types" placeholder="Event type" aria-label="Event type" autocomplete="off">
+      <datalist id="awslogs-types"></datalist>
+      <div class="seg" id="awslogs-level" role="group" aria-label="Level">
+        <button type="button" data-level="" aria-pressed="true">All <span></span></button>
+        <button type="button" data-level="INFO" aria-pressed="false">Info <span></span></button>
+        <button type="button" data-level="WARN" aria-pressed="false">Warn <span></span></button>
+        <button type="button" data-level="ERROR" aria-pressed="false">Error <span></span></button>
+      </div>
+      <label class="inline"><input type="checkbox" id="awslogs-all"> Every line, not only events</label>
+    </div>
+  </section>
+
+  <section class="card awslogs-problem" id="awslogs-problem" aria-labelledby="awslogs-problem-title" hidden>
+    <h2 id="awslogs-problem-title"></h2>
+    <p class="muted" id="awslogs-problem-text"></p>
+    <div class="bar-actions" id="awslogs-problem-actions"></div>
+  </section>
+  <div class="warn" id="awslogs-errors" hidden></div>
+
+  <div class="split" id="awslogs-split">
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Time</th><th>Lambda</th><th>Level</th><th>Event</th><th id="awslogs-split-line">Line</th></tr></thead>
+        <tbody id="awslogs-rows"></tbody>
+      </table>
+      <p class="empty" id="awslogs-empty" hidden></p>
+      <div class="bar awslogs-foot"><span class="muted" id="awslogs-count"></span></div>
+    </div>
+    <section class="card req-detail" id="awslogs-detail" aria-labelledby="awslogs-d-title" hidden>
+      <div class="panel-head">
+        <h2 id="awslogs-d-title" class="mono"></h2>
+        <span class="muted" id="awslogs-d-time"></span>
+        <div class="tabs push" id="awslogs-d-tabs" role="tablist">
+          <button type="button" role="tab" data-tab="event">Event</button>
+          <button type="button" role="tab" data-tab="raw">Raw line</button>
+        </div>
+        <button class="ibtn" id="awslogs-d-close" type="button" title="Close" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-forget"/></svg></button>
+      </div>
+      <dl class="awslogs-meta" id="awslogs-d-meta"></dl>
+      <div class="req-body" id="awslogs-d-body"></div>
+    </section>
+  </div>
+  <p class="muted note">pdms only reads, with the AWS profile of the services, and only while this screen is open; Live asks again once a minute. Event bodies hold dev data: they are shown, never kept.</p>
 </section>
 
 <section class="view" id="view-data" hidden>
@@ -1002,6 +1090,26 @@
     <div class="actions">
       <button class="btn ghost" type="button" id="import-cancel">Cancel</button>
       <button class="btn primary" type="submit" id="import-go">Import</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="awslogs-dialog" class="l">
+  <form method="dialog" id="awslogs-form">
+    <h2>Choose lambdas to read</h2>
+    <p class="muted" id="awslogs-pick-note"></p>
+    <div class="picker">
+      <div class="picker-bar">
+        <input type="search" id="awslogs-pick-filter" placeholder="Find a lambda" aria-label="Find a lambda" autocomplete="off">
+        <label class="inline"><input type="checkbox" id="awslogs-pick-events" checked> Only those in events</label>
+        <span class="muted" id="awslogs-pick-count"></span>
+      </div>
+      <div class="picker-list" id="awslogs-pick-list" role="group" aria-label="Lambdas"></div>
+    </div>
+    <label>Save as a preset (optional) <input type="text" id="awslogs-pick-name" autocomplete="off"></label>
+    <div class="actions">
+      <button class="btn ghost" type="button" id="awslogs-pick-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="awslogs-pick-go">Read them</button>
     </div>
   </form>
 </dialog>

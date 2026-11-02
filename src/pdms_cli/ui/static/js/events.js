@@ -7,6 +7,7 @@ import { openLaunch, servicesCount } from "./launch.js";
 import { confirmDialog, slashes } from "./stacks.js";
 import { info } from "./proxy.js";
 import { currentView } from "./router.js";
+import { seeInAws } from "./awslogs.js";
 
 export const EVENTS_JOB = "events:elasticmq";
 
@@ -272,7 +273,7 @@ function unnest(value) {
 
 // Pretty JSON with its keys, strings, numbers and literals coloured, JSON inside its strings decoded too; text that
 // is not JSON stays as it is.
-function jsonView(text) {
+export function jsonView(text) {
   let source;
   try {
     source = JSON.stringify(unnest(JSON.parse(text)), null, 2);
@@ -382,7 +383,8 @@ export function paintMap() {
     el("td", { class: "mono" }, item.type),
     el("td", { class: "mono" }, item.queue),
     item.consumer ? el("td", { class: "mono" }, item.consumer) : el("td", { class: "target-missing" }, t("none")),
-    el("td", { class: "row-actions" }, state.events.up ? button(t("Send"), () => openSend(item.type)) : ""),
+    el("td", { class: "row-actions" }, state.events.up ? button(t("Send"), () => openSend(item.type)) : "",
+      button(t("See in AWS"), () => seeInAws(item.type), { title: t("The CloudWatch lines of the event flow with this type") })),
   )));
   $("type-count").textContent = [
     t("{shown} of {total} event types", { shown: shown.length, total: data.types.length }),

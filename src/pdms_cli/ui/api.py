@@ -22,6 +22,7 @@ from rich.text import Text
 from .. import actions, browser, bugreport, emails, events, frontend, health, images, instances, proxy, testruns, testviews
 from ..config import Config
 from ..i18n import _
+from . import awslogs as ui_awslogs
 from . import instance as ui_instance
 from . import jobs as ui_jobs
 from . import state as ui_state
@@ -253,6 +254,14 @@ class Api:
         except ValueError:
             limit = PEEK_LIMIT
         return {"queue": _arg(query, "queue"), "messages": ui_jobs.events_peek(cfg, _arg(query, "queue"), limit)}
+
+    def aws_logs_lambdas(self, query: Query) -> object:
+        return ui_awslogs.lambdas(Config.load(), fresh=_arg(query, "fresh") == "1")
+
+    def aws_logs_read(self, query: Query) -> object:
+        return ui_awslogs.read(Config.load(), _arg(query, "functions"), _arg(query, "start"), _arg(query, "end"),
+                               _arg(query, "type"), _arg(query, "grep"), _arg(query, "all") == "1",
+                               _arg(query, "limit"))
 
     def versions(self, _query: Query) -> object:
         return {"versions": ui_updates.versions(Config.load())}
@@ -744,6 +753,8 @@ GETS: dict[str, tuple[Callable[[Api, Query], object], int]] = {
     "/api/events/ready": (Api.events_ready, 400),
     "/api/events/template": (Api.events_template, 400),
     "/api/events/peek": (Api.events_peek, 400),
+    "/api/aws-logs/lambdas": (Api.aws_logs_lambdas, 400),
+    "/api/aws-logs/read": (Api.aws_logs_read, 400),
     "/api/update/versions": (Api.versions, 502),
     "/api/update/notes": (Api.notes, 502),
     "/api/views": (Api.views, 400),

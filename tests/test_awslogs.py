@@ -12,8 +12,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from pdms_cli import awsenv, awslogs, cli, events
+from pdms_cli import actions, awsenv, awslogs, cli, events
 from pdms_cli.config import Config, Defaults, Repo
+from pdms_cli.ui import awslogs as ui_awslogs
+from pdms_cli.ui.api import Api
 
 HEAD = "broker_sqs_event 2026-10-19 15:53:36,251 9 MainThread"
 CONTEXT = ("'url': 'https://sqs.us-east-1.amazonaws.com/', 'context': {'client_region': 'us-east-1', 'client_config': "
@@ -367,3 +369,60 @@ def test_the_package_never_evaluates_code_from_a_line() -> None:
     assert parsed(hostile).messages == []
     assert awslogs._literal_at("{'a': __import__('os')}", 0) is None
     assert Path(awslogs.__file__).read_text(encoding="utf-8").count("eval(") == 1  # ast.literal_eval only
+
+
+# --------------------------------------------------------------------------- pdms ui: the AWS logs screen
+
+
+def test_ui_reads_the_lines_kept_by_the_filters(fake_logs, cfg) -> None:
+    found = ui_awslogs.read(cfg, "broker-sqs-event,account-publish-ev", "0")
+    assert [line["function"] for line in found["lines"]] == ["account-publish-ev", "broker-sqs-event", "broker-sqs-event"]
+    assert found["lines"][0]["messages"][0]["type"] == "TP_ACCOUNT_UPDATED" and found["lines"][0]["time"]
+    assert found["profile"] == "pdm-dev" and found["errors"] == {} and found["asked"] > 0
+    only = ui_awslogs.read(cfg, "broker-sqs-event", "0", event_type="lead-tp-export", limit="5")
+    assert len(only["lines"]) == 2
+    call = fake_logs.calls[-1]
+    assert call[call.index("--filter-pattern") + 1] == '"lead-tp-export"' and call[call.index("--max-items") + 1] == "5"
+
+
+def test_ui_read_checks_what_the_page_sends(fake_logs, cfg) -> None:
+    for functions, start in (("", "0"), ("--profile x", "0"), ("a;b", "0"), ("broker-sqs-event", ""),
+                             ("broker-sqs-event", "yesterday")):
+        with pytest.raises(actions.ActionError):
+            ui_awslogs.read(cfg, functions, start)
+    assert fake_logs.calls == []
+
+
+def test_ui_says_when_the_session_is_over_or_no_profile_is_chosen(fake_logs, cfg) -> None:
+    fake_logs.expired = True
+    over = ui_awslogs.read(cfg, "broker-sqs-event", "0")
+    assert over["expired"] and over["lines"] == []
+    cfg.defaults.aws_profile = ""
+    assert ui_awslogs.read(cfg, "broker-sqs-event", "0")["profile"] == ""
+    assert ui_awslogs.lambdas(cfg) == {"profile": "", "lambdas": [], "flow": []}
+
+
+def test_ui_lists_the_lambdas_once_in_a_while(fake_logs, cfg, monkeypatch) -> None:
+    monkeypatch.setattr(ui_awslogs, "_listed", {})
+    monkeypatch.setattr(awslogs, "suggestions", lambda root: [awslogs.Suggestion("broker-sqs-event", "broker", "b.fifo"),
+                                                              awslogs.Suggestion("not-deployed", "sns", "t")])
+    found = ui_awslogs.lambdas(cfg)
+    assert found["lambdas"] == [{"name": "account-publish-ev", "role": "", "detail": ""},
+                                {"name": "broker-sqs-event", "role": "broker", "detail": "b.fifo"}]
+    assert found["flow"] == ["broker-sqs-event"]  # not-deployed has no logs
+    ui_awslogs.lambdas(cfg)
+    assert sum(c[:2] == ["logs", "describe-log-groups"] for c in fake_logs.calls) == 1
+    ui_awslogs.lambdas(cfg, fresh=True)
+    assert sum(c[:2] == ["logs", "describe-log-groups"] for c in fake_logs.calls) == 2
+    fake_logs.expired = True
+    monkeypatch.setattr(ui_awslogs, "_listed", {})
+    over = ui_awslogs.lambdas(cfg)
+    assert over["expired"] and [item["name"] for item in over["lambdas"]] == ["broker-sqs-event", "not-deployed"]
+
+
+def test_the_api_routes_the_screen(fake_logs, cfg) -> None:
+    api = Api(None, None, None)
+    status, data = api.get("/api/aws-logs/read", {"functions": ["broker-sqs-event"], "start": ["0"], "all": ["1"]})
+    assert status == 200 and len(data["lines"]) == 2
+    assert api.get("/api/aws-logs/read", {"functions": ["x y"], "start": ["0"]})[0] == 400
+    assert api.get("/api/aws-logs/lambdas", {})[0] == 200
