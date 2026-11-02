@@ -7,6 +7,7 @@ page, the rest by AWS's filter pattern and :func:`awslogs.keep` here.
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -17,7 +18,7 @@ from ..config import Config
 
 LAMBDAS_EVERY = 600  # seconds the account's Lambdas are kept before asking CloudWatch again
 MAX_LIMIT = 2000
-NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")  # a Lambda's name, never an option for the AWS CLI
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")  # a Lambda's name, never an option for the AWS CLI
 
 _lock = threading.Lock()
 _listed: dict[str, tuple[float, list[str]]] = {}  # profile → (when, its Lambdas with logs)
@@ -72,25 +73,42 @@ def _number(text: str, what: str) -> int | None:
         raise actions.ActionError(f"{what} must be a number of milliseconds") from None
 
 
+def _tokens(text: str) -> dict[str, str]:
+    """Where each Lambda's previous read stopped (JSON: name → token), to read its next lines."""
+    if not text:
+        return {}
+    try:
+        tokens = json.loads(text)
+    except ValueError:
+        tokens = None
+    if not isinstance(tokens, dict) or not all(isinstance(name, str) and NAME.fullmatch(name) and isinstance(token, str)
+                                               for name, token in tokens.items()):
+        raise actions.ActionError("tokens must be a JSON object of Lambda names and the tokens a read gave")
+    return tokens
+
+
 def read(cfg: Config, functions: str, start: str, end: str = "", event_type: str = "", grep: str = "",
-         every_line: bool = False, limit: str = "") -> dict:
+         every_line: bool = False, limit: str = "", tokens: str = "") -> dict:
     """One read: the lines of ``functions`` (names, comma-separated) from ``start`` to ``end`` (ms; no end = now)
-    that are events or errors (or every line), with ``event_type`` and ``grep``; ``asked`` is when it asked."""
+    that are events or errors (or every line), with ``event_type`` and ``grep``; ``asked`` is when it asked. With
+    ``tokens`` (what an earlier read with the same filters gave), the lines that came after its first ones."""
     names = [name for name in functions.split(",") if name]
     if not names or not all(NAME.fullmatch(name) for name in names):
         raise actions.ActionError("functions must be Lambda names separated by commas")
+    after = _tokens(tokens)
     begin = _number(start, "start")
     if begin is None:
         raise actions.ActionError("start must be a number of milliseconds")
     finish = _number(end, "end")
     lines = max(1, min(_number(limit, "limit") or awslogs.LIMIT, MAX_LIMIT))
     profile = cfg.defaults.aws_profile
-    answer: dict = {"profile": profile, "lines": [], "errors": {}, "more": [], "expired": False, "error": "",
-                    "asked": awslogs.millis(datetime.now().astimezone())}
+    answer: dict = {"profile": profile, "lines": [], "errors": {}, "more": [], "tokens": {}, "expired": False,
+                    "error": "", "asked": awslogs.millis(datetime.now().astimezone())}
     if not profile:
         return answer
     try:
-        found = awslogs.read(profile, names, begin, finish, awslogs.pattern(grep, event_type, not every_line), lines)
+        found = awslogs.read(profile, names, begin, finish, awslogs.pattern(grep, event_type, not every_line), lines,
+                             after)
     except awslogs.LogsError as exc:
         answer.update(expired=exc.expired, error=exc.message)
         return answer
@@ -98,4 +116,5 @@ def read(cfg: Config, functions: str, start: str, end: str = "", event_type: str
                        if awslogs.keep(line, not every_line, event_type, "", grep)]
     answer["errors"] = {name: {"kind": error.kind, "message": error.message} for name, error in found.errors.items()}
     answer["more"] = sorted(found.more)
+    answer["tokens"] = found.more
     return answer

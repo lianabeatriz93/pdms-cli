@@ -395,6 +395,17 @@ def test_ui_reads_the_lines_kept_by_the_filters(fake_logs, cfg) -> None:
     assert call[call.index("--filter-pattern") + 1] == '"lead-tp-export"' and call[call.index("--max-items") + 1] == "5"
 
 
+def test_ui_gives_and_takes_the_tokens_to_read_the_rest(fake_logs, cfg) -> None:
+    fake_logs.next_token["broker-sqs-event"] = "tok-1"
+    first = ui_awslogs.read(cfg, "broker-sqs-event,account-publish-ev", "0")
+    assert first["more"] == ["broker-sqs-event"] and first["tokens"] == {"broker-sqs-event": "tok-1"}
+    ui_awslogs.read(cfg, "broker-sqs-event", "0", tokens=json.dumps(first["tokens"]))
+    assert fake_logs.calls[-1][-2:] == ["--starting-token", "tok-1"]
+    for bad in ("not json", "[]", '{"--x": "t"}', '{"broker-sqs-event": 1}'):
+        with pytest.raises(actions.ActionError):
+            ui_awslogs.read(cfg, "broker-sqs-event", "0", tokens=bad)
+
+
 def test_ui_read_checks_what_the_page_sends(fake_logs, cfg) -> None:
     for functions, start in (("", "0"), ("--profile x", "0"), ("a;b", "0"), ("broker-sqs-event", ""),
                              ("broker-sqs-event", "yesterday")):

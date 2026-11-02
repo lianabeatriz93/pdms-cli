@@ -261,7 +261,7 @@ class Api:
     def aws_logs_read(self, query: Query) -> object:
         return ui_awslogs.read(Config.load(), _arg(query, "functions"), _arg(query, "start"), _arg(query, "end"),
                                _arg(query, "type"), _arg(query, "grep"), _arg(query, "all") == "1",
-                               _arg(query, "limit"))
+                               _arg(query, "limit"), _arg(query, "tokens"))
 
     def versions(self, _query: Query) -> object:
         return {"versions": ui_updates.versions(Config.load())}

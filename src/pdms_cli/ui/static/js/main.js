@@ -47,7 +47,8 @@ import {
 } from "./tests.js";
 import { lineCheck, measureNow } from "./status.js";
 import {
-  choosePreset, closeDetail, hideOpened, openPicker, paintPicker, readNow, setLevel, setRange, showDetailTab as showAwsLogsTab,
+  choosePreset, closeDetail, hideOpened, openPicker, paintPicker, readMore, readNow, setLevel, setRange,
+  showDetailTab as showAwsLogsTab,
   submitPicker, togglePause,
 } from "./awslogs.js";
 import { frameDialogs } from "./dialogs.js";
@@ -97,6 +98,7 @@ for (const node of $("awslogs-range").children) node.addEventListener("click", (
 for (const node of $("awslogs-level").children) node.addEventListener("click", () => setLevel(node.dataset.level));
 for (const node of $("awslogs-d-tabs").children) node.addEventListener("click", () => showAwsLogsTab(node.dataset.tab));
 $("awslogs-refresh").addEventListener("click", () => readNow(true));
+$("awslogs-more").addEventListener("click", readMore);
 $("awslogs-custom-go").addEventListener("click", () => readNow(true));
 $("awslogs-now").addEventListener("click", () => readNow(false));
 $("awslogs-pause").addEventListener("click", togglePause);

@@ -410,12 +410,14 @@
 
   <div class="split" id="awslogs-split">
     <div class="tbl">
+      <div class="awslogs-tabs" id="awslogs-tabs" role="tablist" aria-label="Lambdas" hidden></div>
       <table>
-        <thead><tr><th>Time</th><th>Lambda</th><th>Level</th><th>Event</th><th id="awslogs-split-line">Line</th></tr></thead>
+        <thead><tr><th>Time</th><th class="fn">Lambda</th><th>Level</th><th>Event</th><th id="awslogs-split-line">Line</th></tr></thead>
         <tbody id="awslogs-rows"></tbody>
       </table>
       <p class="empty" id="awslogs-empty" hidden></p>
-      <div class="bar awslogs-foot"><span class="muted" id="awslogs-count"></span></div>
+      <div class="bar awslogs-foot"><span class="muted" id="awslogs-count"></span>
+        <button class="btn small push" id="awslogs-more" type="button" hidden>Load more</button></div>
     </div>
     <section class="card req-detail" id="awslogs-detail" aria-labelledby="awslogs-d-title" hidden>
       <div class="panel-head">
