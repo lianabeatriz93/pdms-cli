@@ -42,3 +42,35 @@ def test_a_database_keeps_who_else_may_read_its_test_views(ui: Page) -> None:
     ui.click("#db-save")
     expect(ui.locator("#db-dialog")).to_be_hidden()
     assert Config.load().dbs["team-db"].view_readers == ["pdm-reader", "alice"]
+
+
+def test_read_by_says_which_running_services_read_the_copy(ui: Page) -> None:
+    reader = {"service": "report-lead-run", "key": "report-lead-run:28104", "view": "pdms_report_lead_view"}
+    views = {**VIEWS, "views": [{**VIEWS["views"][0], "in_use": True, "read_by": [
+        {**reader, "reads": "pdms_report_lead_view_pdmp627", "next": "pdms_report_lead_view_pdmp627"},
+        {**reader, "service": "report-download", "reads": "pdms_report_lead_view", "next": "pdms_report_lead_view_pdmp627"}]}]}
+    ui.route("**/api/views", lambda route: answer(route, views))
+    ui.click('nav a[data-view="data"]')
+    cell = ui.locator("#data-views .read-by")
+    expect(cell).to_contain_text("report-lead-run the copy")
+    expect(cell).to_contain_text("report-download restart: the copy")
+
+
+def test_a_running_service_shows_the_view_it_reads(machine, ui: Page) -> None:
+    import os
+
+    from pdms_cli import instances
+
+    service = machine / "pdms" / "backend" / "report-lead-run"
+    instances.save({"r": instances.Instance(
+        key="report-lead-run:28104", pid=os.getpid(), service=str(service), host="127.0.0.1", port=28104, user="agent",
+        db="local", reload=False, log=str(machine / "r.log"), started_at="2026-11-03T10:00:00",
+        created=instances.creation_time(os.getpid()), views={"pdms_report_lead_view": "pdms_report_lead_view_pdmp627"})})
+    cfg = Config.load()
+    cfg.defaults.test_views, cfg.defaults.test_views_db = {"pdms_report_lead_view": "pdms_report_lead_view_pdmp627"}, "local"
+    cfg.save()
+    ui.click('nav a[data-view="services"]')
+    expect(ui.locator(".view-tag.test")).to_have_text("pdms_report_lead_view_pdmp627")
+    cfg.defaults.test_views = {}  # Data → Test views: back to the real view, from the next start
+    cfg.save()
+    expect(ui.locator(".view-tag.test")).to_have_text("restart to read pdms_report_lead_view")

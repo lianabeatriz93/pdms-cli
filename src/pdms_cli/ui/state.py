@@ -10,7 +10,8 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from .. import __version__, actions, browser, emails, events, frontend, i18n, instances, localcopy, localdb, proxy, repos
+from .. import (__version__, actions, browser, emails, events, frontend, i18n, instances, localcopy, localdb, proxy,
+               repos, testviews)
 from ..config import Config
 from . import updates
 
@@ -32,7 +33,7 @@ def instance_state(cfg: Config, inst: instances.Instance, health: instances.Heal
         "key": inst.key, "name": inst.name, "service": inst.service, "repo": repos.repo_of(cfg, inst.service) or "",
         "host": inst.host, "port": inst.port, "queue": inst.queue, "user": inst.user, "db": inst.db,
         "events": inst.events, "reload": inst.reload, "parallel": inst.parallel, "started_at": inst.started_at,
-        "on_demand": inst.on_demand,
+        "on_demand": inst.on_demand, "views": testviews.reading(cfg, inst),
         "status": health.state, "detail": health.detail,
         "traceback": traceback_state(cfg, inst.log) if health.state == "error" else [],
     }

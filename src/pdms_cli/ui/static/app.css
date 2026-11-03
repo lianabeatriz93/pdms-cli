@@ -417,6 +417,11 @@ td .not-set { color: var(--bad); }
 td.wrap-detail { white-space: normal; max-width: 22rem; font-size: .8rem; }
 td.wrap-detail .st { white-space: nowrap; }
 .tag.protected { color: var(--warn); }
+.tag.view-tag { font-family: var(--mono); }
+.tag.view-tag.test { color: var(--warn); }
+td.read-by { white-space: nowrap; }
+td.read-by > div { margin-top: .25rem; font-size: .78rem; }
+td.read-by .tag { margin-left: .35rem; }
 .settings-form { display: grid; padding: .3rem 0; }
 .setting { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: .3rem 1.2rem; align-items: start; padding: .55rem .9rem; border-bottom: 1px solid var(--line); }
 .setting:last-child { border-bottom: 0; }

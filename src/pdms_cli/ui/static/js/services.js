@@ -144,6 +144,23 @@ function serialTag(item) {
     t("one request at a time"));
 }
 
+// The materialized views it reads, as it read them when it started: its test copy (amber) or the real view; a
+// restart is due when Data → Test views chose otherwise since.
+function viewsTag(item) {
+  const views = item.views || [];
+  if (!views.length || item.status === "stopped") return "";
+  const copies = views.filter((row) => row.reads !== row.view);
+  const due = views.filter((row) => row.reads !== row.next);
+  const title = views.map((row) => (row.reads === row.view ? t("{view}: the real one", { view: row.view })
+    : t("{view}: its test copy {name}", { view: row.view, name: row.reads }))
+    + (row.reads !== row.next ? " · " + t("restart to read {name}", { name: row.next }) : "")).join("\n");
+  let text;
+  if (due.length) text = due.length === 1 ? t("restart to read {name}", { name: due[0].next }) : t("restart to read {count} views as chosen", { count: due.length });
+  else if (copies.length) text = copies.length === 1 ? copies[0].reads : t("{count} test views", { count: copies.length });
+  else text = views.length === 1 ? views[0].view : t("{count} views: the real ones", { count: views.length });
+  return el("span", { class: `tag view-tag${copies.length || due.length ? " test" : ""}`, title }, text);
+}
+
 // A pdms instance (not the proxy, the local SNS, the frontend nor a process outside pdms) can be picked.
 function selectable(item) {
   return !item.isProxy && !item.isSns && !item.isStray && !item.isFrontend && !item.placeholder;
@@ -183,7 +200,7 @@ function row(item, common) {
     servicesView.selected.has(item.key) ? "chosen" : ""].filter(Boolean).join(" ");
   return el("tr", kind ? { class: kind } : {},
     pickCell(item),
-    el("td", { class: "mono" }, item.label || item.key, serialTag(item), whoNote(item, common)),
+    el("td", { class: "mono" }, item.label || item.key, serialTag(item), viewsTag(item), whoNote(item, common)),
     statusCell(item, job),
     el("td", { class: "mono" }, item.url || ""),
     uptimeCell,

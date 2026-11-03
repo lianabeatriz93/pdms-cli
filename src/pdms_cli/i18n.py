@@ -1848,6 +1848,10 @@ ES: dict[str, str] = {
         "{name} no está en {db}.",
     "the user the services connect as":
         "el usuario con el que se conectan los servicios",
+    "Read by": "Leída por",
+    "restart to read {name}": "reinicia para leer {name}",
+    "the copy": "la copia",
+    "the real one": "la real",
     "a reader in the database's settings":
         "un lector de la configuración de la base de datos",
     "Other users who may read the test copies of views made there (commas; empty = none):":

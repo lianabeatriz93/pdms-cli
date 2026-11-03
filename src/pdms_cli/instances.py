@@ -163,6 +163,9 @@ class Instance:
     # Started by the proxy with the first request to one of its routes, and stopped again after a while without
     # requests (defaults.idle_minutes). While stopped it is asleep: no process (pid 0), its port kept for it.
     on_demand: bool = False
+    # The materialized views it reads, and what it read each one as when it started: the real view or its test copy
+    # (testviews.py). Empty for one that reads none, or started by an older pdms.
+    views: dict[str, str] = field(default_factory=dict)
 
     @property
     def is_consumer(self) -> bool:
@@ -369,7 +372,7 @@ def spawn(cmd: list[str], cwd: Path, env: dict[str, str], log: Path) -> subproce
 def start(
     service: Path, cmd: list[str], env: dict[str, str], *, host: str, port: int, user: str, db: str, reload: bool,
     deps: dict[str, str] | None = None, events: str = "aws", queue: str = "", parallel: bool = False, commit: str = "",
-    on_demand: bool = False,
+    on_demand: bool = False, views: dict[str, str] | None = None,
 ) -> Instance:
     key = make_key(service, port)
     log = log_path(key)
@@ -378,7 +381,7 @@ def start(
         key=key, pid=proc.pid, service=str(service), host=host, port=port, user=user, db=db,
         reload=reload, log=str(log), started_at=datetime.now().isoformat(timespec="seconds"),
         created=creation_time(proc.pid), deps=deps or {}, events=events, queue=queue,
-        parallel=parallel, commit=commit, on_demand=on_demand,
+        parallel=parallel, commit=commit, on_demand=on_demand, views=views or {},
     )
     with registry_lock():
         instances = load()
