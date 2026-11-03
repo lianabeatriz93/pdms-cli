@@ -10,7 +10,7 @@ from ...config import EVENTS_MODES, LOG_LEVELS, THEMES, Config, Database, Defaul
 from ...i18n import _
 
 __all__ = [
-    "_bool", "_limit", "_plans", "_sections", "_strings", "_text", "add_repo", "apply_import", "connect_db",
+    "_bool", "_limit", "_names", "_plans", "_sections", "_strings", "_text", "add_repo", "apply_import", "connect_db",
     "database_from", "db_password", "db_users", "defaults_from", "export_config", "import_db_users", "look_at_repo",
     "plan_import", "remove_db", "remove_repo", "remove_user", "rename_user", "repo_settings", "save_db",
     "save_defaults", "save_repo", "save_user", "settings", "user_from",
@@ -108,8 +108,18 @@ def database_from(body: dict, current: Database | None) -> Database:
     return Database(
         host=_text(body, "host"), port=body.get("port", 5432), database=_text(body, "database"),
         user=_text(body, "user"), password=password, driver=current.driver if current else Database.driver,
-        protected=body.get("protected") is True,
+        protected=body.get("protected") is True, view_readers=_names(body, "view_readers"),
     )
+
+
+def _names(body: dict, key: str) -> list[str]:
+    """A list of names (Postgres users...): a list of texts, or one text with commas."""
+    value = body.get(key) or []
+    if isinstance(value, str):
+        value = value.split(",")
+    if not _strings(value):
+        raise actions.ActionError(f"{key} must be a list of texts")
+    return list(dict.fromkeys(name.strip() for name in value if name.strip()))
 
 
 def save_db(name: str, body: dict, new: bool) -> str:

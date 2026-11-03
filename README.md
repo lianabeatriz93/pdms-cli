@@ -300,6 +300,9 @@ made from your SQL beside the real view, named with the ticket of the migrations
 (`pdms_report_lead_view_pdmp627`), always with its data. That service then reads the copy through a rewrite of its
 queries, with no change to its code; the deployed ones keep the real view. When your user cannot create views there
 (web-dev's usual one), you get the SQL to run in a database client, and pdms checks the copy is there before starting.
+Data → Test views has **Copy SQL** on each changed view, to run it by hand anytime. The SQL grants SELECT on the copy
+to the services' user and to the database's **other readers** (Settings → Databases, or `pdms db edit`): the users of
+teammates or tools that should read it too.
 
 A service reads a view when its code, or its local packages' (report-common), names it; a `report-lead-*` service
 is about the lead view, a general one (`report-download`) about all. Once your change is deployed or undone, Data →

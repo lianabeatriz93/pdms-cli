@@ -63,6 +63,8 @@ class Database:
     driver: str = "postgresql+psycopg2"
     # Protected databases (shared/remote ones) ask for confirmation before running.
     protected: bool = False
+    # Who else may read the test copies of materialized views made there (testviews.py): each gets a GRANT SELECT.
+    view_readers: list[str] = field(default_factory=list)
 
     def url(self, mask: bool = False) -> str:
         auth = quote(self.user, safe="")

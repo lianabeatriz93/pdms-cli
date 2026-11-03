@@ -83,6 +83,11 @@ const CATALOG = {
     "Read the real one": "Leer la real",
     "Run this in your database client": "Ejecuta esto en tu gestor de base de datos",
     "SQL copied: paste it in your database client.": "SQL copiado: pégalo en tu gestor de base de datos.",
+    "The SQL that makes {name} from your checkout, with its grants": "El SQL que crea {name} desde tu checkout, con sus permisos",
+    "Other users who may read its test views": "Otros usuarios que pueden leer sus vistas de prueba",
+    "Comma-separated Postgres users. The SQL of each test copy made here grants them SELECT, besides the user above.":
+      "Usuarios de Postgres separados por comas. El SQL de cada copia de prueba creada aquí les da SELECT, además del usuario de arriba.",
+    "pdm-reader, alice": "pdm-reader, alice",
     "SQL to create it": "SQL para crearla",
     "Services on {db} read {names} instead of the real views.": "Los servicios sobre {db} leen {names} en lugar de las vistas reales.",
     "Services on {db} read {name} from their next start: restart the ones running.": "Los servicios sobre {db} leen {name} desde su próximo arranque: reinicia los que estén corriendo.",

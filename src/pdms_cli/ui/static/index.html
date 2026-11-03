@@ -1011,6 +1011,8 @@
       </span>
     </label>
     <label class="inline"><input type="checkbox" id="db-protected-box"> Shared or remote: ask for confirmation before starting on it</label>
+    <label>Other users who may read its test views <input id="db-view-readers" placeholder="pdm-reader, alice" autocomplete="off" spellcheck="false">
+      <small class="muted">Comma-separated Postgres users. The SQL of each test copy made here grants them SELECT, besides the user above.</small></label>
     <p class="muted" id="db-tested" hidden></p>
     <p class="error" id="db-error" hidden></p>
     <div class="actions">

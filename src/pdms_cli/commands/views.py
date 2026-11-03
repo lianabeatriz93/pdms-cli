@@ -93,7 +93,8 @@ def view_sql(
     try:
         found = testviews.check_suffix(suffix or testviews.ticket_suffix(testviews.branch(repo)) or "x")
         alias = testviews.database_of(cfg)
-        made, sql = testviews.test_sql(repo, view, found, cfg.dbs[alias].user if alias in cfg.dbs else "")
+        db = cfg.dbs.get(alias)
+        made, sql = testviews.test_sql(repo, view, found, db.user if db else "", db.view_readers if db else ())
     except testviews.TestViewError as exc:
         fail(exc.message)
         return
