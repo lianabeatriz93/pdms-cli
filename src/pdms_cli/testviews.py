@@ -357,6 +357,40 @@ def env(cfg: Config, db_alias: str) -> dict[str, str]:
     return {"PDMS_VIEW_MAP": ",".join(f"{view}={test}" for view, test in sorted(mapping.items()))} if mapping else {}
 
 
+def reads_as(cfg: Config, service: Path, db_alias: str) -> dict[str, str]:
+    """``{view: what it reads}`` for the materialized views ``service`` reads, starting now on ``db_alias``: the
+    view itself, or the test copy services there read instead. Empty when that cannot be told."""
+    from . import repos
+
+    try:
+        backend = repos.active_backend(cfg)
+        found = narrowed(service.name, reads(service, backend)) if backend else set()
+    except Exception:  # noqa: BLE001 - an odd file: nothing to say, and the service starts all the same
+        return {}
+    mapping = in_use(cfg) if db_alias == database_of(cfg) else {}
+    return {view: mapping.get(view, view) for view in sorted(found)}
+
+
+def reading(cfg: Config, instance) -> list[dict]:
+    """What a running ``instance`` reads: ``[{"view", "reads", "next"}]``, ``next`` being what it would read if it
+    started now (test copies are chosen for the next start)."""
+    mapping = in_use(cfg) if instance.db == database_of(cfg) else {}
+    return [{"view": view, "reads": name, "next": mapping.get(view, view)} for view, name in sorted(instance.views.items())]
+
+
+def readers(cfg: Config, db_alias: str) -> dict[str, list[dict]]:
+    """``{view: [{"service", "key", "reads", "next"}]}``: the running services on ``db_alias`` reading each view."""
+    from . import instances
+
+    found: dict[str, list[dict]] = {}
+    for instance in instances.load().values():
+        if instance.db != db_alias or not instance.views or not instance.present():
+            continue
+        for row in reading(cfg, instance):
+            found.setdefault(row["view"], []).append({"service": instance.name, "key": instance.key, **row})
+    return found
+
+
 def use(cfg: Config, view: str, name: str, db_alias: str) -> None:
     if cfg.defaults.test_views and db_alias != database_of(cfg):
         raise TestViewError(_("Services already read test views of {db}: stop using them first (one database at a "
@@ -388,12 +422,14 @@ def overview(cfg: Config, repo: Path, db_alias: str, suffix: str = "", timeout: 
     names = {view: used.get(view) or ours.get(view, "") for view in files(repo)}
     there = existing(db, sorted(name for name in names.values() if name), timeout)
     rows = []
+    read_by = readers(cfg, db_alias)
     for view, name in names.items():
         if view not in changed and name not in there:
             continue
         sql = test_sql(repo, view, suffix, db.user, db.view_readers)[1] if suffix and view in changed else ""
         rows.append({"view": view, "name": name, "exists": name in there, "owner": there.get(name, ""),
                      "in_use": view in used, "changed": view in changed, "uncommitted": changed.get(view, False),
-                     "current": made_with(name, sql) if sql and name in there else False, "sql": sql})
+                     "current": made_with(name, sql) if sql and name in there else False, "sql": sql,
+                     "read_by": read_by.get(view, [])})
     return {"db": db_alias, "repo": str(repo), "branch": branch(repo), "suffix": suffix,
             "can_create": can_create(db, timeout), "views": rows}

@@ -304,6 +304,11 @@ Data → Test views has **Copy SQL** on each changed view, to run it by hand any
 to the services' user and to the database's **other readers** (Settings → Databases, or `pdms db edit`): the users of
 teammates or tools that should read it too.
 
+**Which view a service reads.** pdms keeps, for each service it starts, the materialized views it reads and whether
+as the real view or its test copy. Services shows it next to the service's name (the copy in amber, or *restart to
+read …* when Data → Test views chose otherwise since it started), and Data → Test views and `pdms view` list the
+running services reading each view.
+
 A service reads a view when its code, or its local packages' (report-common), names it; a `report-lead-*` service
 is about the lead view, a general one (`report-download`) about all. Once your change is deployed or undone, Data →
 Test views and `pdms doctor` point to the copy left over, with its `DROP`.

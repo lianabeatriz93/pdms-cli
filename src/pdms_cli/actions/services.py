@@ -370,7 +370,7 @@ def start_service(
             launch.service, cmd, env, host=launch.host, port=launch.port,
             user=launch.user_name, db=launch.db_name, reload=launch.reload, deps=deps,
             events=launch.events.kind, queue=launch.queue, parallel=launch.parallel, commit=commit,
-            on_demand=launch.on_demand,
+            on_demand=launch.on_demand, views=testviews.reads_as(cfg, launch.service, launch.db_name),
         )
 
 

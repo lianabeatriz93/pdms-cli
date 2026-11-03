@@ -378,6 +378,24 @@ function viewState(row) {
   return el("span", { class: "st ok" }, t("ready"));
 }
 
+// The running services reading the view, and whether as the real one or its copy (as they started: a choice
+// made since waits for their restart).
+function stateCell(row) {
+  const cell = el("td", { class: "read-by" }, viewState(row));
+  for (const reader of row.read_by || []) {
+    const copy = reader.reads !== row.view;
+    const due = reader.reads !== reader.next;
+    const note = due ? (reader.next !== row.view ? t("restart: the copy") : t("restart: the real one"))
+      : copy ? t("the copy") : t("the real one");
+    const title = t("{service} reads {name}", { service: reader.key, name: reader.reads })
+      + (due ? " · " + t("restart to read {name}", { name: reader.next }) : "");
+    cell.append(el("div", { title },
+      el("span", { class: "mono" }, reader.service), " ",
+      el("span", { class: `tag view-tag${copy || due ? " test" : ""}` }, note)));
+  }
+  return cell;
+}
+
 function viewActions(row, info) {
   const cell = el("td", { class: "row-actions" });
   if (!row.name) return cell;
@@ -418,7 +436,7 @@ export function paintViews() {
   $("data-views-using").textContent = using.length
     ? t("Services on {db} read {names} instead of the real views.", { db: info.db, names: using.map((row) => row.name).join(", ") }) : "";
   $("data-views").replaceChildren(...info.views.map((row) => el("tr", {},
-    el("td", { class: "name" }, row.view), el("td", { class: "mono" }, row.name || "–"), el("td", {}, viewState(row)),
+    el("td", { class: "name" }, row.view), el("td", { class: "mono" }, row.name || "–"), stateCell(row),
     viewActions(row, info))));
   $("data-views-empty").hidden = info.views.length > 0;
   $("data-views-empty").textContent = t("None of the materialized views is changed in your checkout: when one is, starting a service that reads it offers its test copy.");

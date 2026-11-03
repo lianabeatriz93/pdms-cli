@@ -43,16 +43,26 @@ def view_list(
     if not info["views"]:
         console.print("  " + _("None of the materialized views is changed in your checkout."))
         return
-    table = Table(_("View"), _("Test copy"), _("State"))
+    table = Table(_("View"), _("Test copy"), _("State"), _("Read by"))
     for row in info["views"]:
         state = (_("left over: drop it") if not row["changed"] else _("not made yet") if not row["exists"]
                  else _("your SQL changed since it was made") if not row["current"]
                  else _("services read it") if row["in_use"] else _("ready"))
-        table.add_row(row["view"] + (" " + _("(uncommitted)") if row["uncommitted"] else ""), row["name"] or "-", state)
+        table.add_row(row["view"] + (" " + _("(uncommitted)") if row["uncommitted"] else ""), row["name"] or "-", state,
+                      "\n".join(read_by(row["view"], reader) for reader in row["read_by"]) or "-")
     console.print(table)
     if not info["can_create"]:
         console.print("[dim]" + _("Your user of {db} cannot create there: pdms view create gives you the SQL to run in a "
                                   "database client.", db=info["db"]) + "[/]")
+
+
+def read_by(view: str, reader: dict) -> str:
+    """A running service reading ``view``: the real one or the copy, as it started (and the restart due since)."""
+    if reader["reads"] != reader["next"]:
+        note = _("restart to read {name}", name=reader["next"])
+    else:
+        note = _("the copy") if reader["reads"] != view else _("the real one")
+    return f"{escape(reader['key'])} [dim]({note})[/]"
 
 
 @view_app.command("create", help=_("Make the test copy of a view from your checkout's SQL (or give the SQL to run)."))

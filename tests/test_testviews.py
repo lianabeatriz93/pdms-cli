@@ -349,3 +349,45 @@ def test_the_settings_form_takes_view_readers_as_text_or_list() -> None:
     assert settings_screen.database_from({**body, "view_readers": ["c"]}, None).view_readers == ["c"]
     with pytest.raises(actions.ActionError):
         settings_screen.database_from({**body, "view_readers": [1]}, None)
+
+
+def test_a_service_starting_records_which_view_it_reads(backend, monkeypatch) -> None:
+    from pdms_cli import repos
+
+    monkeypatch.setattr(repos, "active_backend", lambda cfg: backend)
+    cfg = Config(dbs={"web-dev": Database("db.example.com"), "pdms-local": Database("localhost")},
+                 defaults=Defaults(test_views={"pdms_report_lead_view": "pdms_report_lead_view_pdmp627"},
+                                   test_views_db="web-dev"))
+    lead = backend / "report/report-lead-run"
+    assert testviews.reads_as(cfg, lead, "web-dev") == {"pdms_report_lead_view": "pdms_report_lead_view_pdmp627"}
+    assert testviews.reads_as(cfg, lead, "pdms-local") == {"pdms_report_lead_view": "pdms_report_lead_view"}
+    assert testviews.reads_as(cfg, backend / "report/report-download", "web-dev") == {
+        "pdms_report_document_view": "pdms_report_document_view",
+        "pdms_report_lead_view": "pdms_report_lead_view_pdmp627"}
+    assert testviews.reads_as(cfg, backend / "lead/lead-place-get", "web-dev") == {}
+
+
+def test_data_says_which_running_services_read_the_view_and_as_what(cfg, monkeypatch) -> None:
+    import os
+
+    from pdms_cli import instances
+
+    def running(name: str, db: str, reads: str) -> instances.Instance:
+        return instances.Instance(key=f"{name}:1", pid=os.getpid(), service=f"/b/report/{name}", host="h", port=1,
+                                  user="u", db=db, reload=False, log="", started_at="",
+                                  created=instances.creation_time(os.getpid()),
+                                  views={"pdms_report_document_view": reads})
+
+    instances.save({"a": running("report-document-run", "web-dev", "pdms_report_document_view"),
+                    "b": running("report-download", "web-dev", "pdms_report_document_view_pdmp627"),
+                    "c": running("report-document-get", "pdms-local", "pdms_report_document_view")})
+    cfg.defaults.test_views = {"pdms_report_document_view": "pdms_report_document_view_pdmp627"}
+    cfg.defaults.test_views_db = "web-dev"
+    monkeypatch.setattr(testviews, "can_create", lambda db, timeout=20: True)
+    monkeypatch.setattr(testviews, "modified", lambda repo, db, timeout=20: {"pdms_report_document_view": False})
+    monkeypatch.setattr(testviews, "existing", lambda db, names, timeout=20: {n: "me" for n in names})
+    row = actions.test_views(cfg, "web-dev")["views"][0]
+    assert [(r["service"], r["reads"], r["next"]) for r in row["read_by"]] == [
+        ("report-document-run", "pdms_report_document_view", "pdms_report_document_view_pdmp627"),  # restart due
+        ("report-download", "pdms_report_document_view_pdmp627", "pdms_report_document_view_pdmp627"),
+    ]  # report-document-get runs on another database
