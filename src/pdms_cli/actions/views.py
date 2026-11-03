@@ -49,11 +49,12 @@ def create_test_view(cfg: Config, view: str, db_alias: str = "", suffix: str = "
             raise testviews.TestViewError(_("The branch of {repo} names no ticket (PDMP-123): give a suffix.",
                                             repo=repo.name))
         db = cfg.dbs[db_alias]
-        made, sql = testviews.test_sql(repo, view, testviews.check_suffix(found), db.user)
+        made, sql = testviews.test_sql(repo, view, testviews.check_suffix(found), db.user, db.view_readers)
         if not testviews.can_create(db, cfg.defaults.db_timeout):
             return {"created": False, "name": made.name, "sql": sql, "file": str(testviews.sql_file(made, sql))}
         checks.check_database(cfg, db_alias, confirmed)
         testviews.run(db, sql, cfg.defaults.db_timeout)
+        testviews.remember(made.name, db_alias, sql)
         return {"created": True, "name": made.name}
 
     return _test_view_call(work)
@@ -180,7 +181,8 @@ def test_view_needs(cfg: Config, launches: Iterable[tuple[Path, str]]) -> list[T
                         readers.setdefault(view, []).append(service.name)
             if not readers:
                 continue
-            copies = {view: testviews.test_sql(repo, view, suffix, db.user) for view in readers}
+            copies = {view: testviews.test_sql(repo, view, suffix, db.user, db.view_readers)
+                      for view in readers}
             there = testviews.existing(db, [made.name for made, _sql in copies.values()], cfg.defaults.db_timeout)
             can = testviews.can_create(db, cfg.defaults.db_timeout)
         except Exception:  # noqa: BLE001 - a database down, an odd file: the services start on the real views

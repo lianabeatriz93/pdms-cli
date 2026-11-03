@@ -98,6 +98,8 @@ def ask_database(current: Database | None = None) -> Database:
         _("Is it a shared/remote DB? (asks for confirmation before starting)"),
         default=c.protected if current else host not in ("localhost", "127.0.0.1"),
     ).unsafe_ask()
+    readers = questionary.text(_("Other users who may read the test copies of views made there (commas; empty = none):"),
+                               default=", ".join(c.view_readers)).unsafe_ask()
     return Database(
         host=host.strip(),
         port=int(port),
@@ -106,6 +108,7 @@ def ask_database(current: Database | None = None) -> Database:
         password=password,
         driver=c.driver,
         protected=protected,
+        view_readers=list(dict.fromkeys(name.strip() for name in readers.split(",") if name.strip())),
     )
 
 

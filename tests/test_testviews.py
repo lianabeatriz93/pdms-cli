@@ -310,3 +310,42 @@ def test_a_copy_the_services_user_cannot_read_says_how_to_grant_it(cfg, starting
         actions.check_test_views(cfg, starting, True)
     with pytest.raises(actions.ActionError, match="pdm-writer cannot read"):
         actions.use_test_view(cfg, "pdms_report_document_view", "pdms_report_document_view_pdmp627")
+
+
+def test_the_databases_view_readers_get_select_too(repo) -> None:
+    _made, sql = testviews.test_sql(repo, "pdms_report_document_view", "_pdmp627", "pdm-writer",
+                                    ["pdm-reader", " pdm-writer ", "", "pdm-reader", 'od"d'])
+    grants = [line for line in sql.splitlines() if line.startswith("GRANT")]
+    assert [line.split(";")[0] for line in grants] == [
+        'GRANT SELECT ON public.pdms_report_document_view_pdmp627 TO "pdm-writer"',
+        'GRANT SELECT ON public.pdms_report_document_view_pdmp627 TO "pdm-reader"',
+        'GRANT SELECT ON public.pdms_report_document_view_pdmp627 TO "od""d"',
+    ]
+
+
+def test_who_may_read_a_copy_does_not_make_it_out_of_date(repo) -> None:
+    _made, plain = testviews.test_sql(repo, "pdms_report_document_view", "_pdmp627")
+    _made, granted = testviews.test_sql(repo, "pdms_report_document_view", "_pdmp627", "pdm-writer", ["pdm-reader"])
+    testviews.remember("pdms_report_document_view_pdmp627", "web-dev", granted)
+    assert testviews.made_with("pdms_report_document_view_pdmp627", plain)
+
+
+def test_a_copy_pdms_made_is_current(cfg, monkeypatch) -> None:
+    monkeypatch.setattr(testviews, "can_create", lambda db, timeout=20: True)
+    monkeypatch.setattr(testviews, "run", lambda db, sql, timeout=20: None)
+    monkeypatch.setattr(testviews, "modified", lambda repo, db, timeout=20: {"pdms_report_document_view": False})
+    monkeypatch.setattr(testviews, "existing", lambda db, names, timeout=20: {n: "me" for n in names})
+    cfg.dbs["web-dev"].view_readers = ["pdm-reader"]
+    actions.create_test_view(cfg, "pdms_report_document_view", confirmed=True)
+    row = actions.test_views(cfg, "web-dev")["views"][0]
+    assert row["current"] and 'TO "pdm-reader"' in row["sql"]  # what Copy SQL in Data → Test views copies
+
+
+def test_the_settings_form_takes_view_readers_as_text_or_list() -> None:
+    from pdms_cli.ui.jobs import settings_screen
+
+    body = {"host": "h", "database": "pdm", "user": "u", "view_readers": " a, b ,,a"}
+    assert settings_screen.database_from(body, None).view_readers == ["a", "b"]
+    assert settings_screen.database_from({**body, "view_readers": ["c"]}, None).view_readers == ["c"]
+    with pytest.raises(actions.ActionError):
+        settings_screen.database_from({**body, "view_readers": [1]}, None)

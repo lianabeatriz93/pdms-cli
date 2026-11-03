@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -88,10 +89,12 @@ def renames(view: str, sql: str, suffix: str) -> dict[str, str]:
     return found
 
 
-def test_sql(repo: Path, view: str, suffix: str, reader: str = "") -> tuple[TestView, str]:
+def test_sql(repo: Path, view: str, suffix: str, reader: str = "",
+             others: Iterable[str] = ()) -> tuple[TestView, str]:
     """The test view and the SQL that creates it (the checkout's, with the names it creates suffixed). With
     ``reader`` (the user services connect as) it ends granting that user SELECT on it: a copy made from a database
-    client by another user would not be readable by the services otherwise."""
+    client by another user would not be readable by the services otherwise. ``others`` (the database's
+    ``view_readers``) get SELECT too."""
     path = files(repo).get(view)
     if path is None:
         raise TestViewError(_("No materialized view {view} in {folder}.", view=view, folder=repo / FOLDER))
@@ -107,14 +110,17 @@ def test_sql(repo: Path, view: str, suffix: str, reader: str = "") -> tuple[Test
     header = (f"-- {_('Test copy of {view} made by pdms from {file}', view=view, file=path.name)}\n"
               f"-- {_('Drop it when you are done: {sql}', sql=drop_sql(mapping[view]))}\n\n")
     body = pattern.sub(lambda match: mapping[match.group(1)], sql)
-    if reader:
-        body = body.rstrip() + "\n\n" + grant_sql(mapping[view], reader) + "\n"
+    grants = [grant_sql(mapping[view], reader)] if reader else []
+    grants += [grant_sql(mapping[view], other, _("a reader in the database's settings"))
+               for other in dict.fromkeys(name.strip() for name in others) if other and other != reader]
+    if grants:
+        body = body.rstrip() + "\n\n" + "\n".join(grants) + "\n"
     return TestView(view, mapping[view], path), header + body
 
 
-def grant_sql(name: str, reader: str) -> str:
+def grant_sql(name: str, reader: str, why: str = "") -> str:
     quoted = '"' + reader.replace('"', '""') + '"'
-    return f"GRANT SELECT ON {SCHEMA}.{name} TO {quoted};  -- {_('the user the services connect as')}"
+    return f"GRANT SELECT ON {SCHEMA}.{name} TO {quoted};  -- {why or _('the user the services connect as')}"
 
 
 def drop_sql(name: str) -> str:
@@ -248,12 +254,19 @@ def made() -> dict[str, dict]:
     return data if isinstance(data, dict) else {}
 
 
-def remember(name: str, db_alias: str, sql: str) -> None:
-    import json
+def _checksum(sql: str) -> int:
+    """The SQL's checksum without its GRANT lines: who may read a copy does not make it out of date."""
     import zlib
 
+    kept = [line for line in sql.splitlines() if not line.startswith(f"GRANT SELECT ON {SCHEMA}.")]
+    return zlib.crc32("\n".join(kept).rstrip().encode("utf-8"))
+
+
+def remember(name: str, db_alias: str, sql: str) -> None:
+    import json
+
     data = made()
-    data[name] = {"db": db_alias, "checksum": zlib.crc32(sql.encode("utf-8"))}
+    data[name] = {"db": db_alias, "checksum": _checksum(sql)}
     made_path().parent.mkdir(parents=True, exist_ok=True)
     made_path().write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -268,9 +281,7 @@ def forget(name: str) -> None:
 
 def made_with(name: str, sql: str) -> bool:
     """Whether copy ``name`` was made with this very SQL (your file did not change since)."""
-    import zlib
-
-    return made().get(name, {}).get("checksum") == zlib.crc32(sql.encode("utf-8"))
+    return made().get(name, {}).get("checksum") == _checksum(sql)
 
 
 # --------------------------------------------------------------------------- the database
@@ -380,8 +391,9 @@ def overview(cfg: Config, repo: Path, db_alias: str, suffix: str = "", timeout: 
     for view, name in names.items():
         if view not in changed and name not in there:
             continue
+        sql = test_sql(repo, view, suffix, db.user, db.view_readers)[1] if suffix and view in changed else ""
         rows.append({"view": view, "name": name, "exists": name in there, "owner": there.get(name, ""),
                      "in_use": view in used, "changed": view in changed, "uncommitted": changed.get(view, False),
-                     "current": made_with(name, test_sql(repo, view, suffix)[1]) if suffix and name in there else False})
+                     "current": made_with(name, sql) if sql and name in there else False, "sql": sql})
     return {"db": db_alias, "repo": str(repo), "branch": branch(repo), "suffix": suffix,
             "can_create": can_create(db, timeout), "views": rows}

@@ -394,6 +394,8 @@ function viewActions(row, info) {
       loadViews();
     })));
   }
+  if (row.sql) cell.append(button(t("Copy SQL"), () => copyText(row.sql, t("SQL copied: paste it in your database client.")),
+    { title: t("The SQL that makes {name} from your checkout, with its grants", { name: row.name }) }));
   if (row.exists && row.changed) cell.append(button(t("Refresh data"), () => refreshView(row)));
   if (row.exists) cell.append(button(t("Drop"), () => dropView(row), { class: "btn small bad" }));
   return cell;

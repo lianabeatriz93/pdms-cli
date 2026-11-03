@@ -235,6 +235,7 @@ export function openDb(db = null) {
   $("db-password").value = "";
   $("db-password").placeholder = db && db.has_password ? t("unchanged") : "";
   $("db-protected-box").checked = Boolean(db && db.protected);
+  $("db-view-readers").value = db ? (db.view_readers || []).join(", ") : "";
   showPassword(false);
   $("db-tested").hidden = true;
   resetForm("db", DB_FIELDS);
@@ -248,6 +249,7 @@ function dbBody() {
   return {
     host: $("db-host").value, port: $("db-port").value === "" ? "" : Number($("db-port").value),
     database: $("db-database").value, user: $("db-user").value, protected: $("db-protected-box").checked,
+    view_readers: $("db-view-readers").value,
     password: db && !settingsView.passwordTouched ? null : $("db-password").value,
   };
 }

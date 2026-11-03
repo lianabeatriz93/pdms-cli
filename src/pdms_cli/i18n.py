@@ -1848,6 +1848,10 @@ ES: dict[str, str] = {
         "{name} no está en {db}.",
     "the user the services connect as":
         "el usuario con el que se conectan los servicios",
+    "a reader in the database's settings":
+        "un lector de la configuración de la base de datos",
+    "Other users who may read the test copies of views made there (commas; empty = none):":
+        "Otros usuarios que pueden leer las copias de prueba de vistas creadas ahí (separados por comas; vacío = ninguno):",
     "{user} cannot read {name}: run in your database client: {sql}":
         "{user} no puede leer {name}: ejecuta en tu gestor de base de datos: {sql}",
     # pdms aws logs / lambdas (awslogs.py)
