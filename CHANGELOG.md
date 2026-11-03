@@ -1,3 +1,10 @@
+## v0.4.14b4 (2026-11-03)
+
+### Feat
+
+- **views**: say which view each running service reads, the real one or its test copy
+- **views**: Copy SQL on each changed view, and other users a database grants its test copies to
+
 ## v0.4.14b3 (2026-11-02)
 
 ### Feat
