@@ -15,8 +15,8 @@ import {
 } from "./launch.js";
 import { filterEditor, openEditor, openFromRunning, paintStacks, saveEditor } from "./stacks.js";
 import {
-  closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyView, requestLogs, resetProxyPort, showDetailTab,
-  showProxyTab, submitProxyStart,
+  closeRequest, loadRoutes, openProxyStart, paintRequests, paintRoutes, proxyTokenUser, proxyView, requestLogs, resetProxyPort,
+  showDetailTab, showProxyTab, submitProxyStart,
 } from "./proxy.js";
 import {
   brokerQueue, closePeek, eventsView, eventsVisible, fillTemplate, loadQueues, openConsumerStart, openEventsUp,
@@ -153,6 +153,7 @@ $("proxy-form").addEventListener("submit", submitProxyStart);
 $("proxy-cancel").addEventListener("click", () => $("proxy-dialog").close());
 $("proxy-port").addEventListener("input", resetProxyPort);
 $("proxy-no-remote").addEventListener("change", () => { $("proxy-remote").disabled = $("proxy-no-remote").checked; });
+$("proxy-token-user").addEventListener("change", proxyTokenUser);
 for (const tab of $("proxy-tabs").children) tab.addEventListener("click", () => showProxyTab(tab.dataset.tab));
 $("req-filter").addEventListener("input", paintRequests);
 for (const node of document.querySelectorAll("#req-seg button")) {

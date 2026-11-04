@@ -55,7 +55,9 @@ export function paintProxy() {
       info(t("Repo"), running.repo_alias || running.repo),
       info(t("Environment"), running.env),
       info(t("Remote API"), running.remote || t("none (only local services)")),
-      info(t("Acting as"), running.as || t("each service's own profile")),
+      info(t("Acting as"), running.token_user
+        ? t("the user of the request's token, else {fallback}", { fallback: running.as || t("each service's own profile") })
+        : running.as || t("each service's own profile")),
       info(t("Timeout"), running.timeout ? t("{seconds} s per request", { seconds: running.timeout }) : "-"),
       info(t("Frontend"), running.frontend ? t(".env.local → proxy") : t("not changed")),
       info(t("Runs"), running.background ? t("in the background") : t("in a terminal")),
@@ -633,11 +635,17 @@ export async function openProxyStart() {
   $("proxy-no-remote").checked = false;
   $("proxy-remote").disabled = false;
   options($("proxy-as"), ["", ...state.users], "", (name) => name || t("each service's own profile"));
+  $("proxy-token-user").checked = true;
+  proxyTokenUser();
   $("proxy-frontend-label").hidden = !found.frontend;
   $("proxy-frontend").checked = true;
   $("proxy-warn").hidden = $("proxy-error").hidden = true;
   $("proxy-go").textContent = t("Start");
   $("proxy-dialog").showModal();
+}
+
+export function proxyTokenUser() {
+  $("proxy-as-label").textContent = $("proxy-token-user").checked ? t("Requests without a token act as") : t("Act as");
 }
 
 function proxyProblem(message) {
@@ -650,7 +658,7 @@ export async function submitProxyStart(event) {
   const hasFrontend = !$("proxy-frontend-label").hidden;
   const body = {
     port: Number($("proxy-port").value), env: $("proxy-env").value, remote: $("proxy-remote").value.trim(),
-    no_remote: $("proxy-no-remote").checked, user: $("proxy-as").value,
+    no_remote: $("proxy-no-remote").checked, user: $("proxy-as").value, token_user: $("proxy-token-user").checked,
     frontend: hasFrontend ? $("proxy-frontend").checked : false,
   };
   $("proxy-go").disabled = true;

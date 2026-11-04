@@ -118,7 +118,7 @@ def watch(cfg_loader: Callable[[], Config], on_change: Callable[[], None], stopp
 
 def proxy_relaunch(running: dict) -> dict:
     """How to start the background proxy again exactly as it runs now."""
-    return {key: running.get(key) for key in ("repo", "port", "env", "remote", "as", "timeout")}
+    return {key: running.get(key) for key in ("repo", "port", "env", "remote", "as", "timeout", "token_user")}
 
 
 def start_proxy_again(saved: dict) -> None:
@@ -128,6 +128,7 @@ def start_proxy_again(saved: dict) -> None:
     cmd = proxy.background_command(
         Path(saved["repo"]), port=int(saved["port"]), env=saved.get("env") or "dev",
         remote=saved.get("remote") or None, user_name=saved.get("as") or None, timeout=int(saved.get("timeout") or 300),
+        token_user=saved.get("token_user") is not False,  # on unless it was turned off (older proxies: on)
     )
     env = {key: value for key, value in os.environ.items() if key != ui_instance.TOKEN_ENV}
     started = instances.spawn(cmd, Path(saved["repo"]), env, proxy.log_path())

@@ -680,6 +680,8 @@ ES: dict[str, str] = {
     "Port to listen on.": "Puerto en el que escuchar.",
     "Act as this user on local services (X-Dev-* headers).":
         "Actuar como este usuario en los servicios locales (cabeceras X-Dev-*).",
+    "Act as the user of each request's Cognito token (Authorization header) on local services; --as is for requests without one.":
+        "Actuar como el usuario del token de Cognito de cada petición (cabecera Authorization) en los servicios locales; --as es para las peticiones sin token.",
     "Remote API for what is not running locally (saved for the repo).":
         "API remota para lo que no corre en local (se guarda para el repo).",
     "Never forward to the remote API.": "No reenviar nunca a la API remota.",
@@ -704,6 +706,7 @@ ES: dict[str, str] = {
     "none (only local services)": "ninguna (solo servicios locales)",
     "Acting as": "Actuando como",
     "each service's own profile": "el perfil de cada servicio",
+    "the user of the request's token, else {fallback}": "el usuario del token de la petición; si no hay, {fallback}",
     "Requests · Ctrl+C to stop": "Peticiones · Ctrl+C para parar",
     "Proxy stopped.": "Proxy parado.",
     "Background (pdms ps, logs proxy, stop proxy) or foreground (asked if omitted).":

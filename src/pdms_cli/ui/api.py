@@ -160,9 +160,12 @@ def proxy_options(body: dict) -> dict:
         raise actions.ActionError("port must be a number between 1 and 65535")
     if frontend not in (None, True, False):
         raise actions.ActionError("frontend must be true, false or null")
+    if (token_user := body.get("token_user", True)) not in (True, False):
+        raise actions.ActionError("token_user must be true or false")
     return {
         "port": port, "env": env_name(body.get("env")), "remote": str(body.get("remote") or "") or None,
         "no_remote": body.get("no_remote") is True, "user": str(body.get("user") or "") or None, "frontend": frontend,
+        "token_user": token_user,
     }
 
 

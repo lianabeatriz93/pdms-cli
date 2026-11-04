@@ -207,7 +207,10 @@ pdms proxy routes -f tp    # which service handles each route, and where it goes
 - **Routes** come from the repo's Terraform (`api_rsc_*.tf`), matched like API Gateway.
 - A request goes to the **running local service** of the current repo; anything else to the **remote API** (read from
   `frontend/.env`, `--remote URL` for another, `--no-remote` to answer 503). It answers CORS preflights itself.
-- `--as USER` sends the `X-Dev-*` headers, only to local services.
+- Local services act as the user of each request's Cognito token (the one logged in to the frontend): the proxy
+  reads `sub`, `username` (or `email`), `cognito:groups` and the names from the `Authorization` header, without
+  verifying it, and sends them as the `X-Dev-*` headers. `--as USER` is for requests without a token;
+  `--no-token-user` always uses `--as` (or each service's own profile). The remote API gets neither.
 - It points the frontend at itself in `frontend/.env.local` (git-ignored) and puts the file back when it stops.
 - `http://localhost:28800/docs` is one Swagger UI for every local service.
 

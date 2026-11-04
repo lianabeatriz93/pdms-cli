@@ -70,6 +70,7 @@ class ProxyLaunch:
     user: DevUser | None
     frontend: bool  # point frontend/.env.local to the proxy while it runs
     timeout: int = 300  # seconds to wait for each answer
+    token_user: bool = True  # act as the user of each request's Cognito token, before ``user``
 
     @property
     def url(self) -> str:
@@ -95,6 +96,7 @@ def plan_proxy(
     user_name: str | None = None,
     frontend: bool | None = None,
     timeout: int | None = None,
+    token_user: bool = True,
 ) -> ProxyLaunch:
     """Decide how the proxy runs. Raises :class:`PortBusy` or :class:`PointFrontend` for the user to answer.
 
@@ -110,7 +112,7 @@ def plan_proxy(
         raise PointFrontend(url)
     return ProxyLaunch(
         root, env, repo_routes, port, remote, user_name, cfg.users[user_name] if user_name else None, frontend,
-        timeout,
+        timeout, token_user,
     )
 
 
@@ -126,11 +128,11 @@ def serve_proxy(plan: ProxyLaunch, log: Callable[..., None]) -> None:
     """Run the proxy in this process until it is interrupted; ``log`` gets every request."""
     gateway = proxy.Gateway(
         routes=plan.routes, backend=plan.root / "backend", remote=plan.remote, impersonate=plan.user,
-        timeout=plan.timeout, log=log,
+        token_user=plan.token_user, timeout=plan.timeout, log=log,
     )
     proxy.serve(gateway, PROXY_HOST, plan.port, {
         "repo": str(plan.root), "env": plan.env, "remote": plan.remote or "", "as": plan.user_name or "",
-        "timeout": plan.timeout,
+        "timeout": plan.timeout, "token_user": plan.token_user,
     })
 
 
@@ -147,6 +149,7 @@ def start_proxy(plan: ProxyLaunch) -> ProxyStarted:
     """Start the proxy in the background; waiting until it responds is up to the front end (:func:`proxy_state`)."""
     cmd = proxy.background_command(
         plan.root, port=plan.port, env=plan.env, remote=plan.remote, user_name=plan.user_name, timeout=plan.timeout,
+        token_user=plan.token_user,
     )
     proc = instances.spawn(cmd, plan.root, dict(os.environ), proxy.log_path())
     return ProxyStarted(proc.pid, plan.port, proxy.log_path())
