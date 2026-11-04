@@ -79,7 +79,8 @@ def main_menu(first_run: bool = False) -> None:
             return
         actions = {
             "run": do_run, "ps": instances_menu, "stack": stack_menu,
-            "proxy": lambda: proxy_main(None, None, None, None, False, "dev", None, None, None),
+            "proxy": lambda: proxy_main(ctx=None, port=None, as_user=None, remote=None, no_remote=False, env="dev",
+                                         frontend=None, background=None, timeout=None, token_user=True),
             "events": events_menu, "db": db_menu, "aws": aws_menu, "user": user_menu,
             "defaults": settings_menu,
         }

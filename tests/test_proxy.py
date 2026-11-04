@@ -233,6 +233,86 @@ def test_impersonation_headers_reach_local_services(gateway_url):
     assert data["headers"]["X-Dev-User-Id"] == "u-1"
 
 
+def bearer(claims: dict) -> str:
+    """A Cognito-like token: only its payload matters to the proxy, which does not verify it."""
+    def part(data: dict) -> str:
+        return base64.urlsafe_b64encode(json.dumps(data).encode()).decode().rstrip("=")
+    return f"Bearer {part({'alg': 'RS256'})}.{part(claims)}.signature"
+
+
+ID_TOKEN = {"sub": "u-9", "email": "ana@alivi.com", "cognito:username": "u-9", "given_name": "Ana",
+            "family_name": "Pérez", "cognito:groups": ["TPR.Supervisor", "TPR.Agent"]}
+
+
+def test_local_services_act_as_the_user_of_the_token(gateway_url):
+    configured = DevUser("u-1", "agent@x.com", first_name="Otto", last_name="Other", roles="TPR.Agent")
+    _, data = call(gateway_url(impersonate=configured), "GET", "/api/v1/leads/tp",
+                   headers={"Authorization": bearer(ID_TOKEN)})
+    sent = data["headers"]
+    assert (sent["X-Dev-User-Id"], sent["X-Dev-Username"], sent["X-Dev-Roles"]) == (
+        "u-9", "ana@alivi.com", "TPR.Supervisor,TPR.Agent")
+    assert (sent["X-Dev-First-Name"], sent["X-Dev-Last-Name"]) == ("Ana", "Pérez")
+    assert sent["Authorization"] == bearer(ID_TOKEN)  # still passed on
+
+
+def test_an_access_token_gives_its_username_and_never_another_users_names(gateway_url):
+    configured = DevUser("u-1", "agent@x.com", first_name="Otto", last_name="Other", roles="TPR.Agent")
+    access = {"sub": "u-9", "username": "u-9-name", "cognito:groups": ["TPR.Agent"], "token_use": "access"}
+    _, data = call(gateway_url(impersonate=configured), "GET", "/api/v1/leads/tp",
+                   headers={"Authorization": bearer(access)})
+    sent = data["headers"]
+    assert (sent["X-Dev-User-Id"], sent["X-Dev-Username"], sent["X-Dev-Roles"]) == ("u-9", "u-9-name", "TPR.Agent")
+    assert sent["X-Dev-First-Name"] == sent["X-Dev-Last-Name"] == ""  # the service's own, not Otto's
+
+
+@pytest.mark.parametrize("authorization", [None, "Bearer not-a-jwt", "Bearer a.%%%.c", "Basic dXNlcjpwYXNz",
+                                           "Bearer e30.e30.x"])  # the last one has no sub
+def test_without_a_usable_token_the_chosen_user_acts(gateway_url, authorization):
+    configured = DevUser("u-1", "agent@x.com", roles="TPR.Agent")
+    headers = {"Authorization": authorization} if authorization else {}
+    _, data = call(gateway_url(impersonate=configured), "GET", "/api/v1/leads/tp", headers=headers)
+    assert data["headers"]["X-Dev-User-Id"] == "u-1"
+
+
+def test_without_a_token_or_a_chosen_user_no_dev_headers_go(gateway_url):
+    _, data = call(gateway_url(), "GET", "/api/v1/leads/tp")
+    assert not any(k.lower().startswith("x-dev-") for k in data["headers"])
+
+
+def test_the_token_user_can_be_turned_off(gateway_url):
+    configured = DevUser("u-1", "agent@x.com", roles="TPR.Agent")
+    _, data = call(gateway_url(impersonate=configured, token_user=False), "GET", "/api/v1/leads/tp",
+                   headers={"Authorization": bearer(ID_TOKEN)})
+    assert data["headers"]["X-Dev-User-Id"] == "u-1"
+    _, data = call(gateway_url(token_user=False), "GET", "/api/v1/leads/tp", headers={"Authorization": bearer(ID_TOKEN)})
+    assert not any(k.lower().startswith("x-dev-") for k in data["headers"])
+
+
+def test_the_remote_api_never_gets_the_token_user(gateway_url):
+    _, data = call(gateway_url(), "POST", "/api/v1/leads/tp", headers={"Authorization": bearer(ID_TOKEN)}, body="{}")
+    assert data["server"] == "remote"
+    assert not any(k.lower().startswith("x-dev-") for k in data["headers"])
+
+
+def test_the_background_proxy_gets_the_token_user_choice(repo):
+    on = proxy.background_command(repo, port=8000, env="dev", remote=None, user_name=None)
+    off = proxy.background_command(repo, port=8000, env="dev", remote=None, user_name=None, token_user=False)
+    assert "--no-token-user" not in on and off[-1] == "--no-token-user"
+
+
+def test_a_proxy_started_again_after_an_update_keeps_the_token_user_choice(repo, monkeypatch):
+    from pdms_cli.ui import updates as ui_updates
+
+    commands = []
+    monkeypatch.setattr(ui_updates.proxy, "running_proxy", lambda: None)
+    monkeypatch.setattr(ui_updates.instances, "spawn", lambda cmd, *a: commands.append(cmd) or type("P", (), {"pid": 1}))
+    monkeypatch.setattr(ui_updates.actions, "wait_for_proxy", lambda started: "ok")
+    running = {"repo": str(repo), "port": 8000, "env": "dev", "remote": "", "as": "", "timeout": 300, "token_user": False}
+    ui_updates.start_proxy_again(ui_updates.proxy_relaunch(running))
+    ui_updates.start_proxy_again(ui_updates.proxy_relaunch({**running, "token_user": None}))  # a proxy from before
+    assert "--no-token-user" in commands[0] and "--no-token-user" not in commands[1]
+
+
 def test_cors_preflight_and_response_headers(gateway_url):
     port = gateway_url()
     origin = "http://localhost:5173"

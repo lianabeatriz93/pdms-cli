@@ -74,7 +74,7 @@ def proxy_state(cfg: Config) -> dict | None:
         "key": proxy.display_key(running), "pid": running["pid"], "port": running["port"], "repo": repo,
         "repo_alias": (repos.repo_of(cfg, repo) or "") if repo else "",
         "env": running.get("env", ""), "remote": running.get("remote", ""), "as": running.get("as", ""),
-        "timeout": running.get("timeout", 0),
+        "timeout": running.get("timeout", 0), "token_user": running.get("token_user") is not False,
         "frontend": proxy.frontend_change(),
         "started_at": running.get("started_at", ""), "background": bool(running.get("background")),
         "status": "ok" if instances.responds("127.0.0.1", running["port"]) else "starting",

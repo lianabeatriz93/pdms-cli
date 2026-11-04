@@ -66,14 +66,14 @@ def proxy_port(port: int) -> int:
 
 def plan_proxy(cfg: Config, root: Path, repo_routes: list[routes.Route], port: int, env: str,
                remote: Optional[str], as_user: Optional[str], frontend: Optional[bool],
-               timeout: Optional[int] = None) -> actions.ProxyLaunch:
+               timeout: Optional[int] = None, token_user: bool = True) -> actions.ProxyLaunch:
     """Plan the proxy, answering in the terminal what it asks (a busy port, pointing the frontend to it)."""
     port = proxy_port(port)
     while True:
         try:
             return settle(lambda: actions.plan_proxy(  # settle calls it right away, with this iteration's frontend
                 cfg, root, repo_routes, port=port, env=env, remote=remote, user_name=as_user, frontend=frontend,  # noqa: B023
-                timeout=timeout,
+                timeout=timeout, token_user=token_user,
             ))
         except actions.PointFrontend:
             frontend = interactive_terminal() and questionary.confirm(
@@ -107,6 +107,11 @@ def proxy_main(
         None, "--timeout", "-t",
         help=_("Seconds to wait for each answer before replying 502 (default: the proxy_timeout setting)."),
     ),
+    token_user: bool = typer.Option(
+        True, "--token-user/--no-token-user",
+        help=_("Act as the user of each request's Cognito token (Authorization header) on local services; --as is "
+               "for requests without one."),
+    ),
 ) -> None:
     if ctx is not None and ctx.invoked_subcommand is not None:
         return
@@ -121,7 +126,7 @@ def proxy_main(
         as_user = pick(cfg.users, _("user"), as_user)
     if background is None:
         background = interactive_terminal() and prompts.ask_proxy_background()
-    plan = plan_proxy(cfg, root, repo_routes, port, env, target_remote, as_user, frontend, timeout)
+    plan = plan_proxy(cfg, root, repo_routes, port, env, target_remote, as_user, frontend, timeout, token_user)
 
     if changed := actions.point_frontend(plan):
         console.print("[green]✓[/] " + _("{path} points to the proxy until it stops; restart yarn dev to apply it.",
@@ -132,7 +137,9 @@ def proxy_main(
     summary.add_row("[bold]Repo[/]", f"{repos.alias_of(cfg, root) or root.name} ({env}, {len(repo_routes)} {_('routes')})")
     summary.add_row(f"[bold]{_('Remote')}[/]", target_remote or _("none (only local services)"))
     summary.add_row(f"[bold]{_('Timeout')}[/]", _("{seconds} s per request", seconds=plan.timeout))
-    summary.add_row(f"[bold]{_('Acting as')}[/]", f"{as_user} ({plan.user.roles})" if plan.user else _("each service's own profile"))
+    fallback = f"{as_user} ({plan.user.roles})" if plan.user else _("each service's own profile")
+    summary.add_row(f"[bold]{_('Acting as')}[/]",
+                    _("the user of the request's token, else {fallback}", fallback=fallback) if token_user else fallback)
     console.print(summary)
 
     if background:

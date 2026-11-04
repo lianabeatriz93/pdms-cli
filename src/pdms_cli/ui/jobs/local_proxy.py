@@ -64,7 +64,7 @@ def proxy_routes(cfg: Config, env: str | None = None) -> dict:
 class ProxyJobs(JobsCore):
     def start_proxy(
         self, *, port: int, env: str = "dev", remote: str | None = None, no_remote: bool = False,
-        user: str | None = None, frontend: bool | None = None,
+        user: str | None = None, frontend: bool | None = None, token_user: bool = True,
     ) -> Job:
         """Start the proxy in the background, like ``pdms proxy -b``; raises the decisions (busy port, pointing the
         frontend to it) before anything starts. The job ends once the proxy answers."""
@@ -77,6 +77,7 @@ class ProxyJobs(JobsCore):
         target, _detected = actions.proxy_remote(cfg, root, remote, no_remote)
         plan = actions.plan_proxy(
             cfg, root, repo_routes, port=port, env=env, remote=target, user_name=user, frontend=frontend,
+            token_user=token_user,
         )
 
         def work(_job: Job) -> None:

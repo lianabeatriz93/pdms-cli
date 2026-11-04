@@ -2,13 +2,15 @@
 
 Each request is matched against the repo's Terraform routes and sent to the local instance of that service when
 one is running from the current repo; otherwise it goes to the remote API (e.g. dev), unchanged. It also answers
-CORS preflights (the services have no CORS middleware; API Gateway does that in AWS), can impersonate a dev user
-on local services through the ``X-Dev-*`` headers, and serves a Swagger UI with the live specs of local services.
+CORS preflights (the services have no CORS middleware; API Gateway does that in AWS), tells local services who is
+calling through the ``X-Dev-*`` headers (the user of the request's Cognito token, else a chosen dev user), and serves a
+Swagger UI with the live specs of local services.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import http.client
 import json
 import os
@@ -128,6 +130,47 @@ def dev_headers(user: DevUser) -> dict[str, str]:
     }
 
 
+def token_claims(authorization: str | None) -> dict:
+    """The payload of the JWT in an ``Authorization`` header, not verified ({} when there is none or it does not decode).
+
+    Only for local services, which trust the ``X-Dev-*`` headers anyway; API Gateway verifies it in AWS."""
+    token = (authorization or "").strip()
+    scheme, _sep, rest = token.partition(" ")
+    if scheme.lower() == "bearer":
+        token = rest.strip()
+    parts = token.split(".")
+    if len(parts) != 3:
+        return {}
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    except ValueError:  # bad base64, bytes or JSON
+        return {}
+    return claims if isinstance(claims, dict) else {}
+
+
+def token_user(authorization: str | None) -> DevUser | None:
+    """Who the request's Cognito token says is calling, read as the services read the claims in AWS
+    (restapi_fastapi's get_app_context); None without a token that names a user (``sub``)."""
+    claims = token_claims(authorization)
+    if not claims.get("sub"):
+        return None
+    groups = claims.get("cognito:groups") or []
+    return DevUser(
+        user_id=str(claims["sub"]),
+        username=str(claims.get("username") or claims.get("email") or ""),
+        first_name=str(claims.get("given_name") or ""),
+        last_name=str(claims.get("family_name") or ""),
+        roles=",".join(map(str, groups)) if isinstance(groups, list) else str(groups),
+    )
+
+
+def caller(gateway: "Gateway", authorization: str | None) -> DevUser | None:
+    """The user local services act as: the token's (unless the proxy was told not to), else the chosen dev user,
+    else none (each service's own DEV_* profile). Never a mix of both: a token user's missing names are not filled
+    with another person's."""
+    return (gateway.token_user and token_user(authorization)) or gateway.impersonate
+
+
 def normalize(path: str) -> str:
     """Drop an API Gateway stage prefix (``/dev/api/v1/...`` -> ``/api/v1/...``)."""
     parts = path.split("/")
@@ -170,6 +213,7 @@ class Gateway:
     backend: Path
     remote: str | None  # e.g. https://<id>.execute-api.us-east-1.amazonaws.com/dev
     impersonate: DevUser | None = None
+    token_user: bool = True  # act as the user of the request's Cognito token, before ``impersonate``
     timeout: float = 300  # seconds to wait for the answer of a service or the remote API
     log: Callable[..., None] = lambda *args: None  # (method, path, status, target, seconds, capture id, db detail)
     recorder: captures.Recorder | None = None  # the background proxy keeps each request for pdms ui
@@ -472,8 +516,8 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                         return
                     label = inst.key
                 host, port, scheme, base = "127.0.0.1", inst.port, "http", ""
-                if gateway.impersonate:
-                    headers.update(dev_headers(gateway.impersonate))
+                if user := caller(gateway, self.headers.get("Authorization")):
+                    headers.update(dev_headers(user))
             else:
                 remote = urlsplit(gateway.remote)
                 scheme, host, base = remote.scheme, remote.hostname, remote.path.rstrip("/")
@@ -581,6 +625,7 @@ def serve(gateway: Gateway, host: str, port: int, info: dict) -> None:
 
 def background_command(
     root: Path, *, port: int, env: str, remote: str | None, user_name: str | None, timeout: int = 300,
+    token_user: bool = True,
 ) -> list[str]:
     """How ``pdms proxy --background`` runs the proxy: this module, in a process of its own (see :func:`main`)."""
     cmd = [sys.executable, "-m", "pdms_cli.proxy", "--repo", str(root), "--port", str(port), "--env", env,
@@ -589,6 +634,8 @@ def background_command(
         cmd += ["--remote", remote]
     if user_name:
         cmd += ["--as", user_name]
+    if not token_user:
+        cmd.append("--no-token-user")
     return cmd
 
 
@@ -601,20 +648,22 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--remote", default="")
     parser.add_argument("--as", dest="user_name", default="")
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--no-token-user", dest="token_user", action="store_false")
     args = parser.parse_args(argv)
     user = Config.load().users.get(args.user_name) if args.user_name else None
     repo_routes = load_routes(args.repo, args.env)
     print(f"# proxy :{args.port} · {args.repo} ({args.env}, {len(repo_routes)} routes) · "
-          f"remote {args.remote or '-'} · as {args.user_name or '-'} · timeout {args.timeout}s", flush=True)
+          f"remote {args.remote or '-'} · as {args.user_name or '-'} · token user {'on' if args.token_user else 'off'} · "
+          f"timeout {args.timeout}s", flush=True)
     gateway = Gateway(
         routes=repo_routes, backend=args.repo / "backend", remote=args.remote or None, impersonate=user,
-        timeout=args.timeout, log=lambda *request: print(format_request(*request), flush=True),
+        token_user=args.token_user, timeout=args.timeout, log=lambda *request: print(format_request(*request), flush=True),
         recorder=captures.Recorder(), log_start=lambda *request: print(format_start(*request), flush=True),
     )
     # frontend/.env.local is put back by whoever stops it (pdms stop), or by the next proxy if it died.
     serve(gateway, "0.0.0.0", args.port, {
         "repo": str(args.repo), "env": args.env, "remote": args.remote, "as": args.user_name, "log": str(log_path()),
-        "background": True, "timeout": args.timeout,
+        "background": True, "timeout": args.timeout, "token_user": args.token_user,
     })
 
 

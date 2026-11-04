@@ -674,15 +674,17 @@ def test_proxy_start_asks_first_and_runs_as_a_job(ui, proxy_repo, machine, monke
         409, {"decision": "point_frontend", "url": "http://localhost:8001"},
     )
     for body in ({"port": "8001"}, {"port": 0}, {"port": True}, {"env": "../x"}, {"frontend": "yes"},
-                 {"user": "ghost", "frontend": False}):
+                 {"user": "ghost", "frontend": False}, {"token_user": "no"}):
         assert post(port, "/api/proxy/start", body)[0] == 400, body
     assert not started and not jobs.snapshot()
 
-    body = {"port": 8001, "env": "qa", "user": "boss", "frontend": True, "remote": "https://other.example.com/qa/"}
+    body = {"port": 8001, "env": "qa", "user": "boss", "frontend": True, "remote": "https://other.example.com/qa/",
+            "token_user": False}
     assert post(port, "/api/proxy/start", body) == (202, {"job": "proxy"})
     wait_until(lambda: started and not jobs.snapshot())
     plan = started[0]
     assert (plan.port, plan.env, plan.user_name, plan.remote) == (8001, "qa", "boss", "https://other.example.com/qa")
+    assert plan.token_user is False
     assert machine.repos["pdms"].remote == "https://other.example.com/qa"  # saved for the repo, like pdms proxy
     env_local = proxy_repo / "frontend" / ".env.local"
     assert "VITE_APP_API_URL=http://localhost:8001" in env_local.read_text(encoding="utf-8")
@@ -725,7 +727,8 @@ def test_the_state_shows_the_running_proxy(proxy_repo, machine, monkeypatch) -> 
     proxy.remember_frontend_change({"path": "/repo/frontend/.env.local", "proxy_url": "x", "previous": {}})
     assert ui_state.build_state(machine)["proxy"] == {
         "key": "proxy@8001", "pid": 7, "port": 8001, "repo": str(proxy_repo), "repo_alias": "pdms", "env": "qa",
-        "remote": "", "as": "boss", "timeout": 300, "frontend": "/repo/frontend/.env.local", "started_at": "2026-10-01T10:00:00",
+        "remote": "", "as": "boss", "timeout": 300, "token_user": True, "frontend": "/repo/frontend/.env.local",
+        "started_at": "2026-10-01T10:00:00",
         "background": True, "status": "ok",
     }
 

@@ -825,7 +825,8 @@
     <label>Terraform environment <select id="proxy-env"></select></label>
     <label>Remote API <input id="proxy-remote" autocomplete="off" placeholder="https://….execute-api.us-east-1.amazonaws.com/dev"></label>
     <label class="inline"><input type="checkbox" id="proxy-no-remote"> Only local services (never the remote API)</label>
-    <label>Act as <select id="proxy-as"></select></label>
+    <label class="inline"><input type="checkbox" id="proxy-token-user" checked> <span>Act as the user of each request's token (the one logged in to the frontend)</span></label>
+    <label><span id="proxy-as-label">Requests without a token act as</span> <select id="proxy-as"></select></label>
     <label class="inline" id="proxy-frontend-label"><input type="checkbox" id="proxy-frontend" checked> <span>Point <code>frontend/.env.local</code> to the proxy (undone when it stops)</span></label>
     <p class="warn" id="proxy-warn" hidden></p>
     <p class="error" id="proxy-error" hidden></p>
