@@ -1,3 +1,9 @@
+## v0.4.14b5 (2026-11-04)
+
+### Feat
+
+- **proxy**: local services act as the user of the request's Cognito token
+
 ## v0.4.14b4 (2026-11-03)
 
 ### Feat
