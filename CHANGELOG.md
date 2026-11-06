@@ -1,3 +1,20 @@
+## v0.4.14b6 (2026-11-06)
+
+### Feat
+
+- **cli**: clearer names and help, old names still work
+- **cli**: pdms from scripts: errors on stderr, --yes, --json lists
+
+### Fix
+
+- **config**: reading config.toml waits while Windows replaces it
+- **proxy**: only the local frontend reads answers, only this computer picks a user
+- **data**: a failed refresh, restart or import no longer loses data
+
+### Perf
+
+- **proxy**: one read of the registry per page instead of one per request
+
 ## v0.4.14b5 (2026-11-04)
 
 ### Feat
