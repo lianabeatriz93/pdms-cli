@@ -604,3 +604,38 @@ def test_the_service_part_is_placed_in_the_proxy_time_line() -> None:
     assert captures.place_in_time(detail, 1000.100, 81)["service_at_ms"] == 0  # clocks never put it before the start
     assert captures.place_in_time(detail, 999.000, 81)["service_at_ms"] == 81  # nor after the end
     assert "service_at_ms" not in captures.place_in_time({"statements": []}, 1000.0, 81)  # older services
+
+
+@pytest.mark.parametrize("origin, allowed", [
+    ("http://localhost:3000", True), ("https://localhost:3000", True), ("http://127.0.0.1:5173", True),
+    ("http://app.localhost:3000", True), ("https://dev-pdm.alivi.com", True), ("http://192.168.1.20:3000", True),
+    ("https://evil.example", False), ("https://dev-pdm.alivi.com.evil.example", False), ("null", False),
+])
+def test_only_pages_of_the_local_frontend_may_read_answers(gateway_url, origin, allowed):
+    access = proxy.Access(front_hosts=frozenset({"dev-pdm.alivi.com"}), own=frozenset({"192.168.1.20"}))
+    port = gateway_url(read_access=lambda: access)
+    response, _ = call(port, "OPTIONS", "/api/v1/leads/tp",
+                       headers={"Origin": origin, "Access-Control-Request-Method": "POST"})
+    assert (response.getheader("Access-Control-Allow-Origin") == origin) is allowed
+    response, _ = call(port, "GET", "/api/v1/leads/tp", headers={"Origin": origin})
+    assert (response.getheader("Access-Control-Allow-Origin") == origin) is allowed
+    if not allowed:  # nor the service's own header
+        assert response.getheader("Access-Control-Allow-Origin") is None
+        assert response.getheader("Access-Control-Allow-Credentials") is None
+
+
+def test_another_device_of_the_network_acts_as_nobody_unless_allowed(gateway_url, monkeypatch):
+    monkeypatch.setattr(proxy, "is_loopback", lambda address: False)  # as if from a phone on the WiFi
+    chosen = DevUser("u-1", "agent@x.com", roles="TPR.Agent")
+    forged = {"Authorization": bearer(ID_TOKEN), "X-Dev-User-Id": "admin", "X-Dev-Roles": "TPR.Admin"}
+    _, data = call(gateway_url(impersonate=chosen, read_access=proxy.Access), "GET", "/api/v1/leads/tp",
+                   headers=forged)
+    assert not [k for k in data["headers"] if k.lower().startswith("x-dev-")]
+    _, data = call(gateway_url(impersonate=chosen, read_access=lambda: proxy.Access(lan_identity=True)), "GET",
+                   "/api/v1/leads/tp", headers={"Authorization": bearer(ID_TOKEN)})
+    assert data["headers"]["X-Dev-User-Id"] == "u-9"
+
+
+def test_loopback_clients_are_this_computer():
+    assert all(proxy.is_loopback(a) for a in ("127.0.0.1", "127.0.1.1", "::1", "::ffff:127.0.0.1"))
+    assert not any(proxy.is_loopback(a) for a in ("192.168.1.20", "10.0.0.2", "fe80::1%eth0", "nonsense"))

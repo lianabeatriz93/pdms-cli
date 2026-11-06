@@ -136,6 +136,9 @@ class Defaults:
     # The browser extension of pdms (browser.py) sends front_redirect_hosts to the frontend pdms runs, while it runs.
     front_redirect: bool = False
     front_redirect_hosts: list[str] = field(default_factory=lambda: list(FRONT_HOSTS))
+    # Requests to the proxy from other devices of the network (a phone) act as the token's or the chosen user too.
+    # Off: only this computer's do, since the proxy listens on the network and nobody checks a token's signature.
+    proxy_lan_identity: bool = False
     # Materialized views the services on test_views_db read a test copy of instead: {view: test copy} (pdms view,
     # testviews.py). The copies exist in that database only.
     test_views: dict[str, str] = field(default_factory=dict)

@@ -12,9 +12,11 @@ from __future__ import annotations
 import argparse
 import base64
 import http.client
+import ipaddress
 import json
 import os
 import signal
+import socket
 import socketserver
 import sys
 import threading
@@ -164,11 +166,72 @@ def token_user(authorization: str | None) -> DevUser | None:
     )
 
 
-def caller(gateway: "Gateway", authorization: str | None) -> DevUser | None:
+def caller(gateway: "Gateway", authorization: str | None, local_client: bool = True) -> DevUser | None:
     """The user local services act as: the token's (unless the proxy was told not to), else the chosen dev user,
     else none (each service's own DEV_* profile). Never a mix of both: a token user's missing names are not filled
-    with another person's."""
+    with another person's.
+
+    Only for requests from this computer, unless ``defaults.proxy_lan_identity`` lets devices of the network act
+    as someone too: the proxy listens on the network, and nobody checks a token's signature locally."""
+    if not local_client and not gateway.access().lan_identity:
+        return None
     return (gateway.token_user and token_user(authorization)) or gateway.impersonate
+
+
+LOOPBACK_NAMES = frozenset({"localhost", "127.0.0.1", "::1"})
+DEV_HEADER = "x-dev-"  # what local services trust to know who calls (see dev_headers)
+
+
+def is_loopback(address: str) -> bool:
+    """Whether a client address is this computer (IPv4, IPv6 or IPv4 mapped in IPv6)."""
+    try:
+        ip = ipaddress.ip_address(address.split("%")[0])
+    except ValueError:
+        return False
+    mapped = getattr(ip, "ipv4_mapped", None)
+    return ip.is_loopback or bool(mapped and mapped.is_loopback)
+
+
+def own_addresses() -> frozenset[str]:
+    """The addresses of this computer on its networks: a page of the frontend opened through one of them (another
+    device of the network, or this one by its address) is one of ours."""
+    found = set()
+    try:
+        import psutil
+
+        for addresses in psutil.net_if_addrs().values():
+            for address in addresses:
+                if address.family in (socket.AF_INET, socket.AF_INET6):
+                    found.add(address.address.split("%")[0].lower())
+    except Exception:  # noqa: BLE001 - without them only localhost and the front hosts are allowed
+        pass
+    return frozenset(found)
+
+
+@dataclass(frozen=True)
+class Access:
+    """Who may use the proxy from a browser (``origin_allowed``) and whether other devices act as a user."""
+
+    front_hosts: frozenset[str] = frozenset()
+    own: frozenset[str] = frozenset()
+    lan_identity: bool = False
+
+    def origin_allowed(self, origin: str) -> bool:
+        """Pages of the local frontend (localhost, or this computer's address), and of the front hosts the browser
+        extension sends to it. Not any page: with credentials allowed, any site open in the browser could otherwise
+        call the local services as the chosen user and read the answers."""
+        try:
+            host = (urlsplit(origin).hostname or "").lower()
+        except ValueError:
+            return False
+        return bool(host) and (host in LOOPBACK_NAMES or host.endswith(".localhost") or host in self.own
+                               or host in self.front_hosts)
+
+
+def _access() -> Access:
+    defaults = Config.load().defaults
+    return Access(front_hosts=frozenset(h.lower() for h in defaults.front_redirect_hosts), own=own_addresses(),
+                  lan_identity=defaults.proxy_lan_identity)
 
 
 def normalize(path: str) -> str:
@@ -202,6 +265,9 @@ def _wake(instance: instances.Instance) -> instances.Instance:
         raise WakeFailed(exc.message) from exc
 
 
+ACCESS_TTL = 30  # seconds between two reads of who may use the proxy
+
+
 def _idle_seconds() -> float:
     """defaults.idle_minutes, read again each time: changing it in Settings applies to the running proxy."""
     return Config.load().defaults.idle_minutes * 60
@@ -225,11 +291,23 @@ class Gateway:
     wake: Callable[[instances.Instance], instances.Instance] = _wake
     wake_timeout: float = WAKE_TIMEOUT
     idle_seconds: Callable[[], float] = _idle_seconds
+    # What browsers and other devices may do (read again every ACCESS_TTL seconds: Settings applies while it runs).
+    read_access: Callable[[], Access] = _access
     note: Callable[[str], None] = lambda text: print(f"# {datetime.now():%H:%M:%S} {text}", flush=True)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _waking: dict[str, threading.Lock] = field(default_factory=dict)
     _last_request: dict[str, float] = field(default_factory=dict)  # instance key -> time.monotonic()
     _in_progress: Counter = field(default_factory=Counter)  # instance key -> requests it is answering
+    _access: tuple[float, Access] | None = None
+
+    def access(self) -> Access:
+        now = time.monotonic()
+        if self._access is None or now - self._access[0] > ACCESS_TTL:
+            try:
+                self._access = (now, self.read_access())
+            except Exception:  # noqa: BLE001 - a config being written: the last one, else the strictest
+                self._access = (now, self._access[1] if self._access else Access())
+        return self._access[1]
 
     # ------------------------------------------------------------------ targets
 
@@ -430,7 +508,7 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
 
         def cors(self) -> None:
             origin = self.headers.get("Origin")
-            if origin:
+            if origin and gateway.access().origin_allowed(origin):
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Access-Control-Allow-Credentials", "true")
                 self.send_header("Access-Control-Expose-Headers", "*")
@@ -516,7 +594,11 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                         return
                     label = inst.key
                 host, port, scheme, base = "127.0.0.1", inst.port, "http", ""
-                if user := caller(gateway, self.headers.get("Authorization")):
+                local_client = is_loopback(self.client_address[0])
+                if not local_client and not gateway.access().lan_identity:
+                    # Another device must not say who it is either: local services trust these headers.
+                    headers = {k: v for k, v in headers.items() if not k.lower().startswith(DEV_HEADER)}
+                if user := caller(gateway, self.headers.get("Authorization"), local_client):
                     headers.update(dev_headers(user))
             else:
                 remote = urlsplit(gateway.remote)

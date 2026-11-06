@@ -1170,3 +1170,44 @@ def test_the_state_carries_the_health_and_the_branch(tmp_path, monkeypatch) -> N
     state = ui_state.build_state(cfg, health=summary)
     assert state["health"] == summary and state["repo"]["branch"] == "main"
     assert ui_state.build_state(cfg)["health"] == {"dbs": [], "running": False, "slow_ms": 0}
+
+
+def test_a_bug_answers_500_with_what_happened_instead_of_closing_the_connection(ui, monkeypatch) -> None:
+    port, *_ = ui
+
+    def broken(self, path, body):
+        raise KeyError("missing")
+
+    monkeypatch.setattr(ui_server.Api, "post", broken)
+    status, data = post(port, "/api/settings/defaults", {})
+    assert status == 500 and data["error"] == "pdms ui: KeyError: 'missing'"
+    monkeypatch.setattr(ui_server.Api, "get", lambda self, path, query: 1 / 0)
+    response, raw, _conn = request(port, "/api/state", cookie(port))
+    assert response.status == 500 and b"ZeroDivisionError" in raw
+
+
+@pytest.mark.parametrize("length", ["-1", "lots"])
+def test_a_bad_content_length_is_refused(ui, length) -> None:
+    port, *_ = ui
+    headers = {**cookie(port), "Origin": f"http://127.0.0.1:{port}", "Content-Type": "application/json",
+               "Content-Length": length}
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.putrequest("POST", "/api/settings/defaults", skip_host=True)
+    conn.putheader("Host", f"127.0.0.1:{port}")
+    for key, value in headers.items():
+        conn.putheader(key, value)
+    conn.endheaders()
+    assert conn.getresponse().status == 400  # not a thread waiting forever for a body
+
+
+def test_a_first_state_that_fails_does_not_keep_the_hub_busy() -> None:
+    builds = []
+
+    def build():
+        builds.append(1)
+        raise RuntimeError("config being written")
+
+    hub = ui_server.Hub(build=build, interval=60)
+    hub.watch()  # used to raise here, before the page's try/finally could unwatch
+    hub.unwatch()
+    assert hub.watchers == 0 and builds
