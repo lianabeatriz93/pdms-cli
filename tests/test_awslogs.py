@@ -317,13 +317,19 @@ def run(*args: str):
     return CliRunner().invoke(cli.app, ["aws", *args], env={"COLUMNS": "200"})
 
 
-def test_pdms_aws_logs_shows_the_events_of_the_event_flow(fake_logs, cfg) -> None:
+def test_pdms_aws_logs_shows_the_events_of_the_event_flow(fake_logs, cfg, monkeypatch) -> None:
+    from pdms_cli.commands import common
+
+    # Wide, whatever an earlier test of this process left: lines past the width end in "…".
+    monkeypatch.setattr(common.console, "_width", 200)
+    monkeypatch.setattr(common.console, "_height", 50)
     result = run("logs", "--since", "100000d")
     assert result.exit_code == 0, result.output
-    assert "Reading broker-sqs-event, account-publish-ev" in result.output
-    assert "account-publish-ev → sns-account-publish.fifo · TP_ACCOUNT_UPDATED" in result.output
-    assert "broker-sqs-event ← received · lead-tp-export" in result.output
-    assert "broker-sqs-event → lead_tp_export-sqs-queue.fifo · lead-tp-export" in result.output
+    said = " ".join(result.output.split())  # however wide the console another test left it
+    assert "Reading broker-sqs-event, account-publish-ev" in said
+    assert "account-publish-ev → sns-account-publish.fifo · TP_ACCOUNT_UPDATED" in said
+    assert "broker-sqs-event ← received · lead-tp-export" in said
+    assert "broker-sqs-event → lead_tp_export-sqs-queue.fifo · lead-tp-export" in said
     assert '"file_name": "tp.csv"' in result.output
     short = run("logs", "broker-sqs-event", "--since", "100000d", "--short", "--type", "lead-tp-export")
     assert "file_name" not in short.output and short.output.count("lead-tp-export") == 2

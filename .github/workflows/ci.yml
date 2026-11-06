@@ -51,7 +51,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          uv run pytest -q --junitxml=junit.xml 2>&1 | tee pytest.log
+          # In parallel on Linux (about half the time); macOS and Windows keep one process, where tests start real
+          # processes and the runners have few cores.
+          uv run pytest -q ${{ runner.os == 'Linux' && '-n auto' || '' }} --junitxml=junit.xml 2>&1 | tee pytest.log
       - name: Report failures as annotations
         if: failure()
         shell: bash
