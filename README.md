@@ -574,9 +574,25 @@ it; once it works for them, `cz bump --increment PATCH --files-only --yes` makes
 
 `--files-only` updates `pyproject.toml`, `uv.lock` and `CHANGELOG.md` without committing or tagging, since a plain
 `cz bump` makes a lightweight tag that `git push --follow-tags` leaves behind. The tag runs `release.yml`: it checks
-the version, runs the tests and publishes the wheel, both installers and the changelog as a GitHub release.
+the version and that CI passed on the released commit (the parent of the bump), runs the tests, builds the wheel and
+installs it, and publishes the wheel, both installers and the changelog as a GitHub release. After a stable release
+it installs the latest release with `install.sh`, as a new user would. If CI was still running when you tagged, re-run
+the release workflow once it is green.
 
 The browser extension for Firefox is signed in the same workflow, as an unlisted add-on on addons.mozilla.org, with
 the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets of the repo. Mozilla signs each version once: change `version` in
 `browser_extension/manifest.json` whenever the extension changes, and releases in between reuse the signed file of an
-earlier release.
+earlier release. `tests/test_browser.py` fails when the extension changed without a new version (it records what each
+signed version was made from), and a stable release without the signed file fails instead of going out without it.
+
+#### Pulling back a bad release
+
+Users go back by themselves with Settings → Versions or `pdms self-update --version X` (and that version is then
+skipped). To stop everyone else from getting a bad version:
+
+1. Mark it as a pre-release so it stops being "latest" for the installers and the stable channel:
+   `gh release edit vX.Y.Z --prerelease` (`--draft` hides it from the beta channel too).
+2. Fix forward: release `X.Y.Z+1` with the fix or the revert; `pdms self-update` and the update notice offer it to
+   those on the bad one.
+3. Never delete the tag or the release while people may have it installed: Versions lists it, and the next release
+   reuses its signed Firefox extension.

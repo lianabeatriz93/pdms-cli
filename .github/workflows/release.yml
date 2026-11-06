@@ -4,16 +4,24 @@ on:
   push:
     tags: ["v*"]
 
+# Read-only by default: only the publish job may write (create the release), and it runs no tests and no npm package.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  check:
+    name: tag and CI
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      prerelease: ${{ steps.kind.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          fetch-depth: 2
       - uses: astral-sh/setup-uv@v6
       - name: Check that the tag matches the package version
         run: |
@@ -22,42 +30,112 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match the version in pyproject.toml ($VERSION). Use 'cz bump'."
             exit 1
           fi
+      - id: kind
+        name: Stable or pre-release
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *a[0-9]*|*b[0-9]*|*rc[0-9]*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;  # alpha/beta/rc: not "latest"
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: CI passed on the released code
+        # A bump commit runs only lint in ci.yml: the code released is its parent's, whose CI run on main must have
+        # finished with no failed job. A job GitHub cancelled (no runner) only warns: re-run it, or accept it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          COMMIT="$(git rev-parse HEAD)"
+          if git log -1 --format=%s | grep -q '^bump:'; then COMMIT="$(git rev-parse HEAD^)"; fi
+          RUN="$(gh run list --workflow ci.yml --commit "$COMMIT" --limit 1 --json databaseId --jq '.[0].databaseId')"
+          if [ -z "$RUN" ]; then
+            echo "::error::No CI run for $COMMIT: push it to main and wait for CI before tagging."
+            exit 1
+          fi
+          gh run view "$RUN" --json status,jobs --jq '.status, (.jobs[] | "\(.conclusion) \(.name)")' | tee ci.txt
+          if [ "$(head -n 1 ci.txt)" != "completed" ]; then
+            echo "::error::CI run $RUN of $COMMIT has not finished: re-run this workflow once it has."
+            exit 1
+          fi
+          if grep -E '^(failure|timed_out|startup_failure) ' ci.txt; then
+            echo "::error::CI run $RUN of $COMMIT has failed jobs: fix them before releasing."
+            exit 1
+          fi
+          grep -q '^success ' ci.txt || { echo "::error::No job of CI run $RUN succeeded."; exit 1; }
+          if grep -E '^cancelled ' ci.txt; then
+            echo "::warning::Jobs of CI run $RUN were cancelled (no runner?): released without them."
+          fi
+
+  test:
+    name: tests
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
       - name: Tests
         run: |
           uv sync --locked
           uv run pytest -q
+
+  build:
+    name: build
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
       - name: Signed extension for Firefox
-        # Mozilla signs each version of the extension once (unlisted on addons.mozilla.org): take it from an earlier
-        # release while its version is the same, else sign it. Without it pdms still releases, minus Firefox.
+        # Mozilla signs each version of the extension once (unlisted on addons.mozilla.org): take it from the release
+        # that has it while its version is the same, else sign it (tests/test_browser.py makes sure a changed
+        # extension has a new version). A stable release never goes out without it.
         env:
           GH_TOKEN: ${{ github.token }}
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          PRERELEASE: ${{ needs.check.outputs.prerelease }}
         run: |
           XPI="pdms-front-redirect-$(uv run python -m pdms_cli.browser version).xpi"
           mkdir -p xpi
-          for tag in $(gh release list --limit 30 --json tagName --jq '.[].tagName'); do
-            if gh release download "$tag" --pattern "$XPI" --dir xpi 2>/dev/null; then
-              echo "$XPI comes from $tag"
-              break
-            fi
-          done
-          if [ ! -f "xpi/$XPI" ]; then
+          missing() {
+            if [ "$PRERELEASE" = true ]; then echo "::warning::$1: this pre-release has no extension for Firefox."; exit 0; fi
+            echo "::error::$1: a stable release needs the extension for Firefox."
+            exit 1
+          }
+          # Every release, not only the latest ones: the version that has the file may be an old one.
+          FROM="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+                    --jq ".[] | select(any(.assets[]; .name == \"$XPI\")) | .tag_name" | head -n 1)"
+          if [ -n "$FROM" ]; then
+            gh release download "$FROM" --pattern "$XPI" --dir xpi
+            echo "$XPI comes from $FROM"
+          else
             if [ -z "$AMO_JWT_ISSUER" ] || [ -z "$AMO_JWT_SECRET" ]; then
-              echo "::warning::No AMO_JWT_ISSUER / AMO_JWT_SECRET secrets: this release has no extension for Firefox."
-              exit 0
+              missing "No AMO_JWT_ISSUER / AMO_JWT_SECRET secrets to sign $XPI"
             fi
             uv run python -m pdms_cli.browser firefox-source firefox-source
-            if ! npx --yes web-ext@8 sign --source-dir firefox-source --artifacts-dir signed --channel unlisted \
+            if ! npx --yes web-ext@8.3.0 sign --source-dir firefox-source --artifacts-dir signed --channel unlisted \
                 --api-key "$AMO_JWT_ISSUER" --api-secret "$AMO_JWT_SECRET"; then
-              echo "::warning::Mozilla did not sign $XPI: this release has no extension for Firefox."
-              exit 0
+              missing "Mozilla did not sign $XPI"
             fi
             mv signed/*.xpi "xpi/$XPI"
           fi
           cp "xpi/$XPI" src/pdms_cli/browser_extension/firefox.xpi
       - name: Build
         run: uv build
+      - name: The wheel installs and is this version
+        # What users get: a fresh install of the built wheel, not the checkout.
+        run: |
+          WHEEL="$(ls dist/*.whl)"
+          GOT="$(uvx --isolated --from "$WHEEL" pdms --version)"
+          echo "$GOT"
+          echo "$GOT" | grep -qF "$(uv version --short)" || { echo "::error::The wheel says '$GOT'."; exit 1; }
+          uvx --isolated --from "$WHEEL" pdms --help > /dev/null
+          if [ -n "$(ls xpi/*.xpi 2>/dev/null)" ] && ! unzip -l "$WHEEL" | grep -q 'pdms_cli/browser_extension/firefox.xpi'; then
+            echo "::error::firefox.xpi is not in the wheel."
+            exit 1
+          fi
       - name: Release notes from CHANGELOG.md
         run: |
           awk -v tag="$GITHUB_REF_NAME" '
@@ -65,6 +143,10 @@ jobs:
             found && /^## / { exit }
             found { print }
           ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no notes for $GITHUB_REF_NAME (a '## $GITHUB_REF_NAME' section). Use 'cz bump'."
+            exit 1
+          fi
           cat >> notes.md <<'NOTES'
 
           ## Install
@@ -82,14 +164,53 @@ jobs:
           Already installed: `pdms self-update`.
           NOTES
           cat notes.md
-      - name: Publish the release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Files of the release
         run: |
           cp installer/install.sh installer/install.ps1 dist/
           cp xpi/*.xpi dist/ 2>/dev/null || true  # pdms installed from a checkout downloads it from here
-          PRERELEASE=""
-          case "$GITHUB_REF_NAME" in
-            *a[0-9]*|*b[0-9]*|*rc[0-9]*) PRERELEASE="--prerelease" ;;  # alpha/beta/rc: not "latest"
-          esac
-          gh release create "$GITHUB_REF_NAME" dist/* --title "pdms $GITHUB_REF_NAME" --notes-file notes.md $PRERELEASE
+          cp notes.md dist-notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist/
+            dist-notes.md
+          retention-days: 7
+
+  publish:
+    name: publish
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.check.outputs.prerelease }}
+        run: |
+          FLAG=""
+          if [ "$PRERELEASE" = true ]; then FLAG="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "pdms $GITHUB_REF_NAME" \
+            --notes-file dist-notes.md $FLAG
+
+  installer:
+    name: install.sh of the latest release
+    # A stable release becomes "latest": what a new user runs must install it.
+    needs: [check, publish]
+    if: needs.check.outputs.prerelease != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: curl … install.sh | sh
+        run: |
+          export HOME="$RUNNER_TEMP/home" UV_TOOL_DIR="$RUNNER_TEMP/home/tools" UV_TOOL_BIN_DIR="$RUNNER_TEMP/home/bin"
+          mkdir -p "$HOME"
+          curl -LsSf "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/install.sh" | sh
+          GOT="$("$UV_TOOL_BIN_DIR/pdms" --version)"
+          echo "$GOT"
+          echo "$GOT" | grep -qF "${GITHUB_REF_NAME#v}" || { echo "::error::install.sh installed '$GOT'."; exit 1; }
