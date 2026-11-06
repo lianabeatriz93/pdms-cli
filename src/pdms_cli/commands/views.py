@@ -131,7 +131,8 @@ def view_use(
                                       name=name, view=view), highlight=False)
 
 
-@view_app.command("stop", help=_("The services read the real view again (from their next start); the copy stays."))
+@view_app.command("unuse", help=_("The services read the real view again (from their next start); the copy stays."))
+@view_app.command("stop", hidden=True)  # its first name: "stop" read as stopping something
 def view_stop(view: str = typer.Argument(..., help=_("The view, e.g. pdms_report_lead_view."))) -> None:
     cfg = Config.load()
     if not testviews.stop_using(cfg, view):

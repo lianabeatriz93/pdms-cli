@@ -320,6 +320,9 @@ def do_run(
     wait_until_ready(actions.start_service(cfg, launch, awake=awake))
 
 
+PORT_HELP = _("Port to listen on (default: the port setting, or the next free one).")
+HOST_HELP = _("Address to listen on (default: the host setting).")
+RELOAD_HELP = _("Restart when its code changes (default: the reload setting).")
 ON_DEMAND_HELP = _("Start it with the proxy's first request for it, and stop it again when idle (default: the "
                    "on_demand setting); --always-on runs it now and keeps it running.")
 
@@ -380,12 +383,12 @@ def run(
     ),
     user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Development user alias."), autocompletion=completion.users),
     db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias."), autocompletion=completion.dbs),
-    port: Optional[int] = typer.Option(None, "--port", "-p"),
-    host: Optional[str] = typer.Option(None, "--host"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help=PORT_HELP),
+    host: Optional[str] = typer.Option(None, "--host", help=HOST_HELP),
     install: Optional[bool] = typer.Option(
         None, "--install/--no-install", "-i/-n", help=_("Force (-i) or skip (-n) the install; by default only if something changed.")
     ),
-    reload: Optional[bool] = typer.Option(None, "--reload/--no-reload"),
+    reload: Optional[bool] = typer.Option(None, "--reload/--no-reload", help=RELOAD_HELP),
     background: Optional[bool] = typer.Option(None, "--background/--foreground", "-b/-f", help=_("Background or foreground.")),
     yes: bool = typer.Option(False, "--yes", "-y", help=_("Do not ask for confirmation on protected DBs.")),
     path: Optional[Path] = typer.Option(None, "--path", "-C", help=_("Service folder (defaults to the current one).")),
@@ -406,8 +409,8 @@ def debug(
     ),
     user: Optional[str] = typer.Option(None, "--user", "-u", help=_("Development user alias."), autocompletion=completion.users),
     db: Optional[str] = typer.Option(None, "--db", "-d", help=_("Database alias."), autocompletion=completion.dbs),
-    port: Optional[int] = typer.Option(None, "--port", "-p"),
-    host: Optional[str] = typer.Option(None, "--host"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help=PORT_HELP),
+    host: Optional[str] = typer.Option(None, "--host", help=HOST_HELP),
     install: Optional[bool] = typer.Option(
         None, "--install/--no-install", "-i/-n", help=_("Force (-i) or skip (-n) the install; by default only if something changed.")
     ),

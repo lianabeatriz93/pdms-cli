@@ -194,3 +194,10 @@ def proxy_routes(
         shown += 1
     console.print(table)
     console.print(_("{shown} of {total} routes.", shown=shown, total=len(repo_routes)))
+
+
+@proxy_app.command("stop", help=_("Stop the background proxy (the same as pdms stop proxy)."))
+def proxy_stop() -> None:
+    from .instances import stop
+
+    stop("proxy", False)

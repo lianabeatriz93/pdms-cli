@@ -19,9 +19,12 @@ DOCTOR_ICONS = {diagnostics.OK: "[green]✓[/]", diagnostics.WARN: "[yellow]⚠[
 @app.command("doctor", help=_("Check that everything pdms needs is in place (tools, configuration, databases, repo, ports)."))
 def doctor_cmd(
     no_db: bool = typer.Option(False, "--no-db", help=_("Do not test the database connections.")),
-    timeout: int = typer.Option(5, "--timeout", "-t", help=_("Seconds to wait for each database.")),
+    timeout: Optional[int] = typer.Option(
+        None, "--timeout", "-t", help=_("Seconds to wait for each database (default: the db_timeout setting)."),
+    ),
 ) -> None:
     cfg = Config.load()
+    timeout = timeout or cfg.defaults.db_timeout
     with console.status(_("Checking the environment...")):
         checks = diagnostics.run_all(cfg, databases=not no_db, timeout=timeout)
     section = None
