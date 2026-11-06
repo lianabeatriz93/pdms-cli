@@ -60,7 +60,8 @@ def db_remove(
         print_removed(name, actions.remove_db(cfg, name))
 
 
-@db_app.command("test", help=_("Test the connection to one or all databases."))
+@db_app.command("ping", help=_("Test the connection to one or all databases."))
+@db_app.command("test", hidden=True)  # its first name, easy to mix up with pdms test and db local tests
 def db_test(
     name: Optional[str] = typer.Argument(None, help=_("Empty = test all."), autocompletion=completion.dbs),
     timeout: Optional[int] = typer.Option(

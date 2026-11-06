@@ -502,17 +502,19 @@ passwords you already have and backs up the configuration first. Repos are never
 | `pdms run`, `debug`, `env`, `services` | Run a service, debug it in VS Code, print its variables, list the repo's services |
 | `pdms ps`, `logs`, `urls`, `open`, `restart`, `stop`, `adopt` | Background services |
 | `pdms stack`, `up`, `down` | Stacks (`list`, `add`, `rename`, `edit`, `remove`) |
-| `pdms proxy`, `front` | Local API gateway, the web app |
-| `pdms browser` | Extension that opens the local web app from the known front (`install`, `redirect`, `status`) |
+| `pdms proxy`, `front` | Local API gateway (`routes`, `stop`), the web app |
+| `pdms browser` | Extension that opens the local web app from the known front (`install`, `redirect`, `status`, `trust`) |
 | `pdms events` | Local SQS (`map`, `up`, `status`, `send`, `peek`, `purge`, `down`) |
-| `pdms aws` | AWS profile (`profile`, `login`, `status`, `read`), the Lambdas' logs and events (`logs`, `lambdas`) |
-| `pdms db`, `user`, `repo`, `config` | Databases (and `db local`), development users, repos, settings |
-| `pdms view` | Test copies of materialized views (`create`, `use`, `stop`, `drop`, `sql`) |
+| `pdms aws` | AWS profile (`profile`, `login`, `status`, `read`, `codeartifact`), the Lambdas' logs and events (`logs`, `lambdas`) |
+| `pdms db`, `user`, `repo`, `config` | Databases (`ping`, and `db local` with its `snapshot`s), development users (`import`, `rename`), repos (`use`), settings |
+| `pdms view` | Test copies of materialized views (`list`, `create`, `use`, `unuse`, `refresh`, `drop`, `sql`) |
 | `pdms test`, `migrate` | Tests on a test database, Flyway |
 | `pdms self-update` | Update pdms (`--list`, `--version` to go back) |
 | `pdms bug-report` | A report to send with a problem, without passwords |
 
-`pdms <command> --help` shows every option.
+`pdms <command> --help` shows every option. For scripts: `--json` on `ps` and the `list` commands, `--yes` on the
+commands that ask before deleting, and errors on stderr. `db test` and `view stop`, the first names of `db ping` and
+`view unuse`, still work.
 
 ## Development
 
