@@ -266,6 +266,7 @@ def _wake(instance: instances.Instance) -> instances.Instance:
 
 
 ACCESS_TTL = 30  # seconds between two reads of who may use the proxy
+REGISTRY_TTL = 1.0  # seconds the proxy trusts what it last read of the registry (see Gateway.local_instances)
 
 
 def _idle_seconds() -> float:
@@ -299,6 +300,7 @@ class Gateway:
     _last_request: dict[str, float] = field(default_factory=dict)  # instance key -> time.monotonic()
     _in_progress: Counter = field(default_factory=Counter)  # instance key -> requests it is answering
     _access: tuple[float, Access] | None = None
+    _running: tuple[float, tuple[int, int] | None, dict[str, list[instances.Instance]]] | None = None
 
     def access(self) -> Access:
         now = time.monotonic()
@@ -312,10 +314,23 @@ class Gateway:
     # ------------------------------------------------------------------ targets
 
     def local_instances(self) -> dict[str, list[instances.Instance]]:
+        """The instances that answer HTTP, by service folder. Kept for up to REGISTRY_TTL seconds while the registry
+        file stays the same: a page load sends dozens of requests, and each read the registry and asked the system
+        about every process. Any change of the registry (a start, a stop, a wake) is seen at once."""
+        try:
+            stat = instances.registry_path().stat()
+            stamp: tuple[int, int] | None = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            stamp = None
+        now = time.monotonic()
+        cached = self._running
+        if cached is not None and cached[1] == stamp and now - cached[0] < REGISTRY_TTL:
+            return cached[2]
         found: dict[str, list[instances.Instance]] = {}
         for inst in instances.load().values():
             if inst.present() and not inst.is_consumer:  # event consumers have no HTTP API
                 found.setdefault(str(Path(inst.service).resolve()), []).append(inst)
+        self._running = (now, stamp, found)
         return found
 
     def target(self, route: Route | None, running: dict[str, list[instances.Instance]] | None = None) -> Target:

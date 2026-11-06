@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import sys
 
+TIMEOUT = 60  # seconds: every AWS call of a service waits for this (an SSO session being refreshed takes a few)
+
 
 def main(argv: list[str] | None = None) -> int:
     profile, config = argv if argv is not None else sys.argv[1:3]
@@ -24,8 +26,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     env = {**os.environ, "AWS_CONFIG_FILE": config}
     env.pop("AWS_PROFILE", None)
-    return subprocess.run([tool, "configure", "export-credentials", "--profile", profile, "--format", "process"],
-                          env=env, stdin=subprocess.DEVNULL).returncode
+    try:
+        return subprocess.run([tool, "configure", "export-credentials", "--profile", profile, "--format", "process"],
+                              env=env, stdin=subprocess.DEVNULL, timeout=TIMEOUT).returncode
+    except subprocess.TimeoutExpired:  # the service's request fails with this instead of hanging
+        print(f"pdms: aws configure export-credentials gave no answer in {TIMEOUT} s", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
