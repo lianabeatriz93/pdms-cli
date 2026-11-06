@@ -641,3 +641,33 @@ def test_quick_install_only_when_following_the_settings(cfg, monkeypatch, tmp_pa
     cfg.defaults.smart_install = True
     monkeypatch.setattr(actions.runner, "poetry_python", lambda service: None)  # no virtualenv yet
     assert actions.quick_install(cfg, tmp_path, None) is None
+
+
+def test_restart_plans_before_stopping_and_keeps_its_own_busy_port(cfg, ports, http_service, monkeypatch,
+                                                                  tmp_path) -> None:
+    order = []
+    ports["busy"].add(8081)  # the instance itself still listens there while the restart plans
+    ports["taken"].add(8081)
+
+    def stop(inst) -> None:
+        order.append("stop")
+        ports["busy"].clear()
+        ports["taken"].clear()
+
+    monkeypatch.setattr(actions.instances, "stop", stop)
+    monkeypatch.setattr(actions, "installed_parts", lambda service: None)
+    monkeypatch.setattr(actions.instances, "start",
+                        lambda service, cmd, env, **kw: order.append("start") or SimpleNamespace(**kw))
+    started = actions.restart_service(cfg, _instance(tmp_path, on_demand=True, parallel=True))
+    assert order == ["stop", "start"]
+    assert (started.port, started.on_demand, started.parallel) == (8081, True, True)  # not the settings' defaults
+
+
+def test_a_restart_that_cannot_be_planned_leaves_the_instance_running(cfg, ports, http_service, monkeypatch,
+                                                                       tmp_path) -> None:
+    stopped = []
+    monkeypatch.setattr(actions.instances, "stop", stopped.append)
+    monkeypatch.setattr(actions.events, "running", lambda port: False)  # it published to the local ElasticMQ: gone
+    with pytest.raises(actions.LocalEventsDown):
+        actions.restart_service(cfg, _instance(tmp_path, events="local"))
+    assert not stopped

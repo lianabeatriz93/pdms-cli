@@ -376,3 +376,13 @@ def test_the_credential_process_asks_the_cli_with_the_users_config(monkeypatch, 
     assert awscreds.main(["pdm-dev", str(tmp_path / "config")]) == 0
     assert seen["cmd"][1:] == ["configure", "export-credentials", "--profile", "pdm-dev", "--format", "process"]
     assert seen["env"]["AWS_CONFIG_FILE"] == str(tmp_path / "config") and "AWS_PROFILE" not in seen["env"]
+
+
+def test_only_bucket_names_and_the_sender_are_kept_never_a_secret_named_after_a_bucket() -> None:
+    kept = [name for name in ("DOWNLOABLE_FILES_BUCKET_S3", "DOWNLOABLE_FILES_BUCKET_REGION_S3", "EMAIL_SENDER",
+                              "BUCKET_SECRET_KEY", "UPLOADS_BUCKET_ACCESS_KEY", "BUCKET_TOKEN", "DB_PASSWORD",
+                              "EMAIL_SENDER_PASSWORD", "BUCKET_PASSWORD_S3", "BUCKET_SECRETS", "BUCKET_PWD",
+                              "BUCKET_PASS", "BUCKETPASSWORD", "BUCKET_KEY", "BUCKET_SIGNING_KEY", "MY_SECRETBUCKET",
+                              "BUCKET_SESSION_TOKEN", "BUCKET_ACCESS_KEY_ID", "DOCS_BUCKET_NAME")
+            if awsenv.KEPT.search(name)]
+    assert kept == ["DOWNLOABLE_FILES_BUCKET_S3", "DOWNLOABLE_FILES_BUCKET_REGION_S3", "EMAIL_SENDER", "DOCS_BUCKET_NAME"]

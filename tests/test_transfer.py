@@ -86,7 +86,7 @@ def test_merge_adds_new_entries_and_keeps_conflicts_unless_chosen():
     chosen = transfer.apply_import(mine, doc.config, ALL, {("users", "supervisor"), ("dbs", "web")})
     assert chosen.users["supervisor"].roles == "TPR.Admin"
     assert chosen.dbs["web"].host == "other.example.com"
-    assert chosen.dbs["web"].password == "web-secret"  # file had no password: local one is kept
+    assert chosen.dbs["web"].password == ""  # another host: the local password is not sent there
 
 
 def test_defaults_only_change_when_chosen_or_replacing():
@@ -125,3 +125,15 @@ def test_replace_removes_local_entries_missing_from_the_file():
 def test_invalid_documents_are_rejected(text):
     with pytest.raises(transfer.TransferError):
         transfer.read_document(text)
+
+
+def test_an_import_that_moves_a_database_elsewhere_does_not_take_the_local_password():
+    mine = make_config()
+    theirs = make_config()
+    theirs.dbs["web"] = Database(host="attacker.example.com", user="writer", password="", protected=False)
+    plans = {p.section: p for p in transfer.plan_import(mine, theirs, ["dbs"])}
+    assert plans["dbs"].changed == ["web"]
+    result = transfer.apply_import(mine, theirs, ["dbs"], {("dbs", "web")})
+    assert result.dbs["web"].password == ""  # never sent to the other host
+    theirs.dbs["web"] = Database(host="DB.example.com", user="writer", password="", protected=True)
+    assert transfer.apply_import(mine, theirs, ["dbs"], {("dbs", "web")}).dbs["web"].password == "web-secret"

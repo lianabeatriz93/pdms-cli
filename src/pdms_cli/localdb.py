@@ -68,17 +68,23 @@ def up(port: int = PORT, wait: float = 60) -> dict:
             timeout=600,
         )
         if code != 0:
-            raise actions.ActionError(_("Could not start {name}: {error}", name=CONTAINER, error=out.splitlines()[-1:]))
+            raise actions.ActionError(_("Could not start {name}: {error}", name=CONTAINER, error=last_line(out, code)))
     elif not now["running"]:
         code, out = _docker("start", CONTAINER)
         if code != 0:
-            raise actions.ActionError(_("Could not start {name}: {error}", name=CONTAINER, error=out.splitlines()[-1:]))
+            raise actions.ActionError(_("Could not start {name}: {error}", name=CONTAINER, error=last_line(out, code)))
     deadline = time.monotonic() + wait
     while _docker("exec", CONTAINER, "pg_isready", "-U", USER, "-d", MAIN_DB, timeout=10)[0] != 0:
         if time.monotonic() > deadline:
             raise actions.ActionError(_("{name} does not answer yet; try again in a moment.", name=CONTAINER))
         time.sleep(1)
     return state()
+
+
+def last_line(out: str, code: int) -> str:
+    """What a failed docker command said last (its exit code when it said nothing)."""
+    lines = out.strip().splitlines()
+    return lines[-1] if lines else str(code)
 
 
 def down() -> bool:
@@ -153,12 +159,33 @@ def copy_into_test_database(name: str, timeout: float = 600) -> None:
         raise actions.ActionError(_("There is no local copy yet: make it first (Data → Make the local copy, or pdms "
                                     "db local refresh)."))
     recreate_test_database(name)
-    code, out = _docker("exec", CONTAINER, "sh", "-c",
-                        f'pg_dump -U {USER} -Fc {MAIN_DB} | pg_restore -U {USER} --no-owner -d "{name}"',
-                        timeout=timeout)
-    if code not in (0, 1):  # 1: warnings (an extension that is there already)
+    # bash with pipefail (the image is Debian's): with sh, a pg_dump that failed fed pg_restore nothing, and only
+    # pg_restore's exit code counted, so an empty database passed as copied.
+    try:  # not _docker: its exit code 1 for a timeout would read as pg_restore's harmless errors
+        result = subprocess.run(
+            ["docker", "exec", CONTAINER, "bash", "-o", "pipefail", "-c",
+             f'pg_dump -U {USER} -Fc {MAIN_DB} | pg_restore -U {USER} --no-owner -d "{name}"'],
+            capture_output=True, text=True, errors="replace", timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
         raise actions.ActionError(_("Copying the local copy into {name} failed: {error}", name=name,
-                                    error=out.strip()[-300:] or code))
+                                    error=exc)) from exc
+    code, out = result.returncode, result.stdout + result.stderr
+    problems = restore_problems(out)
+    if code not in (0, 1) or problems:
+        raise actions.ActionError(_("Copying the local copy into {name} failed: {error}", name=name,
+                                    error="; ".join(problems)[-300:] or out.strip()[-300:] or code))
+
+
+# pg_restore exits with 1 when it went on past errors, harmless ones included: a schema or an extension the new
+# database has already. Only those are let through; any other error means the copy is incomplete.
+HARMLESS_RESTORE_ERRORS = re.compile(
+    r'ERROR:\s+(schema "public" already exists|extension "[^"]+" already exists|must be owner of extension)')
+
+
+def restore_problems(output: str) -> list[str]:
+    """The errors in the output of pg_dump / pg_restore that are not harmless (see ``HARMLESS_RESTORE_ERRORS``)."""
+    return [line.strip() for line in output.splitlines()
+            if re.match(r"\s*pg_(dump|restore): error:", line) and not HARMLESS_RESTORE_ERRORS.search(line)]
 
 
 def available(timeout: float = 15) -> bool:

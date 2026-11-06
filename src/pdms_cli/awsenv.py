@@ -33,7 +33,9 @@ from . import instances, repos, routes, runner
 from .config import Config, write_private
 from .i18n import _
 
-KEPT = re.compile(r"BUCKET|^EMAIL_SENDER$")  # the only variables copied from a Lambda's environment
+# The only variables copied from a Lambda's environment: bucket names and the email sender. Never one whose name says
+# it holds a secret, even with BUCKET in it (the environment of a Lambda holds passwords and keys too).
+KEPT = re.compile(r"^(?!.*(SECRET|PASSW|TOKEN|CREDENTIAL|(^|_)(PWD|PASS|KEY)(_|$))).*BUCKET|^EMAIL_SENDER$")
 DEFAULT_REGION = "us-east-1"
 READ_EVERY = 24 * 3600  # seconds between two reads of the Lambdas by pdms ui
 # What the AWS CLI says when the SSO session is over (then `aws sso login` fixes it).

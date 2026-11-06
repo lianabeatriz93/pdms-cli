@@ -279,7 +279,9 @@ def do_run(
     python: Optional[bool] = None,
     migrate: Optional[bool] = None,
     check_views: bool = True,
+    awake: bool = False,
 ) -> None:
+    """``awake``: an on-demand service starts now (and sleeps again when idle) instead of waiting asleep."""
     cfg = Config.load()
     service = resolve_service(cfg, service_name, path)
     consumer = actions.consumer_of(cfg, service)
@@ -315,7 +317,7 @@ def do_run(
         console.rule(launch.queue if launch.is_consumer else f"uvicorn :{launch.port}")
         actions.exec_service(cfg, launch)
 
-    wait_until_ready(actions.start_service(cfg, launch))
+    wait_until_ready(actions.start_service(cfg, launch, awake=awake))
 
 
 ON_DEMAND_HELP = _("Start it with the proxy's first request for it, and stop it again when idle (default: the "

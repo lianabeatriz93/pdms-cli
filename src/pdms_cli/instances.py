@@ -21,7 +21,7 @@ import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
 
@@ -259,7 +259,16 @@ def load() -> dict[str, Instance]:
         data = json.loads(registry_path().read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
-    return {k: Instance(**v) for k, v in data.items()}
+    known = {f.name for f in fields(Instance)}
+    instances = {}
+    for key, value in data.items():
+        # Only the fields this version knows: another version of pdms (a beta, then the stable one again) may have
+        # written more, and Instance(**value) refused them, which made every command fail.
+        try:
+            instances[key] = Instance(**{k: v for k, v in value.items() if k in known})
+        except (TypeError, AttributeError):  # not an entry this version can use: it is left out, not fatal
+            continue
+    return instances
 
 
 _registry_thread_lock = threading.RLock()

@@ -170,3 +170,21 @@ def test_pdms_restart_picks_a_stack_s_running_services(cfg, backend, monkeypatch
 
     with pytest.raises(typer.Exit):
         instance_commands.restart_targets(cfg, ["c"], "s")  # in the stack, but not running
+
+
+def test_pdms_restart_keeps_on_demand_and_parallel_as_the_instance_ran(cfg, monkeypatch, tmp_path) -> None:
+    inst = Instance(key="a@8081", pid=1, service=str(tmp_path / "a"), host="0.0.0.0", port=8081, user="supervisor",
+                    db="local", reload=True, log="x.log", started_at="", on_demand=True, parallel=True)
+    monkeypatch.setattr(Config, "load", classmethod(lambda cls: cfg))
+    monkeypatch.setattr(instance_commands, "restart_targets", lambda cfg, keys, stack: [inst])
+    monkeypatch.setattr(instance_commands, "python_answer", lambda cfg, services, install: None)
+    monkeypatch.setattr(instance_commands, "migrate_first", lambda cfg, dbs: None)
+    monkeypatch.setattr(instance_commands, "views_first", lambda cfg, pairs: None)
+    monkeypatch.setattr(actions, "stop_service", lambda inst: None)
+    runs = []
+    monkeypatch.setattr(instance_commands, "do_run", lambda **kw: runs.append(kw))
+    instance_commands.restart(keys=["a"], user=None, db=None, change=False, install=None, stack=None, remember=False)
+    assert (runs[0]["on_demand"], runs[0]["parallel"], runs[0]["awake"]) == (True, True, True)
+    inst.pid = 0  # asleep: it stays asleep, for the proxy to wake
+    instance_commands.restart(keys=["a"], user=None, db=None, change=False, install=None, stack=None, remember=False)
+    assert runs[1]["awake"] is False

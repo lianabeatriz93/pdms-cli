@@ -151,20 +151,36 @@ def main() -> None:
             if token is not None:
                 pdms_trace.current.reset(token)
         took = f"{(time.monotonic() - started) * 1000:.0f}ms"
-        for message in messages:
-            receives = attempts[message["MessageId"]] = attempts.get(message["MessageId"], 0) + 1
-            if message["MessageId"] not in failed:
-                attempts.pop(message["MessageId"], None)
-                client.delete_message(QueueUrl=args.queue_url, ReceiptHandle=message["ReceiptHandle"])
-                log(f"Processed {describe(message)} in {took}")
-            elif receives >= args.max_receives:
-                attempts.pop(message["MessageId"], None)
-                client.delete_message(QueueUrl=args.queue_url, ReceiptHandle=message["ReceiptHandle"])
-                log(f"FAILED {describe(message)} {receives} times: dropped (there is no dead-letter queue locally)")
-            else:
-                client.change_message_visibility(QueueUrl=args.queue_url, ReceiptHandle=message["ReceiptHandle"],
-                                                  VisibilityTimeout=RETRY_DELAY)
-                log(f"FAILED {describe(message)} (attempt {receives}/{args.max_receives}); retrying in {RETRY_DELAY}s")
+        settle_batch(client, args, messages, failed, took, attempts)
+
+
+def settle_batch(client, args, messages: list[dict], failed: set[str], took: str, attempts: dict[str, int]) -> None:
+    """Tell the queue how each message of a batch went. A queue that does not answer (ElasticMQ restarted: pdms
+    recreates it when the queues change) must not end the consumer: the message comes back after its visibility
+    timeout."""
+    for message in messages:
+        receives = attempts[message["MessageId"]] = attempts.get(message["MessageId"], 0) + 1
+        try:
+            settle(client, args, message, receives, message["MessageId"] not in failed, took, attempts)
+        except Exception:  # noqa: BLE001 - any error of the client: logged, and the next batch is read
+            log(f"Could not settle {describe(message)} with the queue (it will come back):")
+            traceback.print_exc()
+
+
+def settle(client, args, message: dict, receives: int, processed: bool, took: str, attempts: dict[str, int]) -> None:
+    """Delete a processed message (or one that failed too many times), or make a failed one visible again later."""
+    if processed:
+        attempts.pop(message["MessageId"], None)
+        client.delete_message(QueueUrl=args.queue_url, ReceiptHandle=message["ReceiptHandle"])
+        log(f"Processed {describe(message)} in {took}")
+    elif receives >= args.max_receives:
+        attempts.pop(message["MessageId"], None)
+        client.delete_message(QueueUrl=args.queue_url, ReceiptHandle=message["ReceiptHandle"])
+        log(f"FAILED {describe(message)} {receives} times: dropped (there is no dead-letter queue locally)")
+    else:
+        client.change_message_visibility(QueueUrl=args.queue_url, ReceiptHandle=message["ReceiptHandle"],
+                                          VisibilityTimeout=RETRY_DELAY)
+        log(f"FAILED {describe(message)} (attempt {receives}/{args.max_receives}); retrying in {RETRY_DELAY}s")
 
 
 if __name__ == "__main__":

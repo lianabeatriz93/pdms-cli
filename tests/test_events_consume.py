@@ -71,3 +71,23 @@ def test_queue_of_service_and_poller_command():
     assert cmd[cmd.index("--queue-url") + 1] == "http://localhost:9324/000000000000/q.fifo"
     assert cmd[cmd.index("--handler") + 1] == "pkg.entry.lambda_handler"
     assert cmd[cmd.index("--timeout") + 1] == "900"
+
+
+def test_a_queue_that_stopped_answering_does_not_end_the_consumer(capsys):
+    from types import SimpleNamespace
+
+    calls = []
+
+    class Client:
+        def delete_message(self, **kw):
+            calls.append("delete")
+            raise ConnectionError("ElasticMQ is restarting")
+
+        def change_message_visibility(self, **kw):
+            calls.append("visibility")
+
+    second = {**MESSAGE, "MessageId": "second", "ReceiptHandle": "r2"}
+    args = SimpleNamespace(queue_url="http://localhost:9324/q", max_receives=3)
+    poller.settle_batch(Client(), args, [MESSAGE, second], {"second"}, "5ms", {})
+    assert calls == ["delete", "visibility"]  # the second message was still settled
+    assert "Could not settle" in capsys.readouterr().out
