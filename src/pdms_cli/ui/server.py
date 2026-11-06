@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import re
 import secrets
+import sys
 import threading
+import traceback
 from collections.abc import Callable
 from http import cookies
 from http.server import BaseHTTPRequestHandler
@@ -118,7 +120,10 @@ class Hub:
         with self._changed:
             self.watchers += 1
         if not self.latest:
-            self.refresh()
+            try:
+                self.refresh()
+            except Exception:  # noqa: BLE001 - the hub tries again at its next tick; the page waits for it
+                traceback.print_exc()
 
     def unwatch(self) -> None:
         with self._changed:
@@ -258,10 +263,37 @@ def make_handler(
                 self.logs(query, live=url.path.endswith("/stream"))
             elif url.path == "/api/logs/streams":
                 self.follow_many(query)
-            elif (answer := api.get(url.path, query)) is not None:
-                self.reply_json(*answer)
             else:
-                self.reply_json(404, {"detail": "not found"})
+                try:
+                    answer = api.get(url.path, query)
+                except Exception as exc:  # noqa: BLE001 - see unexpected()
+                    self.unexpected(exc)
+                    return
+                if answer is not None:
+                    self.reply_json(*answer)
+                else:
+                    self.reply_json(404, {"detail": "not found"})
+
+        def unexpected(self, exc: Exception) -> None:
+            """A bug, not something the user can fix: a 500 that says what happened (the page shows it), and its
+            traceback in pdms ui's log. Without it the connection just closed and the page said pdms ui was gone."""
+            traceback.print_exc(file=sys.stderr)
+            try:
+                self.reply_json(500, {"error": f"pdms ui: {type(exc).__name__}: {exc}"})
+            except OSError:  # the page went away meanwhile
+                pass
+
+        def content_length(self) -> int | None:
+            """The body's length, or None after answering 400 when the header is not a number of bytes."""
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0:
+                self.reply_json(400, {"error": "invalid Content-Length"})
+                self.close_connection = True
+                return None
+            return length
 
         def show_request(self) -> bool:
             """A second ``pdms ui`` asking this one to show itself, with the token it read from ui.json. It sends a
@@ -271,7 +303,9 @@ def make_handler(
                 return False
             if not self.allowed():
                 return True
-            self.rfile.read(min(int(self.headers.get("Content-Length") or 0), MAX_BODY))
+            if (length := self.content_length()) is None:
+                return True
+            self.rfile.read(min(length, MAX_BODY))
             if not secrets.compare_digest(given, token):
                 self.reply_json(403, {"error": "wrong token"})
                 return True
@@ -290,7 +324,8 @@ def make_handler(
                     self.headers.get("Origin", "")):
                 self.reply(403, "text/plain", b"pdms ui: only the pdms browser extension asks this\n")
                 return True
-            length = int(self.headers.get("Content-Length") or 0)
+            if (length := self.content_length()) is None:
+                return True
             try:
                 body = json.loads(self.rfile.read(min(length, MAX_BODY)) or b"{}")
             except ValueError:
@@ -319,7 +354,8 @@ def make_handler(
             if self.headers.get_content_type() != "application/json":
                 self.reply_json(415, {"error": "expected application/json"})
                 return
-            length = int(self.headers.get("Content-Length") or 0)
+            if (length := self.content_length()) is None:
+                return
             if length > MAX_BODY:
                 self.reply_json(413, {"error": "request too large"})
                 return
@@ -331,8 +367,13 @@ def make_handler(
             if not isinstance(body, dict):
                 self.reply_json(400, {"error": "expected a JSON object"})
                 return
-            status, data = api.post(urlsplit(self.path).path, body)
-            hub.poke()
+            try:
+                status, data = api.post(urlsplit(self.path).path, body)
+            except Exception as exc:  # noqa: BLE001 - see unexpected()
+                self.unexpected(exc)
+                return
+            finally:
+                hub.poke()
             self.reply_json(status, data)
 
         # ------------------------------------------------------------------ logs
