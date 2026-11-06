@@ -29,6 +29,8 @@ dev = [
     "playwright>=1.50",
     "pytest>=8",
     "pytest-playwright>=0.7",
+    "pytest-timeout>=2.3",
+    "pytest-xdist>=3.6",
 ]
 
 [project.scripts]
@@ -51,6 +53,8 @@ packages = ["src/pdms_cli"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# A hung test fails after this many seconds instead of holding the run (and a CI runner) until its job timeout.
+timeout = 120
 
 [tool.ruff]
 target-version = "py310"

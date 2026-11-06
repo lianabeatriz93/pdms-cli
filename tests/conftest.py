@@ -7,6 +7,28 @@ import pytest
 from pdms_cli import i18n
 
 
+@pytest.fixture(autouse=True, scope="session")
+def quick_servers():
+    """Test servers stop at once: serve_forever checks for shutdown() every 0.5 s by default (each proxy test spent
+    a second in teardown waiting for it), and shutdown() left the socket listening, so "is it down?" checks waited for
+    a connection timeout instead of being refused."""
+    import socketserver
+
+    serve, shutdown = socketserver.BaseServer.serve_forever, socketserver.BaseServer.shutdown
+
+    def serve_forever(self, poll_interval: float = 0.02) -> None:
+        serve(self, poll_interval)
+
+    def shutdown_and_close(self) -> None:
+        shutdown(self)
+        self.server_close()
+
+    socketserver.BaseServer.serve_forever = serve_forever
+    socketserver.BaseServer.shutdown = shutdown_and_close
+    yield
+    socketserver.BaseServer.serve_forever, socketserver.BaseServer.shutdown = serve, shutdown
+
+
 @pytest.fixture(autouse=True)
 def english():
     """Tests assert English texts, whatever language the developer's own config uses."""
