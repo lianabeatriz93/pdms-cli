@@ -277,3 +277,20 @@ def test_it_reloads_only_once_the_folder_has_the_new_files(cfg) -> None:
     assert browser.answer(Config.load())["version"] == "0.9.0"  # pdms changed, the folder not yet: no reload
     browser.refresh_extension()
     assert browser.answer(Config.load())["version"] == browser.version()
+
+
+# What each signed version of the extension was made from. Mozilla signs a version once and release.yml reuses the
+# signed file of that version, so a change to the extension without a new version in manifest.json would ship the old
+# code. Changed the extension? Raise "version" in manifest.json and add its line here.
+SIGNED_SOURCES = {
+    "1.1.0": "4515ed1ff944cdaefb5f43121314df2028d9da1ade0b253cf92dee65c1ef6261",
+}
+
+
+def test_a_changed_extension_has_a_new_version() -> None:
+    digest = hashlib.sha256()
+    for path in sorted(p for p in browser.SOURCE.iterdir() if p.is_file() and p.name != browser.XPI):
+        digest.update(path.name.encode() + b"\0" + path.read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    assert SIGNED_SOURCES.get(browser.version()) == digest.hexdigest(), (
+        f"The extension changed but its version is still {browser.version()}: raise it in manifest.json and record "
+        f'"{browser.version()}": "{digest.hexdigest()}" (the new version) in SIGNED_SOURCES.')
