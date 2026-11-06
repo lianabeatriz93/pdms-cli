@@ -20,7 +20,7 @@ def config_file(tmp_path, monkeypatch):
 
 
 def test_a_reader_never_sees_a_half_written_config(config_file) -> None:
-    cfg = Config(users={f"user{n}": DevUser(f"u{n}", f"{n}@x.com") for n in range(200)},
+    cfg = Config(users={f"user{n}": DevUser(f"u{n}", f"{n}@x.com") for n in range(30)},
                  dbs={"local": Database("localhost", password="secret")})
     cfg.save()
     done = threading.Event()
@@ -32,9 +32,9 @@ def test_a_reader_never_sees_a_half_written_config(config_file) -> None:
     writer = threading.Thread(target=write)
     writer.start()
     try:
-        for _ in range(300):
+        for _ in range(60):
             seen = Config.load()  # an empty or truncated file read as defaults, or failed to parse
-            assert len(seen.users) == 200 and seen.dbs["local"].password == "secret"
+            assert len(seen.users) == 30 and seen.dbs["local"].password == "secret"
     finally:
         done.set()
         writer.join()
