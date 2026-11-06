@@ -473,4 +473,10 @@ def env(
     db_name = pick(cfg.dbs, _("database"), db, cfg.last_db)
     variables = runner.service_env(cfg.defaults, cfg.users[user_name], cfg.dbs[db_name], awsenv.profile_env(cfg))
     for key, value in variables.items():
-        print(f'{key}="{value}"' if dotenv else f"export {key}={shlex.quote(value)}")
+        print(f'{key}="{dotenv_value(value)}"' if dotenv else f"export {key}={shlex.quote(value)}")
+
+
+def dotenv_value(value: str) -> str:
+    """``value`` inside the double quotes of a .env line: a password with a quote, a $ or a line break broke it."""
+    return (value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+            .replace("\n", "\\n").replace("\r", "\\r"))

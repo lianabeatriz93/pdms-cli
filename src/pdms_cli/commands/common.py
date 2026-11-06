@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
@@ -16,6 +18,8 @@ from ..config import Config, Database
 from ..i18n import _
 
 console = Console()
+# Errors go to stderr: eval "$(pdms env …)" and scripts reading the output must not get them as output.
+err_console = Console(stderr=True)
 
 
 T = TypeVar("T")
@@ -73,8 +77,26 @@ app.add_typer(events_app, name="events")
 
 
 def fail(message: str) -> None:
-    console.print(f"[red]✗[/] {message}")
+    err_console.print(f"[red]✗[/] {message}")
     raise typer.Exit(1)
+
+
+YES_HELP = _("Do it without asking (for scripts).")
+JSON_HELP = _("Print JSON instead of a table (for scripts).")
+
+
+def confirm(question: str, yes: bool) -> bool:
+    """``yes``, or the user's answer; without a terminal to ask in, a failure that says to pass --yes."""
+    if yes:
+        return True
+    if not interactive_terminal():
+        fail(_("{question} There is no terminal to ask in: pass --yes.", question=question))
+    return bool(questionary.confirm(question, default=False).unsafe_ask())
+
+
+def print_json(data: object) -> None:
+    """``data`` as JSON on stdout, for scripts (dataclasses as their fields)."""
+    print(json.dumps(data, indent=2, ensure_ascii=False, default=lambda value: asdict(value)))
 
 
 def yes_no(value: bool) -> str:

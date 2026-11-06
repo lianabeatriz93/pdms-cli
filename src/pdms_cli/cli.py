@@ -78,6 +78,9 @@ def root(
     if ctx.invoked_subcommand not in REPO_AGNOSTIC and not first_run:
         check_repo(Config.load())
     if ctx.invoked_subcommand is None:
+        if not interactive_terminal():  # the menu needs one: a script or a pipe gets the help instead
+            print(ctx.get_help())
+            raise typer.Exit()
         main_menu(first_run)
 
 

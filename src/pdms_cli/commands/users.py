@@ -12,7 +12,7 @@ from rich.table import Table
 from .. import actions, completion, prompts, repos, userimport
 from ..config import Config
 from ..i18n import _
-from .common import add_user, console, fail, pick, print_removed, print_users, settle, show_menu, user_app
+from .common import JSON_HELP, YES_HELP, confirm, print_json, add_user, console, fail, pick, print_removed, print_users, settle, show_menu, user_app
 
 
 @user_app.callback()
@@ -22,8 +22,12 @@ def user_main(ctx: typer.Context) -> None:
 
 
 @user_app.command("list", help=_("List users."))
-def user_list() -> None:
-    print_users(Config.load())
+def user_list(as_json: bool = typer.Option(False, "--json", help=JSON_HELP)) -> None:
+    cfg = Config.load()
+    if as_json:
+        print_json(cfg.users)
+        return
+    print_users(cfg)
 
 
 @user_app.command("add", help=_("Add a user (wizard)."))
@@ -57,10 +61,13 @@ def user_rename(
 
 
 @user_app.command("remove", help=_("Delete a user."))
-def user_remove(name: Optional[str] = typer.Argument(None, autocompletion=completion.users)) -> None:
+def user_remove(
+    name: Optional[str] = typer.Argument(None, autocompletion=completion.users),
+    yes: bool = typer.Option(False, "--yes", "-y", help=YES_HELP),
+) -> None:
     cfg = Config.load()
     name = pick(cfg.users, _("user"), name)
-    if questionary.confirm(_("Delete '{name}'?", name=name), default=False).unsafe_ask():
+    if confirm(_("Delete '{name}'?", name=name), yes):
         print_removed(name, actions.remove_user(cfg, name))
 
 
@@ -138,9 +145,9 @@ def user_import(
 def user_menu() -> None:
     prompts.require_tty()
     show_menu(_("Users:"), {
-        _("List"): user_list,
+        _("List"): lambda: user_list(False),
         _("Add"): user_add,
         _("Import from a database"): lambda: user_import(None, None, None, False, 200, False),
         _("Edit"): lambda: user_edit(None),
-        _("Delete"): lambda: user_remove(None),
+        _("Delete"): lambda: user_remove(None, False),
     })
