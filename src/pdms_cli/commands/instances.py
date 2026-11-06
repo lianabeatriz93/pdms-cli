@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -14,7 +15,7 @@ from rich.table import Table
 from .. import actions, completion, desktop, emails, events, frontend, installer, instances, logview, prompts, proxy, repos
 from ..config import Config
 from ..i18n import _
-from .common import app, console, fail, pick, print_endpoints, print_restored, settle, show_menu
+from .common import JSON_HELP, app, console, print_json, fail, pick, print_endpoints, print_restored, settle, show_menu
 from .run import Profile, confirm_protected, do_run, migrate_first, python_answer, views_first
 from .services import backend_root, stack_paths
 
@@ -89,12 +90,18 @@ def urls(
 
 
 @app.command(help=_("List background services."))
-def ps(clean: bool = typer.Option(False, "--clean", help=_("Forget stopped instances."))) -> None:
+def ps(
+    clean: bool = typer.Option(False, "--clean", help=_("Forget stopped instances.")),
+    as_json: bool = typer.Option(False, "--json", help=JSON_HELP),
+) -> None:
     items = instances.load()
     if clean:
         for inst in [i for i in items.values() if not i.present()]:  # asleep ones are still there
             instances.forget(inst.key)
             items.pop(inst.key)
+    if as_json:
+        print_json([{**asdict(inst), "running": inst.alive(), "asleep": inst.asleep} for inst in items.values()])
+        return
     running_proxy = proxy.running_proxy()
     running_frontend = frontend.running()
     cfg = Config.load()
@@ -543,7 +550,7 @@ def frontend_logs(follow: bool, lines: Optional[int], previous: bool) -> None:
 def instances_menu() -> None:
     prompts.require_tty()
     show_menu(_("Background services:"), {
-        _("List"): lambda: ps(False),
+        _("List"): lambda: ps(False, False),
         _("View logs (console)"): lambda: logs(None, False, None, True, None, False),
         _("View all logs together"): lambda: logs(None, True, None, True, None, False),
         _("View the previous run's log"): lambda: logs(None, False, None, False, None, True),

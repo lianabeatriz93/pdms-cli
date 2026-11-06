@@ -13,7 +13,7 @@ from rich.table import Table
 from .. import actions, completion, instances, prompts
 from ..config import Config, Stack
 from ..i18n import _
-from .common import EVENTS_HELP, app, console, fail, pick, settle, show_menu, stack_app
+from .common import JSON_HELP, YES_HELP, confirm, print_json, EVENTS_HELP, app, console, fail, pick, settle, show_menu, stack_app
 from .run import (
     ON_DEMAND_HELP,
     Profile,
@@ -99,8 +99,12 @@ def stack_main(ctx: typer.Context) -> None:
 
 
 @stack_app.command("list", help=_("List stacks."))
-def stack_list() -> None:
-    print_stacks(Config.load())
+def stack_list(as_json: bool = typer.Option(False, "--json", help=JSON_HELP)) -> None:
+    cfg = Config.load()
+    if as_json:
+        print_json(cfg.stacks)
+        return
+    print_stacks(cfg)
 
 
 @stack_app.command("add", help=_("Create a stack (wizard), or one with the services running now (--running)."))
@@ -163,10 +167,13 @@ def stack_edit(name: Optional[str] = typer.Argument(None, autocompletion=complet
 
 
 @stack_app.command("remove", help=_("Delete a stack."))
-def stack_remove(name: Optional[str] = typer.Argument(None, autocompletion=completion.stacks)) -> None:
+def stack_remove(
+    name: Optional[str] = typer.Argument(None, autocompletion=completion.stacks),
+    yes: bool = typer.Option(False, "--yes", "-y", help=YES_HELP),
+) -> None:
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
-    if questionary.confirm(_("Delete stack '{name}'?", name=name), default=False).unsafe_ask():
+    if confirm(_("Delete stack '{name}'?", name=name), yes):
         actions.remove_stack(cfg, name)
         console.print("[green]✓[/] " + _("'{name}' deleted.", name=name))
 
@@ -283,10 +290,10 @@ def stack_menu() -> None:
     show_menu(_("Stacks:"), {
         _("Start stack"): lambda: up(None, None, None, None, False, None, None, None),
         _("Stop stack"): lambda: down(None),
-        _("List"): stack_list,
+        _("List"): lambda: stack_list(False),
         _("Create"): lambda: stack_add(None, False),
         _("Create with the running services"): lambda: stack_add(None, True),
         _("Edit"): lambda: stack_edit(None),
         _("Rename"): lambda: stack_rename(None, None),
-        _("Delete"): lambda: stack_remove(None),
+        _("Delete"): lambda: stack_remove(None, False),
     })

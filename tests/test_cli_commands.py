@@ -119,7 +119,7 @@ def test_repos_are_added_listed_switched_edited_and_removed(home, answers, capsy
     repos_cmd.repo_add(second / "backend", None)  # a folder inside a registered repo
     assert "already registered as 'fix'" in capsys.readouterr().out
 
-    repos_cmd.repo_list()
+    repos_cmd.repo_list(False)
     out = capsys.readouterr().out
     assert "main" in out and "fix" in out
 
@@ -134,9 +134,9 @@ def test_repos_are_added_listed_switched_edited_and_removed(home, answers, capsy
     assert set(Config.load().repos) == {"main", "hotfix"}
 
     answers(False)  # delete it? no
-    repos_cmd.repo_remove("hotfix")
+    repos_cmd.repo_remove("hotfix", False)
     answers(True)
-    repos_cmd.repo_remove("hotfix")
+    repos_cmd.repo_remove("hotfix", False)
     assert set(Config.load().repos) == {"main"}
 
 

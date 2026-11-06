@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -12,7 +14,7 @@ from rich.table import Table
 from .. import actions, completion, instances, prompts, repos
 from ..config import Config
 from ..i18n import _
-from .common import console, fail, interactive_terminal, pick, repo_app, settle, show_menu
+from .common import JSON_HELP, YES_HELP, print_json, console, fail, interactive_terminal, pick, repo_app, settle, show_menu
 from .run import do_run
 
 
@@ -98,8 +100,11 @@ def repo_main(ctx: typer.Context) -> None:
 
 
 @repo_app.command("list", help=_("List the registered repos."))
-def repo_list() -> None:
+def repo_list(as_json: bool = typer.Option(False, "--json", help=JSON_HELP)) -> None:
     cfg = Config.load()
+    if as_json:
+        print_json({alias: {**asdict(repo), "current": alias == cfg.current_repo} for alias, repo in cfg.repos.items()})
+        return
     if not cfg.repos:
         console.print(f"[yellow]{_('No repos registered.')}[/] {_('Use [bold]pdms repo add <path>[/].')}")
         return
@@ -192,10 +197,15 @@ def repo_edit(
 
 
 @repo_app.command("remove", help=_("Forget a registered repo (nothing is deleted from disk)."))
-def repo_remove(alias: Optional[str] = typer.Argument(None, autocompletion=completion.repos)) -> None:
+def repo_remove(
+    alias: Optional[str] = typer.Argument(None, autocompletion=completion.repos),
+    yes: bool = typer.Option(False, "--yes", "-y", help=YES_HELP),
+) -> None:
     cfg = Config.load()
     alias = pick(cfg.repos, _("repo"), alias)
-    if interactive_terminal() and not questionary.confirm(_("Delete '{name}'?", name=alias), default=False).unsafe_ask():
+    # Without a terminal it never asked: scripts that relied on it keep working.
+    if interactive_terminal() and not yes and not questionary.confirm(
+            _("Delete '{name}'?", name=alias), default=False).unsafe_ask():
         return
     settle(lambda: actions.remove_repo(cfg, alias))
     console.print("[green]✓[/] " + _("'{name}' deleted.", name=alias))
@@ -203,11 +213,11 @@ def repo_remove(alias: Optional[str] = typer.Argument(None, autocompletion=compl
 
 def repo_menu() -> None:
     if not interactive_terminal():
-        return repo_list()
+        return repo_list(False)
     show_menu(_("Repos:"), {
-        _("List"): repo_list,
+        _("List"): lambda: repo_list(False),
         _("Add"): lambda: repo_add(None, None),
         _("Choose the current one"): lambda: repo_use(None),
         _("Edit"): lambda: repo_edit(None, None, None, None),
-        _("Delete"): lambda: repo_remove(None),
+        _("Delete"): lambda: repo_remove(None, False),
     })

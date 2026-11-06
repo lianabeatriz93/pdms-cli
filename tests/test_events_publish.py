@@ -201,7 +201,7 @@ def test_pdms_logs_sns_shows_what_was_published(tmp_path, monkeypatch):
     from pdms_cli.commands import common, instances as instance_commands
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    with pytest.raises(typer.Exit), common.console.capture() as captured:
+    with pytest.raises(typer.Exit), common.err_console.capture() as captured:  # fail() writes to stderr
         instance_commands.logs(["sns"], False, None, False, None, False)
     assert "Nothing was published to the local SNS yet." in captured.get()
 

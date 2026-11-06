@@ -56,7 +56,7 @@ def main_menu(first_run: bool = False) -> None:
         Config.load().save()
         console.print(_("[dim]Configuration created at {path}[/]", path=config_path()))
     if instances.running_ports():
-        ps(False)
+        ps(False, False)
         console.print()
     while True:
         running = len(instances.running_ports())

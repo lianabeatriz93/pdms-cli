@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from typing import Optional
 
 import questionary
@@ -12,7 +14,7 @@ from .. import actions, completion, localcopy, localdb, prompts, testruns
 from ..config import Config
 from ..i18n import _
 from .common import (
-    add_db, check_db, console, db_app, interactive_terminal, pick, print_dbs, print_removed, settle, show_menu, with_images,
+    JSON_HELP, YES_HELP, add_db, check_db, confirm, console, db_app, print_json, interactive_terminal, pick, print_dbs, print_removed, settle, show_menu, with_images,
 )
 
 
@@ -23,8 +25,13 @@ def db_main(ctx: typer.Context) -> None:
 
 
 @db_app.command("list", help=_("List databases."))
-def db_list() -> None:
-    print_dbs(Config.load())
+def db_list(as_json: bool = typer.Option(False, "--json", help=JSON_HELP)) -> None:
+    cfg = Config.load()
+    if as_json:  # never the passwords: only whether there is one
+        print_json({name: {**{k: v for k, v in asdict(db).items() if k != "password"}, "has_password": bool(db.password)}
+                    for name, db in cfg.dbs.items()})
+        return
+    print_dbs(cfg)
 
 
 @db_app.command("add", help=_("Add a database (wizard)."))
@@ -43,10 +50,13 @@ def db_edit(name: Optional[str] = typer.Argument(None, autocompletion=completion
 
 
 @db_app.command("remove", help=_("Delete a database."))
-def db_remove(name: Optional[str] = typer.Argument(None, autocompletion=completion.dbs)) -> None:
+def db_remove(
+    name: Optional[str] = typer.Argument(None, autocompletion=completion.dbs),
+    yes: bool = typer.Option(False, "--yes", "-y", help=YES_HELP),
+) -> None:
     cfg = Config.load()
     name = pick(cfg.dbs, _("database"), name)
-    if questionary.confirm(_("Delete '{name}'?", name=name), default=False).unsafe_ask():
+    if confirm(_("Delete '{name}'?", name=name), yes):
         print_removed(name, actions.remove_db(cfg, name))
 
 
@@ -68,11 +78,11 @@ def db_test(
 def db_menu() -> None:
     prompts.require_tty()
     show_menu(_("Databases:"), {
-        _("List"): db_list,
+        _("List"): lambda: db_list(False),
         _("Add"): db_add,
         _("Edit"): lambda: db_edit(None),
         _("Test connection"): lambda: db_test(None, None),
-        _("Delete"): lambda: db_remove(None),
+        _("Delete"): lambda: db_remove(None, False),
     })
 
 
