@@ -114,6 +114,7 @@ ES: dict[str, str] = {
     "[dim]No pdms-db-migrations repo found: the copy stays as the source has it.[/]": "[dim]No se encontró el repo pdms-db-migrations: la copia queda como la tiene el origen.[/]",
     "pg_dump of {database} failed (exit code {code}); the log says why.": "pg_dump de {database} falló (código de salida {code}); el log dice por qué.",
     "pg_restore failed (exit code {code}); the log says why.": "pg_restore falló (código de salida {code}); el log dice por qué.",
+    "Copying {database} took over {minutes} minutes and was stopped: is the tunnel still up?": "Copiar {database} tardó más de {minutes} minutos y se detuvo: ¿sigue abierto el túnel?",
     "{file} failed in the copy (exit code {code}); the log says why.": "{file} falló en la copia (código de salida {code}); el log dice por qué.",
     "{n} running services use the local copy ({keys}): their connections end while it is replaced. Go on?": "{n} servicios en marcha usan la copia local ({keys}): sus conexiones se cortan mientras se reemplaza. ¿Seguir?",
     "Database": "Base de datos",

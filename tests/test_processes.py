@@ -88,3 +88,17 @@ def test_detach_options_match_the_platform():
         assert options["creationflags"] & subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         assert options == {"start_new_session": True}
+
+
+def test_the_registry_reads_entries_written_by_another_version(monkeypatch, tmp_path) -> None:
+    import json
+
+    from pdms_cli import instances
+
+    instances.registry_path().parent.mkdir(parents=True, exist_ok=True)
+    instances.registry_path().write_text(json.dumps({
+        "a@8081": {"key": "a@8081", "pid": 0, "service": "/x/a", "host": "0.0.0.0", "port": 8081, "user": "u",
+                   "db": "local", "reload": True, "log": "a.log", "started_at": "", "from_the_future": [1, 2]},
+        "broken": {"key": "broken"},  # missing what this version needs: left out, not fatal
+    }), encoding="utf-8")
+    assert list(instances.load()) == ["a@8081"]

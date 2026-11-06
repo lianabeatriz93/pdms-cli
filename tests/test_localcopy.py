@@ -124,3 +124,142 @@ def test_the_data_screen_shows_the_copy_and_only_touches_test_databases(monkeypa
     assert not dropped
     with pytest.raises(actions.ActionError):
         ui_jobs.data_action("tests-count", {"count": 99})
+
+
+# --------------------------------------------------------------------------- the copy is only replaced once complete
+
+
+class _Pipe:
+    def __init__(self, lines=(), hold=None) -> None:
+        self.lines, self.hold = list(lines), hold
+
+    def __iter__(self):
+        if self.hold is not None:
+            self.hold.wait(10)  # a stalled pg_dump: nothing comes until it is killed
+        return iter(self.lines)
+
+    def close(self) -> None:
+        pass
+
+
+class _Process:
+    def __init__(self, code: int, lines=(), hold=None) -> None:
+        self.code, self.stdout, self.hold = code, _Pipe(lines, hold), hold
+
+    def wait(self, timeout=None) -> int:
+        return self.code
+
+    def poll(self):
+        return None if self.hold is not None and not self.hold.is_set() else self.code
+
+    def kill(self) -> None:
+        if self.hold is not None:
+            self.hold.set()
+
+
+@pytest.fixture
+def copy_run(monkeypatch, tmp_path):
+    """refresh() with Docker played: the SQL it ran, and the pg_dump / pg_restore outcomes to give it."""
+
+    sql: list[str] = []
+    outcome = {"dump": _Process(0), "restore": _Process(0)}
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setattr(localcopy.images, "require", lambda names: None)
+    monkeypatch.setattr(localdb, "up", lambda: {})
+    monkeypatch.setattr(localdb, "state", lambda: {"exists": True, "running": True, "port": localdb.PORT})
+    monkeypatch.setattr(localdb, "databases", lambda: {"pdms": 1 << 20})
+    monkeypatch.setattr(localdb, "psql", lambda statement, db="postgres", timeout=120: sql.append(statement) or "")
+    monkeypatch.setattr(localcopy, "schemas_to_copy", lambda src, output: (["public"], []))
+    monkeypatch.setattr(localcopy, "register_alias", lambda cfg: "pdms-local")
+    monkeypatch.setattr(localcopy.subprocess, "Popen",
+                        lambda cmd, **kw: outcome["dump"] if cmd[:2] == ["docker", "run"] else outcome["restore"])
+    monkeypatch.setattr(localcopy.subprocess, "run", lambda *a, **kw: None)  # docker rm -f of a stopped pg_dump
+    return sql, outcome
+
+
+def _refresh(**kw) -> dict:
+    return localcopy.refresh(Config(dbs={"web-dev": WEB}), io.StringIO(), **kw)
+
+
+def _dropped_the_copy(sql: list[str]) -> bool:
+    return any(s.startswith('drop database if exists "pdms"') for s in sql)
+
+
+def test_a_refresh_builds_aside_and_swaps_the_copy_in_at_the_end(copy_run) -> None:
+    sql, outcome = copy_run
+    outcome["restore"] = _Process(1, ['pg_restore: error: could not execute query: ERROR:  schema "public" already '
+                                      'exists\n', "pg_restore: warning: errors ignored on restore: 1\n"])
+    assert _refresh(migrations_repo=None)["alias"] == "pdms-local"
+    assert sql[-2:] == ['drop database if exists "pdms" with (force)',
+                        'alter database "pdms_refresh" rename to "pdms"']
+
+
+@pytest.mark.parametrize("dump, restore", [
+    (_Process(1), _Process(1)),  # the tunnel is down: pg_dump fails, pg_restore gets nothing
+    (_Process(0), _Process(1, ["pg_restore: error: could not execute query: ERROR:  relation \"x\" does not exist\n"])),
+    (_Process(0), _Process(2)),
+])
+def test_a_failed_copy_leaves_the_local_copy_as_it_was(copy_run, dump, restore) -> None:
+    sql, outcome = copy_run
+    outcome.update(dump=dump, restore=restore)
+    with pytest.raises(actions.ActionError):
+        _refresh(migrations_repo=None)
+    assert not _dropped_the_copy(sql)
+    assert sql[-1] == 'drop database if exists "pdms_refresh" with (force)'  # what was built aside goes
+    assert not localcopy.state_path().exists()
+
+
+def test_a_stalled_copy_is_stopped_and_leaves_the_copy(copy_run, monkeypatch) -> None:
+    import threading
+
+    sql, outcome = copy_run
+    outcome["restore"] = _Process(137, hold=threading.Event())
+    monkeypatch.setattr(localcopy, "REFRESH_TIMEOUT", 0.2)
+    real = localcopy._dump_and_restore
+    monkeypatch.setattr(localcopy, "_dump_and_restore",
+                        lambda src, schemas, output, database: real(src, schemas, output, database, timeout=0.2))
+    with pytest.raises(actions.ActionError, match="tunnel"):
+        _refresh(migrations_repo=None)
+    assert not _dropped_the_copy(sql)
+
+
+def test_restoring_a_snapshot_copies_it_aside_first(monkeypatch) -> None:
+    sql = []
+    monkeypatch.setattr(localdb, "databases", lambda: {"pdms": 1, "pdms_snap_fresh": 1})
+    monkeypatch.setattr(localdb, "psql", lambda statement, db="postgres", timeout=120: sql.append(statement) or "")
+    localcopy.restore_snapshot("fresh")
+    assert sql == ['drop database if exists "pdms_restore" with (force)',
+                   'create database "pdms_restore" template "pdms_snap_fresh"',
+                   'drop database if exists "pdms" with (force)',
+                   'alter database "pdms_restore" rename to "pdms"']
+
+
+def test_restoring_a_snapshot_that_cannot_be_copied_keeps_the_copy(monkeypatch) -> None:
+    sql = []
+
+    def psql(statement, db="postgres", timeout=120):
+        sql.append(statement)
+        if "template" in statement:
+            raise actions.ActionError('source database "pdms_snap_fresh" is being accessed by other users')
+        return ""
+
+    monkeypatch.setattr(localdb, "databases", lambda: {"pdms": 1, "pdms_snap_fresh": 1})
+    monkeypatch.setattr(localdb, "psql", psql)
+    with pytest.raises(actions.ActionError):
+        localcopy.restore_snapshot("fresh")
+    assert not _dropped_the_copy(sql)
+
+
+def test_a_snapshot_tries_again_when_a_service_reconnected_in_between(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.setattr(localcopy.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(localdb, "databases", lambda: {"pdms": 1})
+    refused = iter([True, False])
+
+    def psql(statement, db="postgres", timeout=120):
+        if "template" in statement and next(refused):
+            raise actions.ActionError('source database "pdms" is being accessed by other users')
+        return ""
+
+    monkeypatch.setattr(localdb, "psql", psql)
+    assert localcopy.save_snapshot("fresh")["name"] == "fresh"

@@ -20,6 +20,8 @@ import re
 import socket
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +40,12 @@ SOURCE_DATABASE = "pdm_template_dev"
 COPIED_SCHEMAS = ("public",)
 REBUILT_SCHEMAS = ("configuration",)
 SNAPSHOT_PREFIX = "pdms_snap_"
+# Where a refresh or a snapshot restore builds the new copy: ``pdms`` is only replaced by it once it is complete, so a
+# source that cannot be read (the tunnel down) or a failed restore leaves the copy as it was.
+STAGING_DB = "pdms_refresh"
+RESTORE_DB = "pdms_restore"  # the same for a snapshot restore, its own name so a refresh at once cannot empty it
+SNAPSHOT_ATTEMPTS = 5  # a snapshot copies the copy while nobody uses it; services reconnect in the meantime
+REFRESH_TIMEOUT = 3600  # seconds pg_dump | pg_restore may take: a stalled tunnel must not hang the refresh forever
 SNAPSHOT_NAME = re.compile(r"[a-z0-9][a-z0-9_]{0,39}")
 
 
@@ -103,8 +111,9 @@ def schemas_to_copy(db: Database, output: IO[str]) -> tuple[list[str], list[str]
     return copied, rebuilt
 
 
-def dump_command(db: Database, schemas: tuple[str, ...] | list[str] = COPIED_SCHEMAS) -> list[str]:
-    """``docker run`` of pg_dump (custom format, to stdout) for ``db``; the password travels as PGPASSWORD."""
+def dump_command(db: Database, schemas: tuple[str, ...] | list[str] = COPIED_SCHEMAS, name: str = "") -> list[str]:
+    """``docker run`` of pg_dump (custom format, to stdout) for ``db``; the password travels as PGPASSWORD. ``name``:
+    the container's, to remove it if it has to be stopped."""
     host = db.host.strip()
     network: list[str] = []
     if sys.platform.startswith("linux"):
@@ -118,7 +127,7 @@ def dump_command(db: Database, schemas: tuple[str, ...] | list[str] = COPIED_SCH
     elif host.lower() in migrations.LOCAL_HOSTS:
         host = "host.docker.internal"  # Docker Desktop (macOS / Windows)
     return [
-        "docker", "run", "--rm", *network, "-e", "PGPASSWORD", localdb.IMAGE,
+        "docker", "run", "--rm", *(["--name", name] if name else []), *network, "-e", "PGPASSWORD", localdb.IMAGE,
         "pg_dump", "-h", host, "-p", str(db.port), "-U", db.user, "-d", db.database,
         "--format=custom", "--no-owner", "--no-acl", *(f"--schema={schema}" for schema in schemas),
         "--extension=*",  # with --schema, extensions (pg_trgm for the gin indexes) would be left out
@@ -136,8 +145,9 @@ def schema_migrations(repo: Path, schema: str) -> list[Path]:
     return [path for _key, path in sorted(found)]
 
 
-def rebuild_schemas(repo: Path, output: IO[str], schemas: tuple[str, ...] | list[str] = REBUILT_SCHEMAS) -> list[str]:
-    """Create the schemas the copy does not take from the source, running their migrations in the copy."""
+def rebuild_schemas(repo: Path, output: IO[str], schemas: tuple[str, ...] | list[str] = REBUILT_SCHEMAS,
+                    database: str = localdb.MAIN_DB) -> list[str]:
+    """Create the schemas the copy does not take from the source, running their migrations in ``database``."""
     ran = []
     for schema in schemas:
         for path in schema_migrations(repo, schema):
@@ -145,7 +155,7 @@ def rebuild_schemas(repo: Path, output: IO[str], schemas: tuple[str, ...] | list
             output.flush()
             result = subprocess.run(
                 ["docker", "exec", "-i", localdb.CONTAINER, "psql", "-v", "ON_ERROR_STOP=1", "-q", "-U", localdb.USER,
-                 "-d", localdb.MAIN_DB, "-f", "-"],
+                 "-d", database, "-f", "-"],
                 input=path.read_bytes(), stdout=output, stderr=subprocess.STDOUT, timeout=600)
             if result.returncode != 0:
                 raise actions.ActionError(_("{file} failed in the copy (exit code {code}); the log says why.",
@@ -202,6 +212,74 @@ def register_name(cfg: Config) -> str:
     return alias(cfg) or ALIAS
 
 
+def _drop_staging() -> None:
+    try:
+        localdb.psql(f'drop database if exists "{STAGING_DB}" with (force)')
+    except actions.ActionError:  # the error that got here says more; the next refresh drops it anyway
+        pass
+
+
+def _swap_in(built: str) -> None:
+    """Make ``built`` the local copy: drop ``pdms`` (its connections end) and give ``built`` its name."""
+    localdb.psql(f'drop database if exists "{localdb.MAIN_DB}" with (force)')
+    localdb.psql(f'alter database "{built}" rename to "{localdb.MAIN_DB}"')
+
+
+def _dump_and_restore(src: Database, schemas: list[str], output: IO[str], database: str,
+                      timeout: float = REFRESH_TIMEOUT) -> None:
+    """pg_dump of ``src`` piped into pg_restore in :data:`STAGING_DB`. Raises when either fails, when pg_restore
+    reports errors other than harmless ones (:func:`localdb.restore_problems`), or after ``timeout`` seconds."""
+    name = f"pdms-dump-{os.getpid()}"
+    dump = subprocess.Popen(dump_command(src, schemas, name), stdout=subprocess.PIPE, stderr=output,
+                            env={**os.environ, "PGPASSWORD": src.password})
+    restore = subprocess.Popen(
+        ["docker", "exec", "-i", localdb.CONTAINER, "pg_restore", "-U", localdb.USER, "-d", STAGING_DB,
+         "--no-owner", "--no-acl"],
+        stdin=dump.stdout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+    assert dump.stdout is not None and restore.stdout is not None
+    dump.stdout.close()  # pg_restore owns the pipe now: pg_dump gets SIGPIPE if pg_restore dies
+    timed_out = threading.Event()
+
+    def stop() -> None:
+        for process in (restore, dump):
+            if process.poll() is None:
+                process.kill()
+        try:  # the container of pg_dump keeps running once its docker client is gone
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    def too_long() -> None:
+        timed_out.set()
+        stop()
+
+    timer = threading.Timer(timeout, too_long)
+    timer.daemon = True
+    timer.start()
+    said = []
+    try:
+        for line in restore.stdout:  # shown as it comes, and kept to tell harmless errors from real ones
+            output.write(line)
+            output.flush()
+            said.append(line)
+        restored, dumped = restore.wait(), dump.wait()
+    except BaseException:  # Ctrl+C, or the log could not be written: nothing is left running
+        stop()
+        raise
+    finally:
+        timer.cancel()
+    if timed_out.is_set():
+        raise actions.ActionError(_("Copying {database} took over {minutes} minutes and was stopped: is the tunnel "
+                                    "still up?", database=database, minutes=round(timeout / 60)))
+    if dumped != 0:
+        raise actions.ActionError(_("pg_dump of {database} failed (exit code {code}); the log says why.",
+                                    database=database, code=dumped))
+    problems = localdb.restore_problems("".join(said))
+    if restored not in (0, 1) or problems:
+        raise actions.ActionError(_("pg_restore failed (exit code {code}); the log says why.", code=restored)
+                                  + (f" {problems[0][:200]}" if problems else ""))
+
+
 def refresh(cfg: Config, output: IO[str], *, alias: str = SOURCE_ALIAS, database: str = SOURCE_DATABASE,
             migrations_repo: Path | None = None, migrate: bool = True) -> dict:
     """Copy ``database`` (server of ``alias``) into the local copy, replacing it, then migrate it with the repo's
@@ -214,26 +292,20 @@ def refresh(cfg: Config, output: IO[str], *, alias: str = SOURCE_ALIAS, database
     output.write(_("Copying {database} from {host} into {target}…", database=database, host=src.host,
                    target=f"{localdb.CONTAINER}/{localdb.MAIN_DB}") + "\n")
     output.flush()
+    # Built aside and swapped in at the end: until then the copy stays as it was, whatever fails.
+    localdb.psql(f'drop database if exists "{STAGING_DB}" with (force)')  # a refresh that was cut short
+    localdb.psql(f'create database "{STAGING_DB}"')
+    try:
+        copied, to_rebuild = schemas_to_copy(src, output)
+        # Before the restore: public's views use them.
+        rebuilt = rebuild_schemas(migrations_repo, output, to_rebuild, STAGING_DB) \
+            if migrations_repo and to_rebuild else []
+        _dump_and_restore(src, copied, output, database)
+    except BaseException:
+        _drop_staging()
+        raise
     # Replaced, not merged: the copy is what the source has. Its connections end (services reconnect).
-    localdb.psql(f'drop database if exists "{localdb.MAIN_DB}" with (force)')
-    localdb.psql(f'create database "{localdb.MAIN_DB}"')
-    copied, to_rebuild = schemas_to_copy(src, output)
-    # Before the restore: public's views use them.
-    rebuilt = rebuild_schemas(migrations_repo, output, to_rebuild) if migrations_repo and to_rebuild else []
-    dump = subprocess.Popen(dump_command(src, copied), stdout=subprocess.PIPE, stderr=output,
-                            env={**os.environ, "PGPASSWORD": src.password})
-    restore = subprocess.Popen(
-        ["docker", "exec", "-i", localdb.CONTAINER, "pg_restore", "-U", localdb.USER, "-d", localdb.MAIN_DB,
-         "--no-owner", "--no-acl"],
-        stdin=dump.stdout, stdout=output, stderr=subprocess.STDOUT)
-    assert dump.stdout is not None
-    dump.stdout.close()  # pg_restore owns the pipe now: pg_dump gets SIGPIPE if pg_restore dies
-    restored, dumped = restore.wait(), dump.wait()
-    if dumped != 0:
-        raise actions.ActionError(_("pg_dump of {database} failed (exit code {code}); the log says why.",
-                                    database=database, code=dumped))
-    if restored not in (0, 1):  # 1: warnings (e.g. an extension that already exists)
-        raise actions.ActionError(_("pg_restore failed (exit code {code}); the log says why.", code=restored))
+    _swap_in(STAGING_DB)
     migrated = None
     if migrations_repo and migrate:
         target = localdb.database(localdb.MAIN_DB, localdb.state()["port"] or localdb.PORT)
@@ -277,9 +349,16 @@ def save_snapshot(name: str) -> dict:
     target = _snapshot_db(name)
     if target in localdb.databases():
         raise actions.ActionError(_("There is a snapshot '{name}' already.", name=name))
-    localdb.psql(f"select pg_terminate_backend(pid) from pg_stat_activity where datname = '{localdb.MAIN_DB}' "
-                 "and pid <> pg_backend_pid()")
-    localdb.psql(f'create database "{target}" template "{localdb.MAIN_DB}"')
+    for attempt in range(SNAPSHOT_ATTEMPTS):
+        localdb.psql(f"select pg_terminate_backend(pid) from pg_stat_activity where datname = '{localdb.MAIN_DB}' "
+                     "and pid <> pg_backend_pid()")
+        try:
+            localdb.psql(f'create database "{target}" template "{localdb.MAIN_DB}"')
+            break
+        except actions.ActionError as exc:  # a service reconnected in between: its connections end again
+            if "being accessed by other users" not in exc.message or attempt == SNAPSHOT_ATTEMPTS - 1:
+                raise
+            time.sleep(0.3)
     data = load_state()
     data.setdefault("snapshots", {})[name] = datetime.now().astimezone().isoformat(timespec="seconds")
     _save_state(data)
@@ -291,8 +370,10 @@ def restore_snapshot(name: str) -> None:
     source_db = _snapshot_db(name)
     if source_db not in localdb.databases():
         raise actions.ActionError(_("There is no snapshot '{name}'.", name=name))
-    localdb.psql(f'drop database if exists "{localdb.MAIN_DB}" with (force)')
-    localdb.psql(f'create database "{localdb.MAIN_DB}" template "{source_db}"')
+    # Copied aside first: a copy that fails (the snapshot in use) leaves the local copy as it was.
+    localdb.psql(f'drop database if exists "{RESTORE_DB}" with (force)')
+    localdb.psql(f'create database "{RESTORE_DB}" template "{source_db}"')
+    _swap_in(RESTORE_DB)
 
 
 def delete_snapshot(name: str) -> None:

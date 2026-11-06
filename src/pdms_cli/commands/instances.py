@@ -497,6 +497,9 @@ def restart(
             user=user or inst.user, db=db or inst.db, port=inst.port, host=inst.host, install=install,
             reload=inst.reload, yes=True, path=Path(inst.service), background=True,
             events_mode="local" if inst.events == "local" else None, python=python, migrate=False, check_views=False,
+            # As it ran: the settings' defaults would turn an always-on service on-demand (or the other way round).
+            # One asleep stays asleep (a stack's restart takes those too): the proxy wakes it when asked for.
+            parallel=inst.parallel, on_demand=inst.on_demand, awake=not inst.asleep,
         )
 
 

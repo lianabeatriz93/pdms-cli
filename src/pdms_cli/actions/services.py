@@ -70,10 +70,12 @@ def plan_service(
     events_ready: EventsSetup | None = None,
     parallel: bool | None = None,
     on_demand: bool | None = None,
+    own_port: bool = False,
 ) -> ServiceLaunch:
     """Decide how ``service`` runs. Raises :class:`PortBusy` or :class:`LocalEventsDown` for the user to answer.
 
-    ``events_ready`` skips deciding where events go (a stack decides it once for all its services).
+    ``events_ready`` skips deciding where events go (a stack decides it once for all its services). ``own_port``:
+    ``port`` is the one of the instance being restarted, still running while this plans, so it is not checked.
     """
     checks.require(cfg.users, _("user"), user_name)
     checks.require(cfg.dbs, _("database"), db_name)
@@ -83,7 +85,7 @@ def plan_service(
     if consumer:
         port = 0
         events_mode = "local"  # a consumer reads its queue from the local ElasticMQ
-    else:
+    elif not (own_port and port):
         port = checks.free_port(host, port or cfg.defaults.port)
     setup = events_ready or local_events.events_setup(cfg, service, events_mode)
     if consumer:

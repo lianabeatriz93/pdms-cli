@@ -7,6 +7,8 @@ The file holds database passwords, so it is always written with ``0600`` permiss
 from __future__ import annotations
 
 import os
+import threading
+import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
@@ -287,9 +289,31 @@ class Config:
 
 
 def write_private(path: Path, text: str) -> None:
-    """Write ``text`` to ``path`` readable only by the current user (it may contain passwords)."""
+    """Write ``text`` to ``path`` readable only by the current user (it may contain passwords).
+
+    In one step: the text goes to a file next to it that then takes its place. The proxy, pdms ui and the CLI read the
+    config while another of them writes it, and a file truncated and still being written read as empty: defaults,
+    which the next save then wrote back, losing users, databases and passwords."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        fh.write(text)
-    os.chmod(path, 0o600)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(temporary, 0o600)
+        replace_file(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def replace_file(source: Path, target: Path, attempts: int = 40) -> None:
+    """``os.replace``, retried for a while on Windows, which refuses it while someone has ``target`` open."""
+    for attempt in range(attempts):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.05)

@@ -85,3 +85,34 @@ def test_without_docker_it_says_so(monkeypatch) -> None:
     monkeypatch.setattr(localdb.events, "docker_available", lambda: (False, "permission denied"))
     with pytest.raises(actions.ActionError, match="Docker is not available: permission denied"):
         localdb.up()
+
+
+def test_only_harmless_restore_errors_pass() -> None:
+    assert localdb.restore_problems(
+        'pg_restore: error: could not execute query: ERROR:  schema "public" already exists\n'
+        'pg_restore: error: could not execute query: ERROR:  extension "pg_trgm" already exists\n'
+        "pg_restore: warning: errors ignored on restore: 2\n") == []
+    assert localdb.restore_problems("pg_dump: error: connection to server failed\n") == [
+        "pg_dump: error: connection to server failed"]
+    assert localdb.restore_problems('pg_restore: error: could not execute query: ERROR:  relation "x" does not exist')
+
+
+def test_a_test_database_copy_fails_when_pg_dump_does(monkeypatch) -> None:
+    import subprocess
+    from types import SimpleNamespace
+
+    calls = []
+    monkeypatch.setattr(localdb, "databases", lambda: {"pdms": 1, "pdms_test_1": 1})
+    monkeypatch.setattr(localdb, "psql", lambda statement, db="postgres", timeout=120: "")
+    monkeypatch.setattr(localdb.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or SimpleNamespace(
+        returncode=1, stdout="", stderr="pg_dump: error: query failed: out of memory\n"))
+    with pytest.raises(actions.ActionError, match="out of memory"):
+        localdb.copy_into_test_database("pdms_test_1")
+    assert calls[0][3:6] == ["bash", "-o", "pipefail"]
+
+    def too_long(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+    monkeypatch.setattr(localdb.subprocess, "run", too_long)
+    with pytest.raises(actions.ActionError, match="timed out"):  # half restored: not a copy
+        localdb.copy_into_test_database("pdms_test_1")

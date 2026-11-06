@@ -1,7 +1,8 @@
 """Export and import of the pdms configuration (defaults, users, databases and stacks).
 
 Exports are TOML files with a ``[pdms]`` header. Database passwords are left out unless explicitly requested, and
-importing a database without password keeps the password already configured locally under the same alias.
+importing a database without password keeps the password already configured locally under the same alias (only
+for the same host, port and user).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from typing import Any
 import tomlkit
 
 from . import __version__
-from .config import Config, Defaults
+from .config import Config, Database, Defaults
 from .i18n import _
 
 FORMAT_VERSION = 1
@@ -81,9 +82,17 @@ class SectionPlan:
     missing: list[str] = field(default_factory=list)
 
 
+def keeps_password(item: Database, current: Database | None) -> bool:
+    """Whether an imported database without password takes the local one of the same alias: only for the same
+    server and user. A file that moved the alias to another host would otherwise send that password there."""
+    return (not item.password and current is not None
+            and (item.host.strip().lower(), item.port, item.user) == (current.host.strip().lower(), current.port,
+                                                                      current.user))
+
+
 def _comparable(section: str, item: Any, current: Any = None) -> dict[str, Any]:
     data = asdict(item)
-    if section == "dbs" and not data["password"] and current is not None:
+    if section == "dbs" and keeps_password(item, current):
         data["password"] = current.password  # an empty password means "keep mine"
     return data
 
@@ -129,7 +138,8 @@ def apply_import(
 
     Merge (default): new entries are added and existing ones are only overwritten when listed in ``overwrite``.
     Replace: the selected sections become exactly the file's content.
-    Either way, imported databases without password keep the local password of the same alias.
+    Either way, imported databases without password keep the local password of the same alias, as long as its host,
+    port and user are the same (:func:`keeps_password`); otherwise they stay without one.
     """
     result = copy.deepcopy(current)
     if "defaults" in sections and (replace or ("defaults", "defaults") in overwrite):
@@ -143,7 +153,7 @@ def apply_import(
             if name in mine and not replace and (section, name) not in overwrite:
                 continue
             item = copy.deepcopy(item)
-            if section == "dbs" and not item.password and name in mine:
+            if section == "dbs" and keeps_password(item, mine.get(name)):
                 item.password = mine[name].password
             merged[name] = item
         setattr(result, section, merged)

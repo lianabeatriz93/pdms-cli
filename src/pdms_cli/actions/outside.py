@@ -110,10 +110,12 @@ def restart_service(
     checks.require(cfg.dbs, _("database"), db_name)
     if db_name != instance.db:
         checks.check_database(cfg, db_name, confirmed)
-    services.stop_service(instance)
+    # Planned before stopping: a plan that fails (events, the service's folder) leaves it running. Its port is still
+    # its own now (own_port): the same port once stopped.
     launch = services.plan_service(
         cfg, Path(instance.service), user_name=user_name, db_name=db_name, port=instance.port or None,
         host=instance.host, reload=instance.reload, events_mode="local" if instance.events == "local" else None,
-        on_demand=instance.on_demand,
+        on_demand=instance.on_demand, parallel=instance.parallel, own_port=True,
     )
+    services.stop_service(instance)
     return services.start_service(cfg, launch, install, awake=True)  # asked for: it runs now, and sleeps again when idle
