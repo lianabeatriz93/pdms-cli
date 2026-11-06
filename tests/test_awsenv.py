@@ -372,7 +372,7 @@ def test_the_credential_process_asks_the_cli_with_the_users_config(monkeypatch, 
     monkeypatch.setattr(awscreds.shutil, "which", lambda name: "/usr/bin/aws")
     monkeypatch.setenv("AWS_PROFILE", "pdm-dev")
     monkeypatch.setattr(awscreds.subprocess, "run",
-                        lambda cmd, env, stdin: seen.update(cmd=cmd, env=env) or SimpleNamespace(returncode=0))
+                        lambda cmd, env, stdin, timeout: seen.update(cmd=cmd, env=env) or SimpleNamespace(returncode=0))
     assert awscreds.main(["pdm-dev", str(tmp_path / "config")]) == 0
     assert seen["cmd"][1:] == ["configure", "export-credentials", "--profile", "pdm-dev", "--format", "process"]
     assert seen["env"]["AWS_CONFIG_FILE"] == str(tmp_path / "config") and "AWS_PROFILE" not in seen["env"]
@@ -386,3 +386,18 @@ def test_only_bucket_names_and_the_sender_are_kept_never_a_secret_named_after_a_
                               "BUCKET_SESSION_TOKEN", "BUCKET_ACCESS_KEY_ID", "DOCS_BUCKET_NAME")
             if awsenv.KEPT.search(name)]
     assert kept == ["DOWNLOABLE_FILES_BUCKET_S3", "DOWNLOABLE_FILES_BUCKET_REGION_S3", "EMAIL_SENDER", "DOCS_BUCKET_NAME"]
+
+
+def test_the_credential_process_gives_up_instead_of_hanging_a_service(monkeypatch, capsys) -> None:
+    import subprocess
+
+    from pdms_cli import awscreds
+
+    monkeypatch.setattr(awscreds.shutil, "which", lambda name: "/usr/bin/aws")
+
+    def hang(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr(awscreds.subprocess, "run", hang)
+    assert awscreds.main(["pdm-dev", "/tmp/config"]) == 1
+    assert "no answer" in capsys.readouterr().err

@@ -639,3 +639,18 @@ def test_another_device_of_the_network_acts_as_nobody_unless_allowed(gateway_url
 def test_loopback_clients_are_this_computer():
     assert all(proxy.is_loopback(a) for a in ("127.0.0.1", "127.0.1.1", "::1", "::ffff:127.0.0.1"))
     assert not any(proxy.is_loopback(a) for a in ("192.168.1.20", "10.0.0.2", "fe80::1%eth0", "nonsense"))
+
+
+def test_the_proxy_reads_the_registry_again_only_when_it_changed(gateway_url, repo, monkeypatch):
+    gw = proxy.Gateway(routes=routes.load_routes(repo), backend=repo / "backend", remote=None)
+    reads = []
+    real = instances.load
+    monkeypatch.setattr(instances, "load", lambda: reads.append(1) or real())
+    first = gw.local_instances()
+    assert gw.local_instances() is first and len(reads) == 1  # dozens of requests of one page: one read
+    registry = instances.load()
+    registry["lead-tp-list@1"].port += 1  # a restart elsewhere
+    instances.save(registry)
+    reads.clear()
+    assert next(iter(gw.local_instances().values()))[0].port == registry["lead-tp-list@1"].port
+    assert reads
