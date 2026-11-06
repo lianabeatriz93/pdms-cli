@@ -285,7 +285,7 @@ class Config:
         path = config_path()
         if not path.exists():
             return cls()
-        return cls.from_dict(tomlkit.parse(path.read_text(encoding="utf-8")).unwrap())
+        return cls.from_dict(tomlkit.parse(read_text(path)).unwrap())
 
     def save(self) -> None:
         write_private(config_path(), tomlkit.dumps(self.to_dict()))
@@ -308,6 +308,19 @@ def write_private(path: Path, text: str) -> None:
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def read_text(path: Path, attempts: int = 40) -> str:
+    """``path``'s text, retried for a while on Windows, which refuses to open a file while another process puts a
+    new one in its place (see :func:`write_private`)."""
+    for attempt in range(attempts):
+        try:
+            return path.read_text(encoding="utf-8")
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.05)
+    raise AssertionError("unreachable")
 
 
 def replace_file(source: Path, target: Path, attempts: int = 40) -> None:

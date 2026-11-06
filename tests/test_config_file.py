@@ -73,3 +73,19 @@ def test_a_failed_write_leaves_the_config_as_it_was(config_file, monkeypatch) ->
         Config().save()
     assert Config.load().dbs["local"].password == "secret"
     assert [p.name for p in config_file.parent.iterdir()] == ["config.toml"]
+
+
+def test_reading_retries_while_windows_replaces_the_file(config_file, monkeypatch) -> None:
+    Config(dbs={"local": Database("localhost", password="secret")}).save()
+    real = config.Path.read_text
+    refusals = iter([PermissionError(), PermissionError()])
+
+    def read_text(self, *args, **kwargs):
+        error = next(refusals, None)
+        if error:
+            raise error
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(config.Path, "read_text", read_text)
+    monkeypatch.setattr(config.time, "sleep", lambda seconds: None)
+    assert Config.load().dbs["local"].password == "secret"
