@@ -8,14 +8,13 @@ any database; ``migrate`` only against a local one (shared databases are migrate
 from __future__ import annotations
 
 import re
-import subprocess
-import sys
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
 import tomlkit
 
+from . import docker, repos
 from .config import Database
 
 # public.ecr.aws, no authentication; the image flyway_migrate.yml / flyway_validate.yml run on (Flyway 11.20.2).
@@ -23,7 +22,7 @@ IMAGE = "public.ecr.aws/w3g2g9j8/epicride/flyway-postgres:11.20.2-1"
 READ_ONLY = ("info", "validate")
 LOCAL_ONLY = ("migrate", "repair")  # pdms runs them on local databases only (see actions.apply_migrations)
 COMMANDS = (*READ_ONLY, "migrate")
-LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", "host.docker.internal"}
+LOCAL_HOSTS = docker.LOCAL_HOSTS
 
 
 def is_migrations_repo(path: Path) -> bool:
@@ -64,12 +63,7 @@ def is_local(db: Database) -> bool:
 
 def docker_command(repo: Path, db: Database, command: str) -> list[str]:
     """``docker run`` for a Flyway command. The password travels as an environment variable, never in argv."""
-    host, network = db.host, []
-    if host.strip().lower() in LOCAL_HOSTS:
-        if sys.platform.startswith("linux"):
-            network = ["--network", "host"]  # the container shares the host's localhost
-        else:
-            host = "host.docker.internal"  # Docker Desktop (macOS / Windows)
+    host, network = docker.reach(db.host)  # also a tunnel's name in /etc/hosts (pdms migrate --db web-dev)
     config_files = ",".join(f for f in ("flyway.toml", "placeholder.toml") if (repo / f).is_file())
     extra = ["-ignoreMigrationPatterns=*:pending"] if command == "validate" else []  # as flyway_validate.sh
     if command == "migrate":
@@ -146,15 +140,11 @@ def files(repo: Path, flyway: FlywaySettings | None = None) -> list[dict]:
 def uncommitted(repo: Path) -> set[str]:
     """The files of the repo with changes git has no commit of (modified, staged or new), relative to it: Flyway
     applies the working tree, work in progress included."""
-    try:
-        result = subprocess.run(["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all", "--",
-                                 "."], capture_output=True, text=True, timeout=15)
-    except (OSError, subprocess.SubprocessError):
-        return set()
-    if result.returncode != 0:
+    out = repos.git(repo, "status", "--porcelain", "--untracked-files=all", "--", ".")
+    if out is None:
         return set()
     found = set()
-    for line in result.stdout.splitlines():
+    for line in out.splitlines():
         name = line[3:].split(" -> ")[-1].strip().strip('"')
         if name:
             found.add(name)
@@ -221,9 +211,4 @@ def status(repo: Path, db: Database, timeout: int = 15) -> dict:
 
 
 def git_branch(repo: Path) -> str:
-    try:
-        result = subprocess.run(["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
-                                text=True, timeout=5)
-    except (OSError, subprocess.TimeoutExpired):
-        return ""
-    return result.stdout.strip() if result.returncode == 0 else ""
+    return repos.checked_out_branch(repo, timeout=5)

@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import IO
 
 from . import actions, installer, instances, localdb, migrations, repos, runner
-from .config import Config, Database, DevUser
+from .config import Config, Database, DevUser, write_json
 from .i18n import _
 
 SKIP_DIRS = {*runner.SKIP_DIRS, ".venv", "venv", "dist", "build"}
@@ -302,7 +302,7 @@ def record(backend: Path, project: str, *, db: str, code: int, started: float, s
         "seconds": round(seconds, 1), **report,
     }
     paths["json"].parent.mkdir(parents=True, exist_ok=True)
-    paths["json"].write_text(json.dumps(result, indent=1), encoding="utf-8")
+    write_json(paths["json"], result, indent=1)
     return result
 
 
@@ -323,11 +323,7 @@ def results(backend: Path) -> dict[str, dict]:
 
 
 def _git(root: Path, *args: str) -> str | None:
-    try:
-        result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=15)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return result.stdout if result.returncode == 0 else None
+    return repos.git(root, *args)
 
 
 def base_of(root: Path) -> tuple[str, str]:

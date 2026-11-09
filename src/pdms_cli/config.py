@@ -6,6 +6,7 @@ The file holds database passwords, so it is always written with ``0600`` permiss
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -292,22 +293,34 @@ class Config:
 
 
 def write_private(path: Path, text: str) -> None:
-    """Write ``text`` to ``path`` readable only by the current user (it may contain passwords).
+    """Write ``text`` to ``path`` readable only by the current user (it may contain passwords), in one step.
 
-    In one step: the text goes to a file next to it that then takes its place. The proxy, pdms ui and the CLI read the
-    config while another of them writes it, and a file truncated and still being written read as empty: defaults,
-    which the next save then wrote back, losing users, databases and passwords."""
+    The proxy, pdms ui and the CLI read the config while another of them writes it, and a file truncated and still
+    being written read as empty: defaults, which the next save then wrote back, losing users, databases and
+    passwords (see :func:`write_atomic`)."""
+    write_atomic(path, text, private=True)
+
+
+def write_atomic(path: Path, text: str, private: bool = False) -> None:
+    """Write ``text`` to ``path`` in one step: it goes to a file next to it that then takes its place, so a reader
+    sees the old content or the new one, never half of it. ``private``: readable only by the current user."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600 if private else 0o666)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
-        os.chmod(temporary, 0o600)
+        if private:
+            os.chmod(temporary, 0o600)
         replace_file(temporary, path)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def write_json(path: Path, data: object, **dumps: object) -> None:
+    """``data`` as JSON in ``path``, in one step (pdms ui and the CLI read these state files while one writes)."""
+    write_atomic(path, json.dumps(data, **dumps))  # type: ignore[arg-type]
 
 
 def read_text(path: Path, attempts: int = 40) -> str:

@@ -14,6 +14,7 @@ import urllib.request
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
+from .config import write_json
 from . import __version__
 from .instances import state_dir
 
@@ -225,7 +226,7 @@ def load_cache() -> dict:
 
 def save_cache(data: dict) -> None:
     cache_path().parent.mkdir(parents=True, exist_ok=True)
-    cache_path().write_text(json.dumps(data), encoding="utf-8")
+    write_json(cache_path(), data)
 
 
 def checks_enabled(update_check: bool) -> bool:

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .. import (__version__, actions, browser, emails, events, frontend, i18n, instances, localcopy, localdb, proxy,
                repos, testviews)
-from ..config import Config
+from ..config import Config, write_json
 from . import updates
 
 
@@ -173,7 +173,7 @@ def mark_seen(view: str) -> list[str]:
         raise ValueError(f"{view} has no new tag")
     seen = seen_views() | {view}
     seen_path().parent.mkdir(parents=True, exist_ok=True)
-    seen_path().write_text(json.dumps(sorted(seen)), encoding="utf-8")
+    write_json(seen_path(), sorted(seen))
     return [name for name in NEW_VIEWS if name not in seen]
 
 

@@ -14,12 +14,12 @@ schema (the usual one of web-dev) gets the SQL to run in a database client inste
 from __future__ import annotations
 
 import re
-import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import Config, Database
+from . import repos
+from .config import Config, Database, write_json
 from .i18n import _
 
 FOLDER = Path("migrations") / "repeatable" / "materialized_views"
@@ -51,12 +51,7 @@ def files(repo: Path) -> dict[str, Path]:
 
 
 def branch(repo: Path) -> str:
-    try:
-        result = subprocess.run(["git", "-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
-                                text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return result.stdout.strip() if result.returncode == 0 else ""
+    return repos.checked_out_branch(repo)
 
 
 def ticket_suffix(branch_name: str) -> str:
@@ -263,20 +258,18 @@ def _checksum(sql: str) -> int:
 
 
 def remember(name: str, db_alias: str, sql: str) -> None:
-    import json
 
     data = made()
     data[name] = {"db": db_alias, "checksum": _checksum(sql)}
     made_path().parent.mkdir(parents=True, exist_ok=True)
-    made_path().write_text(json.dumps(data, indent=2), encoding="utf-8")
+    write_json(made_path(), data, indent=2)
 
 
 def forget(name: str) -> None:
-    import json
 
     data = made()
     if data.pop(name, None) is not None:
-        made_path().write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_json(made_path(), data, indent=2)
 
 
 def made_with(name: str, sql: str) -> bool:

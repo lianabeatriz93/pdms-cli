@@ -23,6 +23,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from .config import write_json
 from . import instances, repos
 
 KEY = "frontend"  # how pdms ps, stop and logs call it
@@ -212,7 +213,7 @@ def remember_build(root: Path) -> dict:
     record = {**build_inputs(root), "commit": git_commit(root),
               "built_at": datetime.now().isoformat(timespec="seconds")}
     build_record_path().parent.mkdir(parents=True, exist_ok=True)
-    build_record_path().write_text(json.dumps(record), encoding="utf-8")
+    write_json(build_record_path(), record)
     return record
 
 
@@ -257,7 +258,7 @@ def start(root: Path, mode: str, port: int) -> dict:
         "started_at": datetime.now().isoformat(timespec="seconds"),
     }
     state_path().parent.mkdir(parents=True, exist_ok=True)
-    state_path().write_text(json.dumps(record), encoding="utf-8")
+    write_json(state_path(), record)
     return record
 
 

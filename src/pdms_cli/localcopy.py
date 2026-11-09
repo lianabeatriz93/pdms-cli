@@ -17,9 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import socket
 import subprocess
-import sys
 import threading
 import time
 from dataclasses import replace
@@ -27,8 +25,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO
 
-from . import actions, images, instances, localdb, migrations
-from .config import Config, Database
+from . import actions, docker, images, instances, localdb, migrations
+from .config import Config, Database, write_json
 from .i18n import _
 
 ALIAS = "pdms-local"
@@ -63,7 +61,7 @@ def load_state() -> dict:
 
 def _save_state(data: dict) -> None:
     state_path().parent.mkdir(parents=True, exist_ok=True)
-    state_path().write_text(json.dumps(data, indent=1), encoding="utf-8")
+    write_json(state_path(), data, indent=1)
 
 
 # ---------------------------------------------------------------------------------------------- refresh
@@ -113,18 +111,7 @@ def schemas_to_copy(db: Database, output: IO[str]) -> tuple[list[str], list[str]
 def dump_command(db: Database, schemas: tuple[str, ...] | list[str] = COPIED_SCHEMAS, name: str = "") -> list[str]:
     """``docker run`` of pg_dump (custom format, to stdout) for ``db``; the password travels as PGPASSWORD. ``name``:
     the container's, to remove it if it has to be stopped."""
-    host = db.host.strip()
-    network: list[str] = []
-    if sys.platform.startswith("linux"):
-        network = ["--network", "host"]
-        try:  # the host's /etc/hosts (a devo-cli tunnel: the RDS name → 127.0.0.6) is not the container's
-            address = socket.gethostbyname(host)
-        except OSError:
-            address = ""
-        if address and address != host:
-            network += ["--add-host", f"{host}:{address}"]
-    elif host.lower() in migrations.LOCAL_HOSTS:
-        host = "host.docker.internal"  # Docker Desktop (macOS / Windows)
+    host, network = docker.reach(db.host)
     return [
         "docker", "run", "--rm", *(["--name", name] if name else []), *network, "-e", "PGPASSWORD", localdb.IMAGE,
         "pg_dump", "-h", host, "-p", str(db.port), "-U", db.user, "-d", db.database,

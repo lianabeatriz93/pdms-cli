@@ -89,3 +89,14 @@ def test_reading_retries_while_windows_replaces_the_file(config_file, monkeypatc
     monkeypatch.setattr(config.Path, "read_text", read_text)
     monkeypatch.setattr(config.time, "sleep", lambda seconds: None)
     assert Config.load().dbs["local"].password == "secret"
+
+
+def test_state_files_are_written_in_one_step(tmp_path) -> None:
+    path = tmp_path / "state" / "copy.json"
+    config.write_json(path, {"a": 1}, indent=1)
+    config.write_json(path, {"a": 2})
+    assert path.read_text() == '{"a": 2}' and [p.name for p in path.parent.iterdir()] == ["copy.json"]
+    if sys.platform != "win32":
+        umask = os.umask(0)
+        os.umask(umask)
+        assert path.stat().st_mode & 0o777 == 0o666 & ~umask  # not private: as any file the user makes
