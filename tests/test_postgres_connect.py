@@ -38,3 +38,17 @@ def test_questionary_is_imported_when_used() -> None:
     code = "import sys, pdms_cli.cli; print('questionary' in sys.modules, 'prompt_toolkit' in sys.modules)"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
     assert out.split() == ["False", "False"]
+
+
+def test_patching_through_the_lazy_module_patches_the_module(monkeypatch) -> None:
+    import questionary
+
+    from pdms_cli.lazy import questionary as lazy
+
+    real = questionary.confirm
+    with monkeypatch.context() as patch:
+        patch.setattr(lazy, "confirm", "patched")
+        assert questionary.confirm == "patched" and lazy.confirm == "patched"
+    assert questionary.confirm is real and "confirm" not in vars(lazy)
+    monkeypatch.setattr(questionary, "confirm", "again")  # what the answers fixture does
+    assert lazy.confirm == "again"
