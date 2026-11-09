@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from typing import Optional
 
 from ..lazy import questionary
@@ -12,7 +13,10 @@ from rich.table import Table
 from .. import actions, completion, prompts, repos, userimport
 from ..config import Config
 from ..i18n import _
-from .common import JSON_HELP, YES_HELP, confirm, print_json, add_user, console, fail, pick, print_removed, print_users, settle, show_menu, user_app
+from .common import (
+    ADD_OPTIONS_NOTE, EDIT_OPTIONS_NOTE, JSON_HELP, YES_HELP, add_user, confirm, console, fail, given, pick, print_json, print_removed, print_users, settle,
+    show_menu, user_app,
+)
 
 
 @user_app.callback()
@@ -30,19 +34,43 @@ def user_list(as_json: bool = typer.Option(False, "--json", help=JSON_HELP)) -> 
     print_users(cfg)
 
 
-@user_app.command("add", help=_("Add a user (wizard)."))
-def user_add() -> None:
-    add_user(Config.load())
+USER_ID_HELP = _("DEV_USER_ID (uuid).")
+USERNAME_HELP = _("DEV_USERNAME (email).")
+FIRST_NAME_HELP = _("DEV_FIRST_NAME.")
+LAST_NAME_HELP = _("DEV_LAST_NAME.")
+ROLES_HELP = _("DEV_ROLES, comma separated (roles of the current repo).")
 
 
-@user_app.command("edit", help=_("Edit a user."))
-def user_edit(name: Optional[str] = typer.Argument(None, autocompletion=completion.users)) -> None:
+@user_app.command("add", help=_("Add a user (wizard).") + " " + ADD_OPTIONS_NOTE)
+def user_add(
+    name: Optional[str] = typer.Argument(None, help=_("Alias of the new user. Empty = ask.")),
+    user_id: Optional[str] = typer.Option(None, "--user-id", help=USER_ID_HELP),
+    username: Optional[str] = typer.Option(None, "--username", help=USERNAME_HELP),
+    first_name: Optional[str] = typer.Option(None, "--first-name", help=FIRST_NAME_HELP),
+    last_name: Optional[str] = typer.Option(None, "--last-name", help=LAST_NAME_HELP),
+    roles: Optional[str] = typer.Option(None, "--roles", help=ROLES_HELP, autocompletion=completion.roles),
+) -> None:
+    add_user(Config.load(), name, given(user_id=user_id, username=username, first_name=first_name,
+                                        last_name=last_name, roles=roles))
+
+
+@user_app.command("edit", help=_("Edit a user.") + " " + EDIT_OPTIONS_NOTE)
+def user_edit(
+    name: Optional[str] = typer.Argument(None, autocompletion=completion.users),
+    user_id: Optional[str] = typer.Option(None, "--user-id", help=USER_ID_HELP),
+    username: Optional[str] = typer.Option(None, "--username", help=USERNAME_HELP),
+    first_name: Optional[str] = typer.Option(None, "--first-name", help=FIRST_NAME_HELP),
+    last_name: Optional[str] = typer.Option(None, "--last-name", help=LAST_NAME_HELP),
+    roles: Optional[str] = typer.Option(None, "--roles", help=ROLES_HELP, autocompletion=completion.roles),
+) -> None:
     cfg = Config.load()
-    prompts.require_tty()
+    values = given(user_id=user_id, username=username, first_name=first_name, last_name=last_name, roles=roles)
+    if not values:
+        prompts.require_tty()
     name = pick(cfg.users, _("user"), name)
-    roles = actions.known_roles(cfg)
-    user = prompts.ask_user(cfg.users[name], roles)
-    settle(lambda: actions.save_user(cfg, name, user, roles=roles))
+    known = actions.known_roles(cfg)
+    user = replace(cfg.users[name], **values) if values else prompts.ask_user(cfg.users[name], known)
+    settle(lambda: actions.save_user(cfg, name, user, roles=known))
     console.print("[green]✓[/] " + _("User '{name}' updated.", name=name))
 
 
@@ -146,8 +174,8 @@ def user_menu() -> None:
     prompts.require_tty()
     show_menu(_("Users:"), {
         _("List"): lambda: user_list(False),
-        _("Add"): user_add,
+        _("Add"): lambda: user_add(None, None, None, None, None, None),
         _("Import from a database"): lambda: user_import(None, None, None, False, 200, False),
-        _("Edit"): lambda: user_edit(None),
+        _("Edit"): lambda: user_edit(None, None, None, None, None, None),
         _("Delete"): lambda: user_remove(None, False),
     })

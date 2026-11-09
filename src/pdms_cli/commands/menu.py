@@ -31,7 +31,7 @@ def settings_menu() -> None:
         _("Guided setup"): setup_cmd,
         _("Defaults"): config_defaults,
         _("Repos"): repo_menu,
-        _("Check the environment (doctor)"): lambda: doctor_cmd(False, 5),
+        _("Check the environment (doctor)"): lambda: doctor_cmd(False, 5, False),
         _("Language"): lambda: config_language(None),
         _("Export configuration"): lambda: config_export(None, None, None, False),
         _("Import configuration"): lambda: config_import(None, None, False, False, False),

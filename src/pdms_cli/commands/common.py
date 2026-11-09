@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
@@ -14,7 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .. import actions, images, instances, prompts, proxy, repos
-from ..config import Config, Database
+from ..config import Config, Database, DevUser
 from ..i18n import _
 
 console = Console()
@@ -85,6 +86,43 @@ YES_HELP = _("Do it without asking (for scripts).")
 JSON_HELP = _("Print JSON instead of a table (for scripts).")
 
 
+ADD_OPTIONS_NOTE = _("With the options it asks nothing (only for the required ones left out, in a terminal).")
+EDIT_OPTIONS_NOTE = _("With options it changes only those, without asking.")
+PASSWORD_STDIN_HELP = _("Read the password from the first line of stdin (it never goes on the command line).")
+PASSWORD_ENV_HELP = _("Read the password from this environment variable (it never goes on the command line).")
+
+
+def read_secret(from_stdin: bool, env_name: Optional[str]) -> Optional[str]:
+    """A password from the first line of stdin or from an environment variable; None when neither is given."""
+    if from_stdin and env_name:
+        fail(_("Give --password-stdin or --password-env, not both."))
+    if from_stdin:
+        return sys.stdin.readline().rstrip("\r\n")
+    if env_name:
+        if env_name not in os.environ:
+            fail(_("The environment variable {name} is not set.", name=env_name))
+        return os.environ[env_name]
+    return None
+
+
+def given(**values: object) -> dict:
+    """The options a command received (the ones left as None were not given)."""
+    return {key: value for key, value in values.items() if value is not None}
+
+
+def ask_missing(missing: dict[str, Callable[[], T]]) -> dict[str, T]:
+    """Ask in the terminal for the required values the options left out (``option -> asks it``); without a
+    terminal, a failure that names the options to pass."""
+    if missing and not interactive_terminal():
+        fail(_("Missing {options}: pass them, or run it in a terminal to be asked.", options=", ".join(missing)))
+    return {option: ask() for option, ask in missing.items()}
+
+
+def split_list(value: str) -> list[str]:
+    """``a, b,,c`` -> ``["a", "b", "c"]`` (no repeats)."""
+    return list(dict.fromkeys(item.strip() for item in value.split(",") if item.strip()))
+
+
 def confirm(question: str, yes: bool) -> bool:
     """``yes``, or the user's answer; without a terminal to ask in, a failure that says to pass --yes."""
     if yes:
@@ -149,22 +187,58 @@ def pick(cfg_items: dict, kind: str, name: Optional[str], default: str = "") -> 
     return prompts.select_name(_("Choose {kind}:", kind=kind), list(cfg_items), default)
 
 
-def add_db(cfg: Config) -> str:
-    prompts.require_tty()
-    name = prompts.ask_name(_("database"), cfg.dbs)
-    database = prompts.ask_database()
+def _required_text(label: str) -> Callable[[], str]:
+    return lambda: questionary.text(label, validate=lambda value: bool(value.strip()) or _("Required field")).unsafe_ask()
+
+
+def _new_name(cfg_items: dict, name: Optional[str]) -> Optional[str]:
+    return None if name is None else settle(lambda: actions.check_alias(name, cfg_items))
+
+
+def add_db(cfg: Config, name: Optional[str] = None, values: Optional[dict] = None, ping: Optional[bool] = None) -> str:
+    """A new database: the wizard, or without asking the fields ``values`` has (``Database`` fields; the alias and
+    the user are asked only when missing, the rest defaults as in the wizard)."""
+    name = _new_name(cfg.dbs, name)
+    if not values:
+        prompts.require_tty()
+        name = name or prompts.ask_name(_("database"), cfg.dbs)
+        database = prompts.ask_database()
+    else:
+        asked = ask_missing({option: ask for option, ask, missing in (
+            ("NAME", lambda: prompts.ask_name(_("database"), cfg.dbs), name is None),
+            ("--user", _required_text(_("User:")), not values.get("user")),
+        ) if missing})
+        name = name or asked.get("NAME")
+        values = {**values, "user": values.get("user") or asked.get("--user", "")}
+        host = values.get("host", "localhost")
+        database = replace(Database(host=host, protected=host not in ("localhost", "127.0.0.1")), **values)
     settle(lambda: actions.save_db(cfg, name, database, new=True))
     console.print("[green]✓[/] " + _("Database '{name}' saved.", name=name))
-    if questionary.confirm(_("Test the connection now?"), default=True).unsafe_ask():
+    if ping is None:
+        ping = not values and questionary.confirm(_("Test the connection now?"), default=True).unsafe_ask()
+    if ping:
         check_db(name, cfg.dbs[name], cfg.defaults.db_timeout)
     return name
 
 
-def add_user(cfg: Config) -> str:
-    prompts.require_tty()
-    name = prompts.ask_name(_("user"), cfg.users)
+def add_user(cfg: Config, name: Optional[str] = None, values: Optional[dict] = None) -> str:
+    """A new development user: the wizard, or without asking the fields ``values`` has (``DevUser`` fields; the
+    alias, the id and the username are asked only when missing)."""
+    name = _new_name(cfg.users, name)
     roles = actions.known_roles(cfg)
-    user = prompts.ask_user(roles=roles)
+    if not values:
+        prompts.require_tty()
+        name = name or prompts.ask_name(_("user"), cfg.users)
+        user = prompts.ask_user(roles=roles)
+    else:
+        asked = ask_missing({option: ask for option, ask, missing in (
+            ("NAME", lambda: prompts.ask_name(_("user"), cfg.users), name is None),
+            ("--user-id", _required_text("DEV_USER_ID (uuid):"), not values.get("user_id")),
+            ("--username", _required_text("DEV_USERNAME (email):"), not values.get("username")),
+        ) if missing})
+        name = name or asked.get("NAME")
+        user = DevUser(**{"user_id": asked.get("--user-id", ""), "username": asked.get("--username", ""),
+                          **{key: value for key, value in values.items() if value}})
     settle(lambda: actions.save_user(cfg, name, user, new=True, roles=roles))
     console.print("[green]✓[/] " + _("User '{name}' saved.", name=name))
     return name

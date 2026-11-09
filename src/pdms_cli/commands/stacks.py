@@ -12,7 +12,10 @@ from rich.table import Table
 from .. import actions, completion, instances, prompts
 from ..config import Config, Stack
 from ..i18n import _
-from .common import JSON_HELP, YES_HELP, confirm, print_json, EVENTS_HELP, app, console, fail, pick, settle, show_menu, stack_app
+from .common import (
+    ADD_OPTIONS_NOTE, EDIT_OPTIONS_NOTE, EVENTS_HELP, JSON_HELP, YES_HELP, app, ask_missing, confirm, console, fail, pick,
+    print_json, settle, show_menu, split_list, stack_app,
+)
 from .run import (
     ON_DEMAND_HELP,
     Profile,
@@ -27,7 +30,7 @@ from .run import (
     wait_until_ready,
     warn_events,
 )
-from .services import backend_root, label, list_services, running_by_service, services_root
+from .services import backend_root, label, list_services, running_by_service, services_root, stack_paths
 
 
 def print_stacks(cfg: Config) -> None:
@@ -108,28 +111,64 @@ def stack_list(as_json: bool = typer.Option(False, "--json", help=JSON_HELP)) ->
     print_stacks(cfg)
 
 
-@stack_app.command("add", help=_("Create a stack (wizard), or one with the services running now (--running)."))
+STACK_SERVICE_HELP = _("A service of the stack, as pdms services shows it (e.g. lead/lead-tp-list); repeat it or "
+                       "use commas for several.")
+STACK_USER_HELP = _("User the stack starts with (\"\" = ask when starting).")
+STACK_DB_HELP = _("Database the stack starts with (\"\" = ask when starting).")
+
+
+def given_services(cfg: Config, services: Optional[list[str]]) -> Optional[list[str]]:
+    """The services given with --service (commas also split them), each one checked in the current repo."""
+    if not services:
+        return None
+    picked = [svc.strip("/") for svc in split_list(",".join(services))]
+    stack_paths(cfg, Stack(services=picked))
+    return picked
+
+
+@stack_app.command("add", help=_("Create a stack (wizard), or one with the services running now (--running).")
+                   + " " + ADD_OPTIONS_NOTE)
 def stack_add(
     name: Optional[str] = typer.Argument(None, help=_("Name of the new stack. Empty = ask.")),
     running: bool = typer.Option(
         False, "--running", "-r",
         help=_("The services of the current repo running now, with the user and database most of them use."),
     ),
+    services: Optional[list[str]] = typer.Option(None, "--service", help=STACK_SERVICE_HELP),
+    user: Optional[str] = typer.Option(None, "--user", help=STACK_USER_HELP, autocompletion=completion.users),
+    db: Optional[str] = typer.Option(None, "--db", help=STACK_DB_HELP, autocompletion=completion.dbs),
 ) -> None:
     cfg = Config.load()
+    if running and services:
+        fail(_("Give --running or --service, not both."))
+    options = bool(services) or user is not None or db is not None
+    picked = given_services(cfg, services)
     if running:
         root = backend_root(cfg)
         stack = settle(lambda: actions.stack_from_running(cfg, root))
         print_running_stack(stack)
     else:
-        prompts.require_tty()
-        stack = None
-    if name is None:
-        prompts.require_tty()
-        name = prompts.ask_name(_("stack"), cfg.stacks)
-    else:
-        name = settle(lambda: actions.check_alias(name, cfg.stacks))
-    stack = stack or ask_stack(cfg)
+        if not options:
+            prompts.require_tty()
+        stack = Stack(services=picked) if picked else None
+    if not options:  # as always: the wizard, or the running services
+        if name is None:
+            prompts.require_tty()
+            name = prompts.ask_name(_("stack"), cfg.stacks)
+        else:
+            name = settle(lambda: actions.check_alias(name, cfg.stacks))
+        stack = stack or ask_stack(cfg)
+    else:  # with options: only the required parts they leave out are asked
+        if name is not None:
+            name = settle(lambda: actions.check_alias(name, cfg.stacks))
+        asked = ask_missing({option: ask for option, ask, missing in (
+            ("NAME", lambda: prompts.ask_name(_("stack"), cfg.stacks), name is None),
+            ("--service", lambda: ask_stack(cfg, Stack(user=user or "", db=db or "")), stack is None),
+        ) if missing})
+        name = name or asked["NAME"]
+        stack = stack or asked["--service"]
+        stack.user = stack.user if user is None else user
+        stack.db = stack.db if db is None else db
     settle(lambda: actions.save_stack(cfg, name, stack))
     console.print("[green]✓[/] " + _("Stack '{name}' saved. Start it with [bold]pdms up {name}[/].", name=name))
 
@@ -158,11 +197,24 @@ def stack_rename(
     console.print("[green]✓[/] " + _("Stack '{name}' is now '{new}'.", name=name, new=renamed))
 
 
-@stack_app.command("edit", help=_("Edit a stack."))
-def stack_edit(name: Optional[str] = typer.Argument(None, autocompletion=completion.stacks)) -> None:
+@stack_app.command("edit", help=_("Edit a stack.") + " " + EDIT_OPTIONS_NOTE)
+def stack_edit(
+    name: Optional[str] = typer.Argument(None, autocompletion=completion.stacks),
+    services: Optional[list[str]] = typer.Option(
+        None, "--service", help=STACK_SERVICE_HELP + " " + _("They replace the stack's services."),
+    ),
+    user: Optional[str] = typer.Option(None, "--user", help=STACK_USER_HELP, autocompletion=completion.users),
+    db: Optional[str] = typer.Option(None, "--db", help=STACK_DB_HELP, autocompletion=completion.dbs),
+) -> None:
     cfg = Config.load()
     name = pick(cfg.stacks, _("stack"), name)
-    stack = ask_stack(cfg, cfg.stacks[name])
+    if services or user is not None or db is not None:
+        stack = cfg.stacks[name]
+        stack.services = given_services(cfg, services) or stack.services
+        stack.user = stack.user if user is None else user
+        stack.db = stack.db if db is None else db
+    else:
+        stack = ask_stack(cfg, cfg.stacks[name])
     settle(lambda: actions.save_stack(cfg, name, stack))
     console.print("[green]✓[/] " + _("Stack '{name}' updated.", name=name))
 
@@ -292,9 +344,9 @@ def stack_menu() -> None:
         _("Start stack"): lambda: up(None, None, None, None, False, None, None, None),
         _("Stop stack"): lambda: down(None),
         _("List"): lambda: stack_list(False),
-        _("Create"): lambda: stack_add(None, False),
-        _("Create with the running services"): lambda: stack_add(None, True),
-        _("Edit"): lambda: stack_edit(None),
+        _("Create"): lambda: stack_add(None, False, None, None, None),
+        _("Create with the running services"): lambda: stack_add(None, True, None, None, None),
+        _("Edit"): lambda: stack_edit(None, None, None, None),
         _("Rename"): lambda: stack_rename(None, None),
         _("Delete"): lambda: stack_remove(None, False),
     })

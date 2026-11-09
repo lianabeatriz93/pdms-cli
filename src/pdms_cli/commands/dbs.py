@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from typing import Optional
 
@@ -14,7 +14,9 @@ from .. import actions, completion, localcopy, localdb, prompts, testruns
 from ..config import Config
 from ..i18n import _
 from .common import (
-    JSON_HELP, YES_HELP, add_db, check_db, confirm, console, db_app, print_json, interactive_terminal, pick, print_dbs, print_removed, settle, show_menu, with_images,
+    ADD_OPTIONS_NOTE, EDIT_OPTIONS_NOTE, JSON_HELP, PASSWORD_ENV_HELP, PASSWORD_STDIN_HELP, YES_HELP, add_db, check_db, confirm, console, db_app, given,
+    print_json, interactive_terminal, pick, print_dbs, print_removed, read_secret, settle, show_menu, split_list,
+    with_images,
 )
 
 
@@ -34,18 +36,61 @@ def db_list(as_json: bool = typer.Option(False, "--json", help=JSON_HELP)) -> No
     print_dbs(cfg)
 
 
-@db_app.command("add", help=_("Add a database (wizard)."))
-def db_add() -> None:
-    add_db(Config.load())
+def _db_values(host: Optional[str], port: Optional[int], database: Optional[str], user: Optional[str],
+               password: Optional[str], protected: Optional[bool], view_readers: Optional[str]) -> dict:
+    """The ``Database`` fields given as options."""
+    return given(host=host, port=port, database=database, user=user, password=password, protected=protected,
+                 view_readers=None if view_readers is None else split_list(view_readers))
 
 
-@db_app.command("edit", help=_("Edit a database."))
-def db_edit(name: Optional[str] = typer.Argument(None, autocompletion=completion.dbs)) -> None:
+DB_HOST_HELP = _("Host of the server.")
+DB_PORT_HELP = _("Port of the server.")
+DB_DATABASE_HELP = _("Name of the database on the server.")
+DB_USER_HELP = _("User to connect with.")
+DB_PROTECTED_HELP = _("A shared/remote database: asks for confirmation before a service uses it.")
+DB_VIEW_READERS_HELP = _("Other users who may read the test copies of views made there (commas; \"\" = none).")
+
+
+@db_app.command("add", help=_("Add a database (wizard).") + " " + ADD_OPTIONS_NOTE)
+def db_add(
+    name: Optional[str] = typer.Argument(None, help=_("Alias of the new database. Empty = ask.")),
+    host: Optional[str] = typer.Option(None, "--host", help=_("Host of the server (default: localhost).")),
+    port: Optional[int] = typer.Option(None, "--port", min=1, max=65535, help=_("Port of the server (default: 5432).")),
+    database: Optional[str] = typer.Option(None, "--database", help=_("Name of the database on the server (default: pdm).")),
+    user: Optional[str] = typer.Option(None, "--user", help=DB_USER_HELP),
+    password_stdin: bool = typer.Option(False, "--password-stdin", help=PASSWORD_STDIN_HELP),
+    password_env: Optional[str] = typer.Option(None, "--password-env", help=PASSWORD_ENV_HELP),
+    protected: Optional[bool] = typer.Option(
+        None, "--protected/--no-protected", help=DB_PROTECTED_HELP + " " + _("Default: yes unless it is localhost."),
+    ),
+    view_readers: Optional[str] = typer.Option(None, "--view-readers", help=DB_VIEW_READERS_HELP),
+    ping: Optional[bool] = typer.Option(
+        None, "--ping/--no-ping", help=_("Test the connection after saving it (asked in the wizard; no with options)."),
+    ),
+) -> None:
+    password = read_secret(password_stdin, password_env)
+    add_db(Config.load(), name, _db_values(host, port, database, user, password, protected, view_readers), ping)
+
+
+@db_app.command("edit", help=_("Edit a database.") + " " + EDIT_OPTIONS_NOTE)
+def db_edit(
+    name: Optional[str] = typer.Argument(None, autocompletion=completion.dbs),
+    host: Optional[str] = typer.Option(None, "--host", help=DB_HOST_HELP),
+    port: Optional[int] = typer.Option(None, "--port", min=1, max=65535, help=DB_PORT_HELP),
+    database: Optional[str] = typer.Option(None, "--database", help=DB_DATABASE_HELP),
+    user: Optional[str] = typer.Option(None, "--user", help=DB_USER_HELP),
+    password_stdin: bool = typer.Option(False, "--password-stdin", help=PASSWORD_STDIN_HELP),
+    password_env: Optional[str] = typer.Option(None, "--password-env", help=PASSWORD_ENV_HELP),
+    protected: Optional[bool] = typer.Option(None, "--protected/--no-protected", help=DB_PROTECTED_HELP),
+    view_readers: Optional[str] = typer.Option(None, "--view-readers", help=DB_VIEW_READERS_HELP),
+) -> None:
     cfg = Config.load()
-    prompts.require_tty()
+    values = _db_values(host, port, database, user, read_secret(password_stdin, password_env), protected, view_readers)
+    if not values:
+        prompts.require_tty()
     name = pick(cfg.dbs, _("database"), name)
-    database = prompts.ask_database(cfg.dbs[name])
-    settle(lambda: actions.save_db(cfg, name, database))
+    updated = replace(cfg.dbs[name], **values) if values else prompts.ask_database(cfg.dbs[name])
+    settle(lambda: actions.save_db(cfg, name, updated))
     console.print("[green]✓[/] " + _("Database '{name}' updated.", name=name))
 
 
@@ -80,8 +125,8 @@ def db_menu() -> None:
     prompts.require_tty()
     show_menu(_("Databases:"), {
         _("List"): lambda: db_list(False),
-        _("Add"): db_add,
-        _("Edit"): lambda: db_edit(None),
+        _("Add"): lambda: db_add(None, None, None, None, None, False, None, None, None, None),
+        _("Edit"): lambda: db_edit(None, None, None, None, None, False, None, None, None),
         _("Test connection"): lambda: db_test(None, None),
         _("Delete"): lambda: db_remove(None, False),
     })

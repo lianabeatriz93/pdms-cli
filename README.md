@@ -176,6 +176,7 @@ pdms proxy -b                            # the proxy is what wakes them
 ```bash
 pdms stack add                    # wizard: name, services, a fixed user/DB or "ask when starting"
 pdms stack add fix-1234 --running # the services of the repo running now, as they run
+pdms stack add tp --service lead/lead-tp-list --service lead/lead-place-get --user agent --db local  # no prompts
 pdms stack rename fix-1234 tp-fix
 pdms up tp                        # starts what is not running, each on a free port (-u / -d to choose)
 pdms up --setup Prospecting       # the stack of a setup saved in pdms ui
@@ -252,6 +253,7 @@ keeps its own login, so you sign in there once.
 
 ```bash
 pdms db add                       # wizard; `protected = true` asks before a service uses it
+pdms db add qa --host qa.example.com --user reader --password-stdin < pw.txt   # the same, without prompts
 pdms db test                      # connection and round trip of every database
 pdms user import -d local -s ana  # development users from a database's pdms_user table
 ```
@@ -512,8 +514,9 @@ passwords you already have and backs up the configuration first. Repos are never
 | `pdms self-update` | Update pdms (`--list`, `--version` to go back) |
 | `pdms bug-report` | A report to send with a problem, without passwords |
 
-`pdms <command> --help` shows every option. For scripts: `--json` on `ps` and the `list` commands, `--yes` on the
-commands that ask before deleting, and errors on stderr. `db test` and `view stop`, the first names of `db ping` and
+`pdms <command> --help` shows every option. For scripts: `--json` on `ps`, `doctor` and the `list` commands, `--yes`
+on the commands that ask before deleting, options for every value `db`, `user` and `stack` `add`/`edit` ask (passwords
+only with `--password-stdin` or `--password-env`; `edit` changes only the options given), and errors on stderr. `db test` and `view stop`, the first names of `db ping` and
 `view unuse`, still work.
 
 ## Development
