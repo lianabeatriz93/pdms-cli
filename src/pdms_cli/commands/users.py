@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from typing import Optional
 
-import questionary
+from ..lazy import questionary
 import typer
 from rich.table import Table
 

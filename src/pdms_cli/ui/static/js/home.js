@@ -1,6 +1,6 @@
 // Home: what needs attention, Start everything, the tiles and the stacks.
 
-import { $, act, button, el, failedText, icon, phaseLabel, post, statusLabel, toast } from "./core.js";
+import { $, act, button, el, failedText, icon, onScreen, phaseLabel, post, statusLabel, toast } from "./core.js";
 import { state } from "./state.js";
 import { adoptStrays, servicesView, stopStrays } from "./services.js";
 import { showLogs } from "./logs.js";
@@ -368,6 +368,7 @@ export function paintHome() {
   $("home-stop").hidden = !(alive || state.proxy || (state.frontend && state.frontend.running) || state.events.up);
   $("home-error").hidden = !(job && job.error);
   $("home-error").textContent = job && job.error ? failedText(job) : "";
+  if (!onScreen("home")) return; // the router paints the rest when Home opens
 
   // In the order Start everything goes: events, the stack, the proxy, the frontend.
   const steps = stepStates();

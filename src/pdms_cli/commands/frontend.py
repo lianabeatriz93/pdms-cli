@@ -6,7 +6,7 @@ import subprocess
 import sys
 from typing import Optional
 
-import questionary
+from ..lazy import questionary
 import typer
 
 from .. import actions, awsenv, frontend, instances, prompts, runner

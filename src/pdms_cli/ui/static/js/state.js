@@ -61,10 +61,37 @@ export function useTheme(theme) {
   else delete document.documentElement.dataset.theme;
 }
 
+// Where the keyboard is: a paint rebuilds lists, and the button or link that had the focus is replaced by a new one.
+// It is found again by its place under the nearest element with an id, and only if it is the same kind of control
+// with the same label (a row that moved is not focused instead: Enter would act on another service).
+function focusSpot() {
+  const node = document.activeElement;
+  if (!node || node === document.body || node.closest("dialog")) return null;
+  const path = [];
+  let at = node;
+  while (!at.id) {
+    const parent = at.parentElement;
+    if (!parent) return null;
+    path.unshift([...parent.children].indexOf(at));
+    at = parent;
+  }
+  return { node, id: at.id, path, tag: node.tagName, label: node.getAttribute("aria-label") || node.textContent };
+}
+
+function restoreFocus(spot) {
+  if (!spot || spot.node.isConnected) return;
+  if (document.activeElement && document.activeElement !== document.body) return; // it went somewhere on purpose
+  let at = document.getElementById(spot.id);
+  for (const index of spot.path) at = at && at.children[index];
+  if (!at || at.tagName !== spot.tag || (at.getAttribute("aria-label") || at.textContent) !== spot.label) return;
+  at.focus({ preventScroll: true });
+}
+
 export function paint(next) {
   // pdms ui restarted with a new version (an update): load its page, which may have changed too.
   if (updateView.loaded === null) updateView.loaded = next.version;
   else if (next.version !== updateView.loaded) { location.reload(); return; }
+  const spot = focusSpot();
   // Defaults for what an older pdms ui server does not send yet (its page files may already be newer).
   state = {
     jobs: {}, users: [], dbs: [], stacks: [], health: { dbs: [], running: false, slow_ms: 0 },
@@ -99,6 +126,7 @@ export function paint(next) {
   syncSettings();
   paintBrowser();
   if (relabel) repaintTexts();
+  restoreFocus(spot);
 }
 
 // The language changed: paint again what does not come from the state (the state's own parts were just painted).

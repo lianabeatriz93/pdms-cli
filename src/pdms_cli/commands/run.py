@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-import questionary
+from ..lazy import questionary
 import typer
 from rich.markup import escape
 from rich.table import Table

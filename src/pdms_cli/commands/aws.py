@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from typing import Callable, Optional
 
-import questionary
+from ..lazy import questionary
 import typer
 from rich.console import Console
 from rich.markup import escape

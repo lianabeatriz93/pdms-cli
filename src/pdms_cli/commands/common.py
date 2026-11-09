@@ -8,7 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
-import questionary
+from ..lazy import questionary
 import typer
 from rich.console import Console
 from rich.table import Table

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-import questionary
+from ..lazy import questionary
 import typer
 
 from .. import actions, awsenv, i18n, migrations, onboarding, prompts, repos

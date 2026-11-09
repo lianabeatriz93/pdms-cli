@@ -79,10 +79,9 @@ def source(cfg: Config, alias: str = SOURCE_ALIAS, database: str = SOURCE_DATABA
 
 def unreadable(db: Database, schema: str, timeout: int = 30) -> list[str]:
     """What of ``schema`` the source's user may not read (tables and sequences, or the schema itself); [] if all."""
-    import psycopg
+    from . import postgres
 
-    with psycopg.connect(host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password,
-                         connect_timeout=timeout) as conn:
+    with postgres.connect(db, timeout) as conn:
         conn.read_only = True
         if not conn.execute("select to_regnamespace(%s) is not null and has_schema_privilege(%s, 'USAGE')",
                             [f'"{schema}"', schema]).fetchone()[0]:

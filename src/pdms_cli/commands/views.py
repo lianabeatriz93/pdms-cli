@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-import questionary
+from ..lazy import questionary
 import typer
 from rich.markup import escape
 from rich.table import Table

@@ -174,12 +174,11 @@ SUPPORT_SCHEMAS = ("backup_data",)
 
 
 def ensure_support_schemas(db: Database) -> None:
-    import psycopg
+    from .. import postgres
     from psycopg import sql
 
     try:
-        with psycopg.connect(host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password,
-                             connect_timeout=10, autocommit=True) as conn:
+        with postgres.connect(db, 10, autocommit=True) as conn:
             for schema in SUPPORT_SCHEMAS:
                 conn.execute(sql.SQL("create schema if not exists {}").format(sql.Identifier(schema)))
     except Exception as exc:  # noqa: BLE001 - the driver's errors

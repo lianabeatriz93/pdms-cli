@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-import questionary
+from ..lazy import questionary
 import typer
 from rich.table import Table
 

@@ -163,11 +163,10 @@ def uncommitted(repo: Path) -> set[str]:
 
 def history(db: Database, flyway: FlywaySettings, timeout: int) -> list[dict] | None:
     """The rows of Flyway's history table, oldest first; None when Flyway never ran on this database."""
-    import psycopg
+    from . import postgres
     from psycopg import sql
 
-    with psycopg.connect(host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password,
-                         connect_timeout=timeout) as conn:
+    with postgres.connect(db, timeout) as conn:
         conn.read_only = True
         table = sql.Identifier(flyway.schema, flyway.table)
         if conn.execute("select to_regclass(%s)", [f'"{flyway.schema}"."{flyway.table}"']).fetchone()[0] is None:

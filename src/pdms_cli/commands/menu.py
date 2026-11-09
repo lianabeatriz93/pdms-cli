@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-import questionary
+from ..lazy import questionary
 import typer
 
 from .. import __version__, banner, instances, prompts
