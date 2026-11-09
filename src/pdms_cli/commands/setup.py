@@ -220,7 +220,7 @@ def setup_stacks() -> None:
     setup_step(_("Stacks"))
     if questionary.confirm(_("Create a stack (services you usually start together) now?"), default=False).unsafe_ask():
         try:
-            stack_add(None, False)
+            stack_add(None, False, None, None, None)
         except typer.Exit:
             pass
     else:
@@ -254,7 +254,7 @@ def setup_cmd() -> None:
     console.print()
     if questionary.confirm(_("Check the environment now (pdms doctor)?"), default=True).unsafe_ask():
         try:
-            doctor_cmd(False, 5)
+            doctor_cmd(False, 5, False)
         except typer.Exit:
             pass
     left = onboarding.pending(Config.load())

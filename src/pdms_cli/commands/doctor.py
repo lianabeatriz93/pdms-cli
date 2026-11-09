@@ -11,7 +11,7 @@ from .. import bugreport
 from .. import doctor as diagnostics
 from ..config import Config
 from ..i18n import _
-from .common import app, console
+from .common import app, console, print_json
 
 DOCTOR_ICONS = {diagnostics.OK: "[green]✓[/]", diagnostics.WARN: "[yellow]⚠[/]", diagnostics.FAIL: "[red]✗[/]"}
 
@@ -22,9 +22,18 @@ def doctor_cmd(
     timeout: Optional[int] = typer.Option(
         None, "--timeout", "-t", help=_("Seconds to wait for each database (default: the db_timeout setting)."),
     ),
+    as_json: bool = typer.Option(
+        False, "--json", help=_("Print the checks as JSON (section, name, status ok/warn/fail, detail, hint, fix)."),
+    ),
 ) -> None:
     cfg = Config.load()
     timeout = timeout or cfg.defaults.db_timeout
+    if as_json:
+        checks = diagnostics.run_all(cfg, databases=not no_db, timeout=timeout)
+        print_json(checks)
+        if any(check.status == diagnostics.FAIL for check in checks):
+            raise typer.Exit(1)
+        return
     with console.status(_("Checking the environment...")):
         checks = diagnostics.run_all(cfg, databases=not no_db, timeout=timeout)
     section = None
