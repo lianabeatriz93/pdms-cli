@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from pdms_cli import actions, localcopy, localdb, migrations
+from pdms_cli import actions, docker, localcopy, localdb, migrations
 from pdms_cli.config import Config, Database
 
 WEB = Database(host="pdm-cluster.cluster-x.us-east-1.rds.amazonaws.com", database="pdm", user="dev", password="s3cret",
@@ -28,7 +28,7 @@ def test_the_source_is_the_template_on_the_server_of_web_dev() -> None:
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the host network is how Linux reaches a tunnel")
 def test_pg_dump_copies_public_with_its_extensions_through_the_hosts_tunnel(monkeypatch) -> None:
-    monkeypatch.setattr(localcopy.socket, "gethostbyname", lambda host: "127.0.0.6")  # devo-cli's /etc/hosts
+    monkeypatch.setattr(docker.socket, "gethostbyname", lambda host: "127.0.0.6")  # devo-cli's /etc/hosts
     cmd = localcopy.dump_command(localcopy.source(Config(dbs={"web-dev": WEB})))
     assert cmd[:5] == ["docker", "run", "--rm", "--network", "host"]
     assert f"{WEB.host}:127.0.0.6" in cmd and localdb.IMAGE in cmd

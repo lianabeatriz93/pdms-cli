@@ -32,7 +32,7 @@ from importlib import resources
 from pathlib import Path
 
 from . import frontend, i18n, instances, wsl
-from .config import Config
+from .config import Config, write_json
 
 SOURCE = resources.files("pdms_cli") / "browser_extension"
 FILES = ("manifest.json", "background.js", "texts.js", "icon.png", "popup.html", "popup.js", "popup.css")
@@ -296,7 +296,7 @@ def record_seen(browser: object, extension_version: object) -> None:
     data = seen()
     data[str(browser)] = {"at": time.time(), "version": str(extension_version or "")[:20]}
     seen_path().parent.mkdir(parents=True, exist_ok=True)
-    seen_path().write_text(json.dumps(data), encoding="utf-8")
+    write_json(seen_path(), data)
 
 
 def target() -> str:

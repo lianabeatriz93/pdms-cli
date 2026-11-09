@@ -8,6 +8,7 @@ that invocation (see :func:`use_for_this_command`).
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 from .config import Config, Repo
@@ -72,6 +73,20 @@ def repo_of(cfg: Config, path: str | Path) -> str | None:
 def use_for_this_command(root: Path | None) -> None:
     global _session_root
     _session_root = root.resolve() if root else None
+
+
+def git(root: Path, *args: str, timeout: float = 15) -> str | None:
+    """``git <args>`` run in ``root``: its output, or None when git failed, is missing or took longer than ``timeout``."""
+    try:
+        result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def checked_out_branch(root: Path, timeout: float = 10) -> str:
+    """The branch checked out in ``root`` as git names it ("HEAD" when detached); "" when git cannot say."""
+    return (git(root, "rev-parse", "--abbrev-ref", "HEAD", timeout=timeout) or "").strip()
 
 
 def _git_dir(root: Path) -> Path:

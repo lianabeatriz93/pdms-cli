@@ -7,7 +7,6 @@ It runs in a thread every :data:`EVERY` seconds: fingerprinting the source trees
 
 from __future__ import annotations
 
-import subprocess
 import threading
 from collections.abc import Callable
 from datetime import datetime
@@ -24,12 +23,8 @@ def commits(root: Path, since_commit: str = "", since_time: str = "") -> list[di
     """The commits of ``root`` after ``since_commit`` (or after ``since_time``), newest first."""
     if not since_commit and not since_time:
         return []
-    cmd = ["git", "log", f"-n{MAX_COMMITS}", "--format=%h%x09%s"]
-    cmd += [f"{since_commit}..HEAD"] if since_commit else [f"--since={since_time}"]
-    try:
-        out = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=5, check=True).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
+    since = f"{since_commit}..HEAD" if since_commit else f"--since={since_time}"
+    out = repos.git(root, "log", f"-n{MAX_COMMITS}", "--format=%h%x09%s", since, timeout=5) or ""
     return [{"commit": line.split("\t", 1)[0], "subject": line.split("\t", 1)[1]}
             for line in out.splitlines() if "\t" in line]
 

@@ -23,7 +23,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import urllib.parse
 import uuid
 import urllib.request
@@ -32,6 +31,8 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .config import write_json
+from . import docker
 from .instances import log_path, state_dir
 from .routes import terraform_dir
 
@@ -289,8 +290,7 @@ def load_event_map(root: Path, env: str = "dev") -> EventMap:
         pass
     event_map = discover(root, env)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"version": CACHE_VERSION, "fingerprint": fingerprint, "map": asdict(event_map)}),
-                     encoding="utf-8")
+    write_json(cache, {"version": CACHE_VERSION, "fingerprint": fingerprint, "map": asdict(event_map)})
     return event_map
 
 
@@ -390,16 +390,11 @@ def conf_path() -> Path:
 
 
 def _docker(*args: str, timeout: float = 60) -> tuple[int, str]:
-    try:
-        result = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return 1, str(exc)
-    return result.returncode, (result.stdout + result.stderr).strip()
+    return docker.run(*args, timeout=timeout)
 
 
 def docker_available() -> tuple[bool, str]:
-    code, out = _docker("info", "--format", "{{.ServerVersion}}", timeout=15)
-    return code == 0, out.splitlines()[-1] if out else ""
+    return docker.available()
 
 
 def container_state() -> dict | None:

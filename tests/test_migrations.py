@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from pdms_cli import migrations
+from pdms_cli import docker, migrations
 from pdms_cli.config import Config, Database, Repo
 
 
@@ -42,16 +42,28 @@ def test_docker_command_keeps_the_password_out_of_argv(tmp_path, monkeypatch):
     repo = migrations_repo(tmp_path / "pdms-db-migrations")
     (repo / "placeholder.toml").write_text("", encoding="utf-8")
     db = Database("localhost", port=5434, database="pdm", user="u", password="s3cret")
-    monkeypatch.setattr(migrations.sys, "platform", "linux")
+    monkeypatch.setattr(docker.sys, "platform", "linux")
     cmd = migrations.docker_command(repo, db, "validate")
     assert "s3cret" not in " ".join(cmd) and "DB_PASSWORD" in cmd
     assert cmd[cmd.index("--network") + 1] == "host" and "DB_HOST=localhost" in cmd
     assert cmd[cmd.index(migrations.IMAGE) + 1:] == [
         "-configFiles=flyway.toml,placeholder.toml", "-environment=local", "-ignoreMigrationPatterns=*:pending", "validate",
     ]
-    monkeypatch.setattr(migrations.sys, "platform", "darwin")
+    monkeypatch.setattr(docker.sys, "platform", "darwin")
     cmd = migrations.docker_command(repo, db, "info")
     assert "--network" not in cmd and "DB_HOST=host.docker.internal" in cmd and cmd[-1] == "info"
+
+
+def test_flyway_reaches_a_tunnel_named_in_etc_hosts(tmp_path, monkeypatch):
+    # pdms migrate --db web-dev: devo-cli's tunnel maps the RDS name to 127.0.0.6 in /etc/hosts, which the container
+    # does not have; it shares the host's network and gets the name, kept for TLS.
+    repo = migrations_repo(tmp_path / "pdms-db-migrations")
+    rds = "pdm-cluster.cluster-x.us-east-1.rds.amazonaws.com"
+    monkeypatch.setattr(docker.sys, "platform", "linux")
+    monkeypatch.setattr(docker.socket, "gethostbyname", lambda host: "127.0.0.6")
+    cmd = migrations.docker_command(repo, Database(rds, protected=True), "info")
+    assert cmd[cmd.index("--network") + 1] == "host" and cmd[cmd.index("--add-host") + 1] == f"{rds}:127.0.0.6"
+    assert f"DB_HOST={rds}" in cmd
 
 
 @pytest.fixture

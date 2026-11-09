@@ -16,6 +16,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from .config import write_json
 from .instances import state_dir
 
 REF = re.compile(r"module\.([A-Za-z0-9_-]+)(?:\[\d+\])?\.")
@@ -132,7 +133,7 @@ def load_routes(repo_root: Path, env: str = "dev") -> list[Route]:
         pass
     routes = parse_routes(repo_root, env)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps({"version": CACHE_VERSION, "fingerprint": fingerprint, "routes": [asdict(r) for r in routes]}), encoding="utf-8")
+    write_json(cache, {"version": CACHE_VERSION, "fingerprint": fingerprint, "routes": [asdict(r) for r in routes]})
     return routes
 
 

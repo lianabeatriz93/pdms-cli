@@ -30,7 +30,7 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 from . import captures, instances, repos, trace
-from .config import Config, DevUser
+from .config import Config, DevUser, write_json
 from .i18n import _
 from .routes import Route, load_routes, match
 
@@ -64,7 +64,7 @@ def frontend_change_path() -> Path:
 
 def remember_frontend_change(change: dict) -> None:
     frontend_change_path().parent.mkdir(parents=True, exist_ok=True)
-    frontend_change_path().write_text(json.dumps(change), encoding="utf-8")
+    write_json(frontend_change_path(), change)
 
 
 def frontend_change() -> str:
@@ -704,10 +704,10 @@ def serve(gateway: Gateway, host: str, port: int, info: dict) -> None:
         # pdms stop terminates it: clean up (state file, frontend/.env.local) as with Ctrl+C.
         signal.signal(signal.SIGTERM, lambda *args: sys.exit(0))
     state_path().parent.mkdir(parents=True, exist_ok=True)
-    state_path().write_text(json.dumps({
+    write_json(state_path(), {
         "pid": os.getpid(), "created": instances.creation_time(os.getpid()), "port": port,
         "started_at": datetime.now().isoformat(timespec="seconds"), **info,
-    }), encoding="utf-8")
+    })
     if info.get("background"):
         print(f"# listening on :{port} (pid {os.getpid()})", flush=True)
     stopped = threading.Event()

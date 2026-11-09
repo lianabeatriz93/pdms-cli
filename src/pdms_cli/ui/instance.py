@@ -15,6 +15,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+from ..config import write_json
 from .. import __version__, instances
 
 KEY = "ui"
@@ -125,7 +126,7 @@ def redirect_output() -> Path:
 def save_after_update(data: dict) -> None:
     """What the restarted pdms ui must do or tell: the version it should be, the proxy to start again..."""
     after_update_path().parent.mkdir(parents=True, exist_ok=True)
-    after_update_path().write_text(json.dumps(data), encoding="utf-8")
+    write_json(after_update_path(), data)
 
 
 def take_after_update() -> dict | None:
