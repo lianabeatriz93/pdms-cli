@@ -4,6 +4,13 @@ import { state } from "./state.js";
 
 export const $ = (id) => document.getElementById(id);
 
+// Whether a screen shows now: a state that comes while it is hidden only marks its lists stale (the router paints
+// them when the screen opens), so a busy machine does not rebuild every screen once a second.
+export function onScreen(view) {
+  const node = document.getElementById(`view-${view}`);
+  return Boolean(node) && !node.hidden;
+}
+
 export const MAX_LOG_LINES = 5000;
 
 export function el(tag, attrs = {}, ...children) {

@@ -66,10 +66,10 @@ def listener(ip: str, port: int) -> str:
 
 
 def connect(db: Database, timeout: int):
-    import psycopg
+    from . import postgres
 
-    return psycopg.connect(host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password,
-                           connect_timeout=timeout, autocommit=True)
+    # A check is a few small queries: one that waits longer than this has its answer anyway (the database is slow).
+    return postgres.connect(db, timeout, statement_timeout=max(timeout, 30), autocommit=True)
 
 
 def round_trip(conn) -> float:

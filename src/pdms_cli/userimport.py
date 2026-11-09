@@ -124,15 +124,13 @@ def fetch_users(
     db: Database, *, search: str = "", role: str = "", include_inactive: bool = False, limit: int = 200,
     timeout: int = 15, mapping: dict[str, str] = INTERNAL_TO_EXTERNAL_ROLES,
 ) -> list[DbUser]:
-    import psycopg
+    from . import postgres
 
     params = {
         "inactive": include_inactive, "search": search, "like": f"%{search}%", "role": internal_role(role, mapping) if role else "",
         "limit": limit,
     }
-    with psycopg.connect(
-        host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password, connect_timeout=timeout
-    ) as conn:
+    with postgres.connect(db, timeout) as conn:
         conn.read_only = True
         rows = conn.execute(QUERY, params).fetchall()
     return [DbUser(r[0], r[1], r[2] or "", r[3] or "", list(r[4] or []), r[5]) for r in rows]

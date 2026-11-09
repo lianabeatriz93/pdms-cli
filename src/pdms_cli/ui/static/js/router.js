@@ -9,6 +9,9 @@ import { loadDoctor } from "./doctor.js";
 import { loadTests } from "./tests.js";
 import { loadData } from "./data.js";
 import { leaveAwsLogs, openAwsLogs } from "./awslogs.js";
+import { paintServices } from "./services.js";
+import { paintStacks } from "./stacks.js";
+import { paintHome } from "./home.js";
 
 const VIEWS = ["home", "services", "stacks", "proxy", "events", "aws-logs", "data", "tests", "doctor", "settings"];
 
@@ -27,6 +30,10 @@ export function route() {
     $(`new-${view}`).hidden = true;
     post("/api/ui/seen", { view }).catch(() => {}); // the next state says it too
   }
+  // Their lists are only built while they show (see onScreen): build them now.
+  if (view === "home") paintHome();
+  if (view === "services") paintServices();
+  if (view === "stacks") paintStacks();
   paintProxy();
   paintEvents();
   if (view === "events") showEventsTab(eventsView.tab);

@@ -1,6 +1,6 @@
 // Stacks: their cards, starting and stopping them, and the stack editor.
 
-import { $, act, button, el, failedText, getJson, icon, moreButton, phaseLabel, post, toast } from "./core.js";
+import { $, act, button, el, failedText, getJson, icon, moreButton, onScreen, phaseLabel, post, toast } from "./core.js";
 import { state } from "./state.js";
 import { showLogs } from "./logs.js";
 import { dbLabel, fetchServices, openRestartSet, openUp, options, runningNote, runningOn } from "./launch.js";
@@ -101,7 +101,7 @@ export function runningInRepo() {
 export function paintStacks() {
   $("stack-from-running").hidden = !runningInRepo();
   const shown = state.stacks.filter(stackShown);
-  $("stacks").replaceChildren(...shown.map(stackCard));
+  if (onScreen("stacks")) $("stacks").replaceChildren(...shown.map(stackCard));
   $("stacks-empty").hidden = state.stacks.length > 0;
   $("stacks-none").hidden = !state.stacks.length || shown.length > 0;
   $("stack-shown").textContent = state.stacks.length ? t("{shown} of {total}", { shown: shown.length, total: state.stacks.length }) : "";

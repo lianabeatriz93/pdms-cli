@@ -426,7 +426,10 @@ function paintRows(shown) {
   $("awslogs-rows").replaceChildren(...shown.map((line) => {
     const first = line.messages[0];
     const extra = line.messages.length > 1 ? ` +${line.messages.length - 1}` : "";
-    return el("tr", { class: view.selected === line.id ? "sel" : "", onclick: () => select(line.id) },
+    return el("tr", {
+      class: view.selected === line.id ? "sel" : "", tabindex: "0", onclick: () => select(line.id),
+      onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(line.id); } },
+    },
       el("td", { class: "mono" }, dateTime(line.at)),
       el("td", { class: "mono fn" }, line.function),
       el("td", {}, line.level ? el("span", { class: `tag lv-${line.level}` }, line.level) : ""),

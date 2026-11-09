@@ -1,7 +1,7 @@
 // Services: the background instances, grouped by stack, and the processes outside pdms.
 
 import {
-  $, act, button, dateTime, el, failedText, iconButton, moreButton, phaseLabel, repoPath, statusLabel, toast, uptime,
+  $, act, button, dateTime, el, failedText, iconButton, moreButton, onScreen, phaseLabel, repoPath, statusLabel, toast, uptime,
 } from "./core.js";
 import { state } from "./state.js";
 import { logs, openLogs } from "./logs.js";
@@ -325,7 +325,7 @@ export function paintServices() {
   const pickable = new Set(items.filter(selectable).map((item) => item.key));
   for (const key of servicesView.selected) if (!pickable.has(key)) servicesView.selected.delete(key); // gone meanwhile
   const shown = items.filter(serviceShown);
-  $("rows").replaceChildren(...groupedRows(shown));
+  if (onScreen("services")) $("rows").replaceChildren(...groupedRows(shown));
   paintSelection(items.filter((item) => pickable.has(item.key)), shown.filter(selectable));
   const counts = { all: items.length, problems: items.filter(problem).length, outside: items.filter((item) => item.isStray).length };
   for (const node of document.querySelectorAll("#svc-seg button")) {
@@ -355,7 +355,8 @@ export function paintServices() {
 }
 
 export function tickUptimes() {
-  for (const cell of document.querySelectorAll("[data-started]")) cell.textContent = uptime(cell.dataset.started);
+  if (document.hidden) return; // the window is minimized or behind others
+  for (const cell of document.querySelectorAll(".view:not([hidden]) [data-started]")) cell.textContent = uptime(cell.dataset.started);
 }
 
 // The bar of what is picked, and the header's box that picks every shown service.

@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-import questionary
+from ..lazy import questionary
 import typer
-from prompt_toolkit.keys import Keys
 from rich.table import Table
 
 from .. import actions, completion, instances, prompts
@@ -71,6 +70,8 @@ def ask_stack_services(root: Path, candidates: list[Path], current: list[str]) -
         use_jk_keys=False,
         validate=lambda picked: bool(picked) or _("A stack needs at least one service."),
     )
+    from prompt_toolkit.keys import Keys  # here: prompt_toolkit is slow to import (see lazy.py)
+
     # Tab (Ctrl+I) inverts and Ctrl+A checks every service of the repo, not only the filtered ones
     for key in (Keys.ControlI, Keys.ControlA):
         question.application.key_bindings.remove(key)

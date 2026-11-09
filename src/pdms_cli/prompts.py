@@ -9,7 +9,7 @@ import sys
 from dataclasses import replace
 from typing import Callable, Iterable
 
-import questionary
+from .lazy import questionary
 import typer
 
 from . import actions

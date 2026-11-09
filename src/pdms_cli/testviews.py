@@ -288,10 +288,9 @@ def made_with(name: str, sql: str) -> bool:
 
 
 def _connect(db: Database, timeout: int, read_only: bool):
-    import psycopg
+    from . import postgres
 
-    conn = psycopg.connect(host=db.host, port=db.port, dbname=db.database, user=db.user, password=db.password,
-                           connect_timeout=timeout, autocommit=not read_only)
+    conn = postgres.connect(db, timeout, autocommit=not read_only)
     if read_only:
         conn.read_only = True
     return conn

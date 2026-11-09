@@ -288,6 +288,19 @@ $("palette-input").addEventListener("keydown", (event) => {
     runPalette(palette.index);
   }
 });
+// Tabs from the keyboard, as in any tab list: the arrows (and Home / End) go to the next tab and open it.
+document.addEventListener("keydown", (event) => {
+  const tab = event.target.closest && event.target.closest('[role="tab"]');
+  if (!tab || event.ctrlKey || event.metaKey || event.altKey) return;
+  const tabs = [...tab.parentElement.querySelectorAll(':scope > [role="tab"]')].filter((node) => !node.hidden && !node.disabled);
+  const at = tabs.indexOf(tab);
+  const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[event.key];
+  if (next === undefined || at < 0) return;
+  event.preventDefault();
+  const target = tabs[(next + tabs.length) % tabs.length];
+  target.focus();
+  target.click();
+});
 // The sidebar folded to its icons or open, as this browser last left it (no storage, as in a private window: open).
 const SIDE_KEY = "pdms-side-folded";
 function foldSide(folded, remember = true) {
