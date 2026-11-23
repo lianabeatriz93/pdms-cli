@@ -122,14 +122,21 @@ def stop(running: dict, timeout: float = 10) -> None:
     forget(pid)
 
 
+def header_value(text: str) -> str:
+    """``text`` as an HTTP header can carry it: latin-1, the rest as ``?``. http.client refuses anything else (a
+    name with a Polish L-stroke dropped the connection), and the services read their headers as latin-1, so
+    accented Spanish names arrive whole."""
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+
 def dev_headers(user: DevUser) -> dict[str, str]:
-    return {
+    return {name: header_value(value) for name, value in {
         "X-Dev-User-Id": user.user_id,
         "X-Dev-Username": user.username,
         "X-Dev-Roles": user.roles,
         "X-Dev-First-Name": user.first_name,
         "X-Dev-Last-Name": user.last_name,
-    }
+    }.items()}
 
 
 def token_claims(authorization: str | None) -> dict:
@@ -150,32 +157,106 @@ def token_claims(authorization: str | None) -> dict:
     return claims if isinstance(claims, dict) else {}
 
 
-def token_user(authorization: str | None) -> DevUser | None:
-    """Who the request's Cognito token says is calling, read as the services read the claims in AWS
-    (restapi_fastapi's get_app_context); None without a token that names a user (``sub``)."""
+@dataclass(frozen=True)
+class PdmsUser:
+    """A row of ``pdms_user``: the user the services know, whose ``entity_id`` is not the token's Cognito ``sub``."""
+
+    entity_id: str
+    username: str
+    first_name: str = ""
+    last_name: str = ""
+
+
+class TokenUserUnknown(Exception):
+    """The token names a user that is not in ``pdms_user``: API Gateway's authorizer denies such a request."""
+
+
+class UserLookupFailed(Exception):
+    """``pdms_user`` could not be read (database down, unknown alias); the message says why."""
+
+
+# Roles for a token without groups. An empty X-Dev-Roles would make the service fall back to its own DEV_ROLES;
+# a value that names no role gives none, as in AWS.
+NO_ROLES = "-"
+
+
+def token_username(claims: dict) -> str:
+    """The username API Gateway's authorizer looks the user up with (auth_common's TokenData.username)."""
+    return str(claims.get("email") or claims.get("cognito:username") or claims.get("username") or "")
+
+
+def token_user(authorization: str | None, find: Callable[[str], PdmsUser | None]) -> DevUser | None:
+    """Who the request's Cognito token says is calling, as the services see it in AWS: the authorizer
+    (backend/auth/gateway-authorizer) finds the token's username in ``pdms_user`` and passes that user's
+    ``entity_id`` as ``sub``, with the token's username, names and groups. ``find`` is that lookup.
+
+    None without a token that names a user. A name the token does not carry comes from ``pdms_user``, so the
+    service does not fill it with its own DEV_* profile's (another person's). Raises TokenUserUnknown when the
+    user is not in ``pdms_user``, and UserLookupFailed when it cannot be read."""
     claims = token_claims(authorization)
-    if not claims.get("sub"):
+    username = token_username(claims)
+    if not username:
         return None
+    user = find(username)
+    if user is None:
+        raise TokenUserUnknown(username)
     groups = claims.get("cognito:groups") or []
+    roles = ",".join(map(str, groups)) if isinstance(groups, list) else str(groups)
     return DevUser(
-        user_id=str(claims["sub"]),
-        username=str(claims.get("username") or claims.get("email") or ""),
-        first_name=str(claims.get("given_name") or ""),
-        last_name=str(claims.get("family_name") or ""),
-        roles=",".join(map(str, groups)) if isinstance(groups, list) else str(groups),
+        user_id=user.entity_id,
+        username=username,
+        first_name=str(claims.get("given_name") or user.first_name),
+        last_name=str(claims.get("family_name") or user.last_name),
+        roles=roles or NO_ROLES,
     )
 
 
-def caller(gateway: "Gateway", authorization: str | None, local_client: bool = True) -> DevUser | None:
+USER_TTL = 600  # seconds the proxy trusts a user it found in pdms_user
+MISSING_TTL = 30  # and that one is missing: a user just created there acts soon
+LOOKUP_TIMEOUT = 10  # seconds to connect to the database and to run the query
+_users: dict[tuple[str, str], tuple[float, PdmsUser | None]] = {}
+_users_lock = threading.Lock()
+
+
+def find_pdms_user(db_alias: str, username: str) -> PdmsUser | None:
+    """``username``'s row of ``pdms_user`` in the database ``db_alias`` (the one the service reads), cached."""
+    key = (db_alias, username)
+    now = time.monotonic()
+    with _users_lock:
+        cached = _users.get(key)
+    if cached and cached[0] > now:
+        return cached[1]
+    db = Config.load().dbs.get(db_alias)
+    if db is None:
+        raise UserLookupFailed(_("the service's database {db} is not configured (pdms db list)", db=db_alias))
+    from . import postgres
+
+    try:
+        with postgres.connect(db, LOOKUP_TIMEOUT, statement_timeout=LOOKUP_TIMEOUT) as conn:
+            row = conn.execute("SELECT entity_id::text, username, first_name, last_name FROM pdms_user "
+                               "WHERE username = %s", (username,)).fetchone()
+    except Exception as exc:  # noqa: BLE001 - psycopg's errors, a dead tunnel: the request gets the reason
+        raise UserLookupFailed(f"{db_alias}: {exc}".strip()) from exc
+    user = PdmsUser(row[0], row[1], row[2] or "", row[3] or "") if row else None
+    with _users_lock:
+        _users[key] = (now + (USER_TTL if user else MISSING_TTL), user)
+    return user
+
+
+def caller(gateway: "Gateway", authorization: str | None, local_client: bool = True,
+           db_alias: str = "") -> DevUser | None:
     """The user local services act as: the token's (unless the proxy was told not to), else the chosen dev user,
-    else none (each service's own DEV_* profile). Never a mix of both: a token user's missing names are not filled
-    with another person's.
+    else none (each service's own DEV_* profile). Never a mix of both. ``db_alias`` is the database of the service
+    the request goes to, where the token's user is looked up.
 
     Only for requests from this computer, unless ``defaults.proxy_lan_identity`` lets devices of the network act
     as someone too: the proxy listens on the network, and nobody checks a token's signature locally."""
     if not local_client and not gateway.access().lan_identity:
         return None
-    return (gateway.token_user and token_user(authorization)) or gateway.impersonate
+    user = None
+    if gateway.token_user:
+        user = token_user(authorization, lambda username: gateway.find_user(db_alias, username))
+    return user or gateway.impersonate
 
 
 LOOPBACK_NAMES = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -281,6 +362,8 @@ class Gateway:
     remote: str | None  # e.g. https://<id>.execute-api.us-east-1.amazonaws.com/dev
     impersonate: DevUser | None = None
     token_user: bool = True  # act as the user of the request's Cognito token, before ``impersonate``
+    # (database alias, username) -> that user's pdms_user row: how the token's user is found, as the authorizer does.
+    find_user: Callable[[str, str], PdmsUser | None] = find_pdms_user
     timeout: float = 300  # seconds to wait for the answer of a service or the remote API
     log: Callable[..., None] = lambda *args: None  # (method, path, status, target, seconds, capture id, db detail)
     recorder: captures.Recorder | None = None  # the background proxy keeps each request for pdms ui
@@ -613,7 +696,17 @@ def make_handler(gateway: Gateway) -> type[BaseHTTPRequestHandler]:
                 if not local_client and not gateway.access().lan_identity:
                     # Another device must not say who it is either: local services trust these headers.
                     headers = {k: v for k, v in headers.items() if not k.lower().startswith(DEV_HEADER)}
-                if user := caller(gateway, self.headers.get("Authorization"), local_client):
+                try:
+                    user = caller(gateway, self.headers.get("Authorization"), local_client, inst.db)
+                except (TokenUserUnknown, UserLookupFailed) as exc:
+                    status = 403 if isinstance(exc, TokenUserUnknown) else 503
+                    detail = (_("{user} is not a PDMS user in {db} (pdms_user): API Gateway denies this token too.",
+                                user=exc, db=inst.db) if status == 403 else
+                              _("could not look up the token's user in pdms_user: {reason}", reason=exc))
+                    answer = self.reply_json(status, {"detail": f"pdms proxy: {detail}"}, label)
+                    self.done(started, path, status, label, body, [("Content-Type", "application/json")], answer)
+                    return
+                if user:
                     headers.update(dev_headers(user))
             else:
                 remote = urlsplit(gateway.remote)

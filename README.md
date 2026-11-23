@@ -208,10 +208,13 @@ pdms proxy routes -f tp    # which service handles each route, and where it goes
 - **Routes** come from the repo's Terraform (`api_rsc_*.tf`), matched like API Gateway.
 - A request goes to the **running local service** of the current repo; anything else to the **remote API** (read from
   `frontend/.env`, `--remote URL` for another, `--no-remote` to answer 503). It answers CORS preflights itself.
-- Local services act as the user of each request's Cognito token (the one logged in to the frontend): the proxy
-  reads `sub`, `username` (or `email`), `cognito:groups` and the names from the `Authorization` header, without
-  verifying it, and sends them as the `X-Dev-*` headers. `--as USER` is for requests without a token;
-  `--no-token-user` always uses `--as` (or each service's own profile). The remote API gets neither.
+- Local services act as the user of each request's Cognito token (the one logged in to the frontend), as API
+  Gateway's authorizer makes them in AWS: the proxy reads the token from the `Authorization` header, without
+  verifying it, finds its username (`email`, else `cognito:username`, else `username`) in `pdms_user` of the
+  service's database, and sends that user's `entity_id` (not the token's Cognito `sub`), the username,
+  `cognito:groups` and the names as the `X-Dev-*` headers. A user missing from `pdms_user` gets a 403, as in AWS.
+  `--as USER` is for requests without a token; `--no-token-user` always uses `--as` (or each service's own
+  profile). The remote API gets neither.
 - It points the frontend at itself in `frontend/.env.local` (git-ignored) and puts the file back when it stops.
 - `http://localhost:28800/docs` is one Swagger UI for every local service.
 
