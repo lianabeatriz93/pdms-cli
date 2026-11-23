@@ -1,3 +1,22 @@
+## v0.4.14b7 (2026-11-23)
+
+### Feat
+
+- **cli**: flags for db/user/stack add and edit, doctor --json
+
+### Fix
+
+- **proxy**: act as the token's PDMS user, as API Gateway's authorizer does
+- **lazy**: setting an attribute of a lazy module sets it on the module
+
+### Refactor
+
+- shared docker, git and atomic JSON helpers; pdms migrate reaches a tunnel named in /etc/hosts
+
+### Perf
+
+- **ui**: paint only the screen that shows, keep the focus, keyboard tabs; faster pdms start
+
 ## v0.4.14b6 (2026-11-06)
 
 ### Feat
