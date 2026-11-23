@@ -139,6 +139,7 @@ def gateway_url(repo):
     gateways = []
 
     def make(remote_enabled=True, impersonate=None, timeout=300, **extra):
+        extra.setdefault("find_user", in_pdms_user)
         gw = proxy.Gateway(
             routes=routes.load_routes(repo), backend=repo / "backend",
             remote=f"http://127.0.0.1:{remote.server_address[1]}/dev" if remote_enabled else None,
@@ -243,6 +244,18 @@ def bearer(claims: dict) -> str:
 ID_TOKEN = {"sub": "u-9", "email": "ana@alivi.com", "cognito:username": "u-9", "given_name": "Ana",
             "family_name": "Pérez", "cognito:groups": ["TPR.Supervisor", "TPR.Agent"]}
 
+# pdms_user as the fake lookup sees it: the services' user ids are not the tokens' Cognito subs.
+PDMS_USERS = {
+    "ana@alivi.com": proxy.PdmsUser("pdms-ana", "ana@alivi.com", "Ana María", "Pérez"),
+    "u-9-name": proxy.PdmsUser("pdms-u9", "u-9-name", "Nueve", "Usuario"),
+}
+LOOKUPS: list[tuple[str, str]] = []
+
+
+def in_pdms_user(db_alias: str, username: str) -> proxy.PdmsUser | None:
+    LOOKUPS.append((db_alias, username))
+    return PDMS_USERS.get(username)
+
 
 def test_local_services_act_as_the_user_of_the_token(gateway_url):
     configured = DevUser("u-1", "agent@x.com", first_name="Otto", last_name="Other", roles="TPR.Agent")
@@ -250,19 +263,91 @@ def test_local_services_act_as_the_user_of_the_token(gateway_url):
                    headers={"Authorization": bearer(ID_TOKEN)})
     sent = data["headers"]
     assert (sent["X-Dev-User-Id"], sent["X-Dev-Username"], sent["X-Dev-Roles"]) == (
-        "u-9", "ana@alivi.com", "TPR.Supervisor,TPR.Agent")
-    assert (sent["X-Dev-First-Name"], sent["X-Dev-Last-Name"]) == ("Ana", "Pérez")
+        "pdms-ana", "ana@alivi.com", "TPR.Supervisor,TPR.Agent")
+    assert (sent["X-Dev-First-Name"], sent["X-Dev-Last-Name"]) == ("Ana", "Pérez")  # the token's, as in AWS
     assert sent["Authorization"] == bearer(ID_TOKEN)  # still passed on
 
 
-def test_an_access_token_gives_its_username_and_never_another_users_names(gateway_url):
+def test_the_token_user_is_looked_up_in_the_services_database_by_the_authorizers_username(gateway_url):
+    LOOKUPS.clear()
+    call(gateway_url(), "GET", "/api/v1/leads/tp", headers={"Authorization": bearer(ID_TOKEN)})
+    assert LOOKUPS == [("local", "ana@alivi.com")]  # email before cognito:username, the service's db alias
+
+
+def test_an_access_token_gives_its_username_and_the_names_of_its_pdms_user(gateway_url):
     configured = DevUser("u-1", "agent@x.com", first_name="Otto", last_name="Other", roles="TPR.Agent")
     access = {"sub": "u-9", "username": "u-9-name", "cognito:groups": ["TPR.Agent"], "token_use": "access"}
     _, data = call(gateway_url(impersonate=configured), "GET", "/api/v1/leads/tp",
                    headers={"Authorization": bearer(access)})
     sent = data["headers"]
-    assert (sent["X-Dev-User-Id"], sent["X-Dev-Username"], sent["X-Dev-Roles"]) == ("u-9", "u-9-name", "TPR.Agent")
-    assert sent["X-Dev-First-Name"] == sent["X-Dev-Last-Name"] == ""  # the service's own, not Otto's
+    assert (sent["X-Dev-User-Id"], sent["X-Dev-Username"], sent["X-Dev-Roles"]) == (
+        "pdms-u9", "u-9-name", "TPR.Agent")
+    # Never empty: the service would fill an empty one with its own DEV_* profile's, another person's (Otto's).
+    assert (sent["X-Dev-First-Name"], sent["X-Dev-Last-Name"]) == ("Nueve", "Usuario")
+
+
+def test_a_token_without_groups_gives_no_roles_not_the_services_own(gateway_url):
+    _, data = call(gateway_url(), "GET", "/api/v1/leads/tp",
+                   headers={"Authorization": bearer({**ID_TOKEN, "cognito:groups": []})})
+    assert data["headers"]["X-Dev-Roles"] == proxy.NO_ROLES
+
+
+def test_a_token_whose_user_is_not_in_pdms_user_is_denied_as_in_aws(gateway_url):
+    configured = DevUser("u-1", "agent@x.com", roles="TPR.Agent")
+    response, data = call(gateway_url(impersonate=configured), "GET", "/api/v1/leads/tp",
+                          headers={"Authorization": bearer({**ID_TOKEN, "email": "nobody@alivi.com"})})
+    assert response.status == 403
+    assert "nobody@alivi.com" in data["detail"] and "server" not in data  # the service never got it
+
+
+def test_a_failed_lookup_answers_503_with_the_reason(gateway_url):
+    def down(db_alias, username):
+        raise proxy.UserLookupFailed("local: connection refused")
+
+    response, data = call(gateway_url(find_user=down), "GET", "/api/v1/leads/tp",
+                          headers={"Authorization": bearer(ID_TOKEN)})
+    assert response.status == 503
+    assert "connection refused" in data["detail"]
+
+
+def test_a_name_outside_latin_1_reaches_the_service_instead_of_dropping_the_connection(gateway_url):
+    _, data = call(gateway_url(), "GET", "/api/v1/leads/tp",
+                   headers={"Authorization": bearer({**ID_TOKEN, "given_name": "Łukasz", "family_name": "Muñoz"})})
+    assert (data["headers"]["X-Dev-First-Name"], data["headers"]["X-Dev-Last-Name"]) == ("?ukasz", "Muñoz")
+
+
+def test_the_pdms_user_lookup_is_cached_and_a_missing_user_is_asked_again_soon(monkeypatch):
+    rows = {"ana@alivi.com": ("pdms-ana", "ana@alivi.com", "Ana", None)}
+    queries = []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql, params):
+            queries.append(params[0])
+            row = rows.get(params[0])
+            return type("Cursor", (), {"fetchone": lambda self: row})()
+
+    clock = [1000.0]
+    monkeypatch.setattr(proxy.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(proxy, "_users", {})
+    monkeypatch.setattr(proxy.Config, "load", classmethod(lambda cls: type("Cfg", (), {"dbs": {"dev": object()}})()))
+    from pdms_cli import postgres
+    monkeypatch.setattr(postgres, "connect", lambda *args, **kwargs: Conn())
+
+    assert proxy.find_pdms_user("dev", "ana@alivi.com") == proxy.PdmsUser("pdms-ana", "ana@alivi.com", "Ana", "")
+    assert proxy.find_pdms_user("dev", "ana@alivi.com").entity_id == "pdms-ana"
+    assert proxy.find_pdms_user("dev", "new@alivi.com") is None
+    clock[0] += proxy.MISSING_TTL + 1
+    rows["new@alivi.com"] = ("pdms-new", "new@alivi.com", "New", "User")
+    assert proxy.find_pdms_user("dev", "new@alivi.com").entity_id == "pdms-new"
+    assert queries == ["ana@alivi.com", "new@alivi.com", "new@alivi.com"]
+    with pytest.raises(proxy.UserLookupFailed):
+        proxy.find_pdms_user("qa", "ana@alivi.com")  # a database pdms does not know
 
 
 @pytest.mark.parametrize("authorization", [None, "Bearer not-a-jwt", "Bearer a.%%%.c", "Basic dXNlcjpwYXNz",
@@ -633,7 +718,7 @@ def test_another_device_of_the_network_acts_as_nobody_unless_allowed(gateway_url
     assert not [k for k in data["headers"] if k.lower().startswith("x-dev-")]
     _, data = call(gateway_url(impersonate=chosen, read_access=lambda: proxy.Access(lan_identity=True)), "GET",
                    "/api/v1/leads/tp", headers={"Authorization": bearer(ID_TOKEN)})
-    assert data["headers"]["X-Dev-User-Id"] == "u-9"
+    assert data["headers"]["X-Dev-User-Id"] == "pdms-ana"  # the token's user, as pdms_user knows it
 
 
 def test_loopback_clients_are_this_computer():

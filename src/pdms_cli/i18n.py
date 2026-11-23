@@ -747,6 +747,12 @@ ES: dict[str, str] = {
     "Acting as": "Actuando como",
     "each service's own profile": "el perfil de cada servicio",
     "the user of the request's token, else {fallback}": "el usuario del token de la petición; si no hay, {fallback}",
+    "{user} is not a PDMS user in {db} (pdms_user): API Gateway denies this token too.":
+        "{user} no es un usuario de PDMS en {db} (pdms_user): API Gateway también rechaza este token.",
+    "could not look up the token's user in pdms_user: {reason}":
+        "no se pudo buscar el usuario del token en pdms_user: {reason}",
+    "the service's database {db} is not configured (pdms db list)":
+        "la base de datos del servicio, {db}, no está configurada (pdms db list)",
     "Requests · Ctrl+C to stop": "Peticiones · Ctrl+C para parar",
     "Proxy stopped.": "Proxy parado.",
     "Background (pdms ps, logs proxy, stop proxy) or foreground (asked if omitted).":
